@@ -8,6 +8,7 @@ local StarkCurve = require(script.StarkCurve)
 local Poseidon = require(script.Poseidon)
 local Pedersen = require(script.Pedersen)
 local Keccak = require(script.Keccak)
+local SHA256 = require(script.SHA256)
 
 return {
 	BigInt = BigInt,
@@ -17,4 +18,5 @@ return {
 	Poseidon = Poseidon,
 	Pedersen = Pedersen,
 	Keccak = Keccak,
+	SHA256 = SHA256,
 }
