@@ -6,6 +6,7 @@ local StarkField = require(script.StarkField)
 local StarkScalarField = require(script.StarkScalarField)
 local StarkCurve = require(script.StarkCurve)
 local Poseidon = require(script.Poseidon)
+local Pedersen = require(script.Pedersen)
 
 return {
 	BigInt = BigInt,
@@ -13,4 +14,5 @@ return {
 	StarkScalarField = StarkScalarField,
 	StarkCurve = StarkCurve,
 	Poseidon = Poseidon,
+	Pedersen = Pedersen,
 }
