@@ -1,5 +1,10 @@
 --!strict
 -- Provider module: JSON-RPC client over HttpService with Promise-based async
--- TODO: Export submodules as they are implemented
 
-return {}
+local RpcProvider = require(script.RpcProvider)
+local RpcTypes = require(script.RpcTypes)
+
+return {
+	RpcProvider = RpcProvider,
+	RpcTypes = RpcTypes,
+}
