@@ -201,7 +201,9 @@ function RpcProviderClass:_rawRequest(method: string, params: any): any
 	local startTime = self._clock()
 	while not tryAcquire(self._rateLimiter, self._clock) do
 		if self._clock() - startTime > maxWait then
-			error(makeError(RpcTypes.ErrorTypes.RATE_LIMIT, "Rate limit exceeded: could not acquire token within timeout"))
+			error(
+				makeError(RpcTypes.ErrorTypes.RATE_LIMIT, "Rate limit exceeded: could not acquire token within timeout")
+			)
 		end
 		self._sleep(0.05)
 	end
@@ -233,22 +235,26 @@ function RpcProviderClass:_rawRequest(method: string, params: any): any
 	local response = self:_doHttpRequest(httpRequest)
 
 	if not response.Success and response.StatusCode ~= 200 then
-		error(makeError(
-			RpcTypes.ErrorTypes.NETWORK_ERROR,
-			`HTTP {response.StatusCode}: {response.Body}`,
-			response.StatusCode
-		))
+		error(
+			makeError(
+				RpcTypes.ErrorTypes.NETWORK_ERROR,
+				`HTTP {response.StatusCode}: {response.Body}`,
+				response.StatusCode
+			)
+		)
 	end
 
 	local decoded = self:_jsonDecode(response.Body)
 
 	if decoded.error then
-		error(makeError(
-			RpcTypes.ErrorTypes.RPC_ERROR,
-			decoded.error.message or "Unknown RPC error",
-			decoded.error.code,
-			decoded.error.data
-		))
+		error(
+			makeError(
+				RpcTypes.ErrorTypes.RPC_ERROR,
+				decoded.error.message or "Unknown RPC error",
+				decoded.error.code,
+				decoded.error.data
+			)
+		)
 	end
 
 	return decoded.result
@@ -310,7 +316,6 @@ end
 
 --- Get the latest block number.
 function RpcProviderClass:getBlockNumber(): any
-	local Promise = self:_getPromise()
 	return self:fetch("starknet_blockNumber", {}):andThen(function(result: any)
 		if type(result) == "number" then
 			return result
@@ -351,10 +356,7 @@ end
 --- Estimate the fee for a set of transactions.
 --- @param transactions -- array of invoke transactions
 --- @param simulationFlags -- optional simulation flags (e.g. {"SKIP_VALIDATE"})
-function RpcProviderClass:estimateFee(
-	transactions: { RpcTypes.InvokeTransactionV3 },
-	simulationFlags: { string }?
-): any
+function RpcProviderClass:estimateFee(transactions: { RpcTypes.InvokeTransactionV3 }, simulationFlags: { string }?): any
 	local params: { any } = {
 		transactions,
 		simulationFlags or {},
@@ -366,7 +368,6 @@ end
 --- Submit a signed invoke transaction.
 --- Returns a Promise resolving to the transaction hash.
 function RpcProviderClass:addInvokeTransaction(invokeTx: RpcTypes.InvokeTransactionV3): any
-	local Promise = self:_getPromise()
 	return self:fetch("starknet_addInvokeTransaction", {
 		{
 			type = invokeTx.type,
@@ -478,12 +479,14 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 					end)
 					if receiptOk then
 						if execution == "REVERTED" then
-							reject(makeError(
-								RpcTypes.ErrorTypes.RPC_ERROR,
-								`Transaction {txHash} reverted: {receipt.revert_reason or "unknown reason"}`,
-								nil,
-								receipt
-							))
+							reject(
+								makeError(
+									RpcTypes.ErrorTypes.RPC_ERROR,
+									`Transaction {txHash} reverted: {receipt.revert_reason or "unknown reason"}`,
+									nil,
+									receipt
+								)
+							)
 						else
 							resolve(receipt)
 						end
@@ -492,12 +495,9 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 					end
 					return
 				elseif finality == "REJECTED" then
-					reject(makeError(
-						RpcTypes.ErrorTypes.RPC_ERROR,
-						`Transaction {txHash} was rejected`,
-						nil,
-						statusResult
-					))
+					reject(
+						makeError(RpcTypes.ErrorTypes.RPC_ERROR, `Transaction {txHash} was rejected`, nil, statusResult)
+					)
 					return
 				end
 				-- Still pending, continue polling
@@ -508,10 +508,9 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 			end
 		end
 
-		reject(makeError(
-			RpcTypes.ErrorTypes.TIMEOUT,
-			`Transaction {txHash} not confirmed after {maxAttempts} attempts`
-		))
+		reject(
+			makeError(RpcTypes.ErrorTypes.TIMEOUT, `Transaction {txHash} not confirmed after {maxAttempts} attempts`)
+		)
 	end)
 end
 
