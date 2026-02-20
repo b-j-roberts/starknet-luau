@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: roblox-ts/setup-rokit@v0.1.2
+      - run: wally install
       - run: rojo build -o starknet-luau.rbxm
 
   test:
