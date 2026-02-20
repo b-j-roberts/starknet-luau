@@ -1,0 +1,31 @@
+# Project place/model files
+/starknet-luau.rbxm
+/starknet-luau.rbxl
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+sourcemap.json
+
+# Wally packages
+Packages/
+ServerPackages/
+DevPackages/
+
+# pesde
+.pesde/
+pesde.lock
+
+# Generated
+roblox.yml
+
+# Other build artifacts
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+[package]
+name = "b-j-roberts/starknet-luau"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+description = "Pure Luau SDK for Starknet blockchain interaction from Roblox games"
+license = "MIT"
+authors = ["Brandon Roberts"]
+include = ["default.project.json", "src/**", "LICENSE", "README.md"]
+exclude = ["tests/**", "dev.project.json"]
+
+[dependencies]
+Promise = "evaera/promise@^3.1.0"
+
+[dev-dependencies]

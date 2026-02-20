@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: roblox-ts/setup-rokit@v0.1.2
+      - run: rojo build -o starknet-luau.rbxm
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: roblox-ts/setup-rokit@v0.1.2
+      - run: lune run tests/run
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: roblox-ts/setup-rokit@v0.1.2
+      - run: selene src/
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: roblox-ts/setup-rokit@v0.1.2
+      - run: stylua --check src/

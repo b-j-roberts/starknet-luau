@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: roblox-ts/setup-rokit@v0.1.2
+
+      - name: Build .rbxm
+        run: rojo build -o starknet-luau.rbxm
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: starknet-luau.rbxm
+          generate_release_notes: true
+
+      - name: Publish to Wally
+        env:
+          WALLY_AUTH: ${{ secrets.WALLY_AUTH_TOKEN }}
+        run: |
+          mkdir -p ~/.wally
+          echo "$WALLY_AUTH" > ~/.wally/auth.toml
+          wally publish
