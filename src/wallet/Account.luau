@@ -1,7 +1,7 @@
 --!strict
 -- Account: High-level account management combining signer, provider, and address
 -- Provides convenience methods for executing transactions, fetching nonce, and estimating fees
--- Supports address derivation from private key using OpenZeppelin class hash
+-- Supports address derivation from private key for OpenZeppelin, Argent X, and Braavos accounts
 -- Reference: starknet.js Account class and hash.calculateContractAddressFromHash
 
 local BigInt = require("../crypto/BigInt")
@@ -29,8 +29,38 @@ local MASK_251 = BigInt.sub(BigInt.shl(BigInt.one(), 251), BigInt.one())
 local Account = {}
 Account.__index = Account
 
--- OpenZeppelin Account class hash constants (Cairo 1)
+-- Account type constants
+Account.ACCOUNT_TYPE_OZ = "oz"
+Account.ACCOUNT_TYPE_ARGENT = "argent"
+Account.ACCOUNT_TYPE_BRAAVOS = "braavos"
+
+-- OpenZeppelin Account class hash (Cairo 1)
 Account.OZ_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
+
+-- Argent X Account class hash (Cairo 1, v0.4.0)
+Account.ARGENT_CLASS_HASH = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
+
+-- Braavos Account implementation class hash (v1.2.0)
+Account.BRAAVOS_CLASS_HASH = "0x03957f9f5a1cbfe918cedc2015c85200ca51a5f7506ecb6de98a5207b759bf8a"
+
+-- Braavos Base Account class hash (used for address computation, v1.2.0)
+Account.BRAAVOS_BASE_CLASS_HASH = "0x03d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201"
+
+-- Lookup table: normalized class hash -> account type (includes historical versions)
+-- Keys are normalized (no leading zeros after 0x) to match BigInt.toHex output
+local CLASS_HASH_TO_TYPE: { [string]: string } = {
+	-- OpenZeppelin
+	["0x61dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"] = "oz",
+	["0x1a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003"] = "oz", -- OZ v0.14
+
+	-- Argent X
+	["0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"] = "argent", -- v0.4.0
+	["0x29927c8af6bccf3f6fda035981e765a7bdbf18a2dc0d630494f8758aa908e2b"] = "argent", -- v0.3.1
+
+	-- Braavos
+	["0x3d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201"] = "braavos", -- Base v1.2.0
+	["0x3957f9f5a1cbfe918cedc2015c85200ca51a5f7506ecb6de98a5207b759bf8a"] = "braavos", -- Impl v1.2.0
+}
 
 --------------------------------------------------------------------------------
 -- Internal helpers
@@ -45,6 +75,35 @@ local function computeHashOnElements(elements: { Felt }): Felt
 	end
 	result = Pedersen.hash(result, StarkField.fromNumber(#elements))
 	return result
+end
+
+--- Build constructor calldata for a given account type.
+--- OZ/Braavos: [publicKey]
+--- Argent (v0.4.0+): [0, publicKey, 0] without guardian, [0, publicKey, 1, 0, guardianKey] with guardian
+--- The format uses Cairo enum serialization: Signer::Starknet(pubkey) = [0, pubkey], Option::None = [0], Option::Some(signer) = [1, 0, guardianKey]
+local function buildConstructorCalldata(accountType: string, publicKey: string, guardian: string?): { string }
+	if accountType == "argent" then
+		if guardian then
+			-- [Signer::Starknet variant=0, publicKey, Option::Some variant=1, Signer::Starknet variant=0, guardianKey]
+			return { "0x0", publicKey, "0x1", "0x0", guardian }
+		else
+			-- [Signer::Starknet variant=0, publicKey, Option::None variant=0]
+			return { "0x0", publicKey, "0x0" }
+		end
+	end
+	-- OZ and Braavos both use [publicKey]
+	return { publicKey }
+end
+
+--- Get the default class hash for an account type.
+--- Braavos uses the base class hash for address computation.
+local function getDefaultClassHash(accountType: string): string
+	if accountType == "argent" then
+		return Account.ARGENT_CLASS_HASH
+	elseif accountType == "braavos" then
+		return Account.BRAAVOS_BASE_CLASS_HASH
+	end
+	return Account.OZ_CLASS_HASH
 end
 
 --------------------------------------------------------------------------------
@@ -93,6 +152,19 @@ function Account.computeAddress(config: {
 	return BigInt.toHex(addressBigInt)
 end
 
+--- Detect account type from a class hash.
+--- Returns "oz", "argent", "braavos", or nil if the class hash is not recognized.
+function Account.detectAccountType(classHash: string): string?
+	-- Normalize the class hash (strip leading zeros after 0x prefix for consistent lookup)
+	local normalized = BigInt.toHex(BigInt.fromHex(classHash))
+	return CLASS_HASH_TO_TYPE[normalized]
+end
+
+--- Build constructor calldata for an account type (exposed for advanced use).
+function Account.getConstructorCalldata(accountType: string, publicKey: string, guardian: string?): { string }
+	return buildConstructorCalldata(accountType, publicKey, guardian)
+end
+
 --- Create an Account from an explicit address, signer, and provider.
 function Account.new(config: {
 	address: string,
@@ -119,12 +191,15 @@ function Account.new(config: {
 	return self
 end
 
---- Create an Account from a private key, deriving the address using the given class hash.
---- Defaults to OpenZeppelin account class hash.
+--- Create an Account from a private key, deriving the address.
+--- Supports "oz" (default), "argent", and "braavos" account types.
+--- For Argent, an optional guardian public key can be provided.
 function Account.fromPrivateKey(config: {
 	privateKey: string,
 	provider: any,
+	accountType: string?,
 	classHash: string?,
+	guardian: string?,
 }): any
 	if not config.privateKey then
 		error("Account: privateKey is required")
@@ -133,13 +208,24 @@ function Account.fromPrivateKey(config: {
 		error("Account: provider is required")
 	end
 
+	local accountType = config.accountType or "oz"
+	if accountType ~= "oz" and accountType ~= "argent" and accountType ~= "braavos" then
+		error(`Account: unsupported accountType "{accountType}", expected "oz", "argent", or "braavos"`)
+	end
+
+	if config.guardian and accountType ~= "argent" then
+		error("Account: guardian is only supported for Argent accounts")
+	end
+
 	local signer = StarkSigner.new(config.privateKey)
 	local publicKeyHex = signer:getPublicKeyHex()
-	local classHash = config.classHash or Account.OZ_CLASS_HASH
+	local classHash = config.classHash or getDefaultClassHash(accountType)
+	local constructorCalldata = buildConstructorCalldata(accountType, publicKeyHex, config.guardian)
 
 	local address = Account.computeAddress({
 		classHash = classHash,
 		publicKey = publicKeyHex,
+		constructorCalldata = constructorCalldata,
 	})
 
 	return Account.new({

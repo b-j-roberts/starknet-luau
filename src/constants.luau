@@ -20,6 +20,15 @@ Constants.SN_SEPOLIA = "0x534e5f5345504f4c4941"
 -- OpenZeppelin Account class hash (Cairo 1)
 Constants.OZ_ACCOUNT_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
 
+-- Argent X Account class hash (Cairo 1, v0.4.0)
+Constants.ARGENT_ACCOUNT_CLASS_HASH = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
+
+-- Braavos Account implementation class hash (v1.2.0)
+Constants.BRAAVOS_ACCOUNT_CLASS_HASH = "0x03957f9f5a1cbfe918cedc2015c85200ca51a5f7506ecb6de98a5207b759bf8a"
+
+-- Braavos Base Account class hash (used for address computation, v1.2.0)
+Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH = "0x03d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201"
+
 --------------------------------------------------------------------------------
 -- Contract Address Computation
 --------------------------------------------------------------------------------
