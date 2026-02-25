@@ -6,6 +6,7 @@
 local Keccak = require("../crypto/Keccak")
 local StarkField = require("../crypto/StarkField")
 local CallData = require("../tx/CallData")
+local AbiCodec = require("./AbiCodec")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -64,101 +65,44 @@ type ParsedFunction = {
 	selector: string, -- hex string of the snKeccak selector
 }
 
---- Parse an ABI array into a lookup table of functions keyed by name
-local function parseAbi(abi: Abi): { [string]: ParsedFunction }
+--- Parse an ABI array into a lookup table of functions keyed by name.
+--- Also extracts functions from "interface" entries (nested items).
+local function parseAbi(abi: Abi): ({ [string]: ParsedFunction }, AbiCodec.TypeMap)
 	local functions: { [string]: ParsedFunction } = {}
+
+	local function addFunction(entry: AbiFunction)
+		local selector = Keccak.getSelectorFromName(entry.name)
+		functions[entry.name] = {
+			name = entry.name,
+			inputs = entry.inputs or {},
+			outputs = entry.outputs or {},
+			stateMutability = entry.state_mutability or "external",
+			selector = StarkField.toHex(selector),
+		}
+	end
 
 	for _, entry in abi do
 		if entry.type == "function" then
-			local selector = Keccak.getSelectorFromName(entry.name)
-			functions[entry.name] = {
-				name = entry.name,
-				inputs = entry.inputs or {},
-				outputs = entry.outputs or {},
-				stateMutability = entry.state_mutability or "external",
-				selector = StarkField.toHex(selector),
-			}
+			addFunction(entry)
+		elseif entry.type == "interface" then
+			-- Extract nested function items from interface entries
+			local items = (entry :: any).items
+			if items then
+				for _, item in items :: { any } do
+					local fn = item :: AbiFunction
+					if fn.type == "function" then
+						addFunction(fn)
+					end
+				end
+			end
 		end
 	end
 
-	return functions
+	local typeMap = AbiCodec.buildTypeMap(abi :: { any })
+	return functions, typeMap
 end
 
---------------------------------------------------------------------------------
--- Internal: Basic type encoding/decoding
---------------------------------------------------------------------------------
-
---- Encode a single argument value to calldata felts based on ABI type.
---- MVP types: felt252, ContractAddress, bool, u8-u128, u256
-local function encodeArg(value: any, abiType: string): { string }
-	if abiType == "core::felt252" or abiType == "felt252" then
-		return CallData.encodeFelt(tostring(value))
-	elseif
-		abiType == "core::starknet::contract_address::ContractAddress"
-		or abiType == "ContractAddress"
-		or abiType == "core::starknet::class_hash::ClassHash"
-		or abiType == "ClassHash"
-	then
-		return CallData.encodeFelt(tostring(value))
-	elseif abiType == "core::bool" or abiType == "bool" then
-		return CallData.encodeBool(value :: boolean)
-	elseif abiType == "core::integer::u256" or abiType == "u256" then
-		return CallData.encodeU256(tostring(value))
-	elseif
-		string.match(abiType, "^core::integer::u%d+$")
-		or string.match(abiType, "^u%d+$")
-		or string.match(abiType, "^core::integer::i%d+$")
-		or string.match(abiType, "^i%d+$")
-	then
-		-- u8, u16, u32, u64, u128, i8, i16, etc. -- single felt
-		return CallData.encodeFelt(tostring(value))
-	else
-		-- Fallback: treat as felt
-		return CallData.encodeFelt(tostring(value))
-	end
-end
-
---- Decode a single output value from result felts based on ABI type.
---- Returns (decoded_value, felts_consumed).
---- MVP: returns raw hex strings; u256 returns two-element table { low, high }.
-local function decodeResult(results: { string }, offset: number, abiType: string): (any, number)
-	if abiType == "core::integer::u256" or abiType == "u256" then
-		-- u256 occupies 2 felts: low, high
-		local low = results[offset]
-		local high = results[offset + 1]
-		return { low = low, high = high }, 2
-	elseif abiType == "core::bool" or abiType == "bool" then
-		return results[offset] == "0x1", 1
-	else
-		-- Everything else is a single felt
-		return results[offset], 1
-	end
-end
-
---- Parse a full call result array based on ABI output types.
---- Returns a table keyed by output parameter name (or positional index if unnamed).
-local function parseCallResult(results: { string }, outputs: { AbiParameter }): any
-	if #outputs == 0 then
-		return results
-	end
-
-	-- Single output: return the decoded value directly
-	if #outputs == 1 then
-		local decoded, _ = decodeResult(results, 1, outputs[1].type)
-		return decoded
-	end
-
-	-- Multiple outputs: return a table keyed by name
-	local parsed: { [string]: any } = {}
-	local offset = 1
-	for _, output in outputs do
-		local decoded, consumed = decodeResult(results, offset, output.type)
-		local key = if output.name ~= "" then output.name else tostring(offset)
-		parsed[key] = decoded
-		offset += consumed
-	end
-	return parsed
-end
+-- NOTE: Type encoding/decoding is now handled by AbiCodec module
 
 --------------------------------------------------------------------------------
 -- Contract class
@@ -233,7 +177,7 @@ function Contract.new(config: ContractConfig): any
 		error("Contract: provider is required")
 	end
 
-	local functions = parseAbi(config.abi)
+	local functions, typeMap = parseAbi(config.abi)
 
 	local self = setmetatable({
 		abi = config.abi,
@@ -241,6 +185,7 @@ function Contract.new(config: ContractConfig): any
 		_provider = config.provider,
 		_account = config.account,
 		_functions = functions,
+		_typeMap = typeMap,
 	}, Contract)
 
 	return self
@@ -261,19 +206,14 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 
 	local callArgs = args or {}
 	local inputs = fn.inputs
+	local typeMap: AbiCodec.TypeMap = self_._typeMap
 
 	if #callArgs ~= #inputs then
 		error(`Contract: {method} expects {#inputs} arguments, got {#callArgs}`)
 	end
 
-	-- Encode calldata
-	local calldata: { string } = {}
-	for i, input in inputs do
-		local encoded = encodeArg(callArgs[i], input.type)
-		for _, felt in encoded do
-			table.insert(calldata, felt)
-		end
-	end
+	-- Encode calldata via AbiCodec
+	local calldata = AbiCodec.encodeInputs(callArgs, inputs, typeMap)
 
 	-- Build the RPC call request
 	local request = {
@@ -284,9 +224,9 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 
 	local provider: any = self_._provider
 
-	-- Call provider and parse result
+	-- Call provider and parse result via AbiCodec
 	return provider:call(request, blockId):andThen(function(results: { string })
-		return parseCallResult(results, fn.outputs)
+		return AbiCodec.decodeOutputs(results, fn.outputs, typeMap)
 	end)
 end
 
@@ -304,19 +244,14 @@ function Contract:populate(method: string, args: { any }?): Call
 
 	local callArgs = args or {}
 	local inputs = fn.inputs
+	local typeMap: AbiCodec.TypeMap = self_._typeMap
 
 	if #callArgs ~= #inputs then
 		error(`Contract: {method} expects {#inputs} arguments, got {#callArgs}`)
 	end
 
-	-- Encode calldata
-	local calldata: { string } = {}
-	for i, input in inputs do
-		local encoded = encodeArg(callArgs[i], input.type)
-		for _, felt in encoded do
-			table.insert(calldata, felt)
-		end
-	end
+	-- Encode calldata via AbiCodec
+	local calldata = AbiCodec.encodeInputs(callArgs, inputs, typeMap)
 
 	return {
 		contractAddress = self_.address,
