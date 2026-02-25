@@ -403,12 +403,12 @@ The essential features needed for a working end-to-end Starknet integration from
 
 ---
 
-### 1.20 Test Fixtures and Integration Tests
+### 1.20 Test Fixtures and Integration Tests ✅
 
 **Description**: Create comprehensive test fixtures from starknet.js and basic integration tests.
 
 **Requirements**:
-- [ ] Generate `tests/fixtures/test-vectors.luau` containing:
+- [x] Generate `tests/fixtures/test-vectors.luau` containing:
   - Known BigInt arithmetic results
   - Poseidon hash outputs for specific inputs
   - Pedersen hash outputs for specific inputs
@@ -416,8 +416,8 @@ The essential features needed for a working end-to-end Starknet integration from
   - ECDSA signatures for known (message, privKey) pairs
   - Transaction hashes for known transaction parameters
   - Account addresses for known (privKey, classHash) pairs
-- [ ] Create integration test that performs end-to-end flow against Sepolia (gated by env var)
-- [ ] All crypto tests pass with values matching starknet.js output
+- [x] Create integration test that performs end-to-end flow against Sepolia (gated by env var)
+- [x] All crypto tests pass with values matching starknet.js output
 
 ---
 
