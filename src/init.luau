@@ -7,6 +7,7 @@ local provider = require(script.provider)
 local tx = require(script.tx)
 local wallet = require(script.wallet)
 local contract = require(script.contract)
+local constants = require(script.constants)
 
 return {
 	crypto = crypto,
@@ -15,4 +16,5 @@ return {
 	tx = tx,
 	wallet = wallet,
 	contract = contract,
+	constants = constants,
 }
