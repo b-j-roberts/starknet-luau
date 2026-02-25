@@ -3,4 +3,5 @@
 
 return {
 	Contract = require(script.Contract),
+	ERC20 = require(script.ERC20),
 }
