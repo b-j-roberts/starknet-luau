@@ -45,7 +45,7 @@ make check          # Run lint + fmt check + test
 local Starknet = require(game.ReplicatedStorage.Packages.StarknetLuau)
 
 -- Create a provider
-local provider = Starknet.provider.RpcProvider.new("https://starknet-sepolia.public.blastapi.io")
+local provider = Starknet.provider.RpcProvider.new("https://api.zan.top/public/starknet-sepolia")
 
 -- Get the latest block number
 provider:getBlockNumber():andThen(function(blockNumber)

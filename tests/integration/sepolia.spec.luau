@@ -1,11 +1,11 @@
 --!strict
 -- Integration test: end-to-end flow against Starknet Sepolia testnet.
--- GATED BY ENV VAR: Set STARKNET_SEPOLIA_URL to enable (e.g., "https://starknet-sepolia.public.blastapi.io")
+-- GATED BY ENV VAR: Set STARKNET_SEPOLIA_URL to enable (e.g., "https://api.zan.top/public/starknet-sepolia")
 -- Optionally set STARKNET_SEPOLIA_PRIVKEY to test account operations (hex private key).
 --
 -- Usage:
---   STARKNET_SEPOLIA_URL=https://starknet-sepolia.public.blastapi.io make test
---   STARKNET_SEPOLIA_URL=https://starknet-sepolia.public.blastapi.io STARKNET_SEPOLIA_PRIVKEY=0x1234... make test
+--   STARKNET_SEPOLIA_URL=https://api.zan.top/public/starknet-sepolia make test
+--   STARKNET_SEPOLIA_URL=https://api.zan.top/public/starknet-sepolia STARKNET_SEPOLIA_PRIVKEY=0x1234... make test
 
 local process = require("@lune/process")
 local net = require("@lune/net")

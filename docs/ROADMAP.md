@@ -623,7 +623,32 @@ Features that enhance the MVP and make it fully production-ready and feature com
 
 ---
 
-### 2.11 Pesde Package Support
+### 2.11 Multi-Version RPC Spec Support (v0.7, v0.8+)
+
+**Description**: Support multiple Starknet JSON-RPC spec versions so the SDK works across providers running different API versions.
+
+**Requirements**:
+- [ ] Detect spec version via `starknet_specVersion` on provider initialization
+- [ ] Research v0.7 → v0.8 breaking changes:
+  - New methods added in v0.8: `starknet_getBlockHeader`, `starknet_getMessagesStatus`, `starknet_getCompiledCasm`
+  - Response schema changes (e.g., transaction receipt format, fee estimation fields)
+  - Parameter format changes (block ID encoding, resource bounds)
+  - Deprecated or renamed fields
+- [ ] Adapter layer that normalizes responses to a common internal format
+- [ ] Version-specific request formatters where parameter shapes differ
+- [ ] Configuration option: `specVersion` override (skip auto-detect)
+- [ ] Unit tests with mocked v0.7 and v0.8 responses to verify both paths
+- [ ] Document which public RPC providers run which spec version
+
+**Implementation Notes**:
+- Current SDK was built against v0.7 method names (which are unchanged in v0.8)
+- Main risk is response schema changes, not method renames
+- ZAN public endpoints already run v0.8.1; dRPC Sepolia also runs v0.8.1
+- Consider a `compat` module that maps between versions rather than forking the provider
+
+---
+
+### 2.12 Pesde Package Support
 
 **Description**: Add support for the Pesde package manager alongside Wally.
 
@@ -635,7 +660,7 @@ Features that enhance the MVP and make it fully production-ready and feature com
 
 ---
 
-### 2.12 Documentation and Guides
+### 2.13 Documentation and Guides
 
 **Description**: Comprehensive documentation beyond the code-level API.
 
