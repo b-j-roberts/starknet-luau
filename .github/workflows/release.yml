@@ -4,12 +4,18 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: roblox-ts/setup-rokit@v0.1.2
+
+      - name: Install dependencies
+        run: wally install
 
       - name: Build .rbxm
         run: rojo build -o starknet-luau.rbxm
