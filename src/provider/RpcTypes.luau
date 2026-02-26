@@ -4,6 +4,29 @@
 
 local RpcTypes = {}
 
+--- Request priority levels for the queue
+export type RequestPriority = "high" | "normal" | "low"
+
+--- Configuration for the request queue
+export type RequestQueueConfig = {
+	maxQueueDepth: number?, -- max items before backpressure (default 100)
+	maxBatchSize: number?, -- max items per JSON-RPC batch (default 20)
+	enableBatching: boolean?, -- whether to batch read-only requests (default true)
+}
+
+--- Provider metrics snapshot
+export type ProviderMetrics = {
+	totalRequests: number,
+	totalCompleted: number,
+	totalFailed: number,
+	totalBatched: number,
+	totalDropped: number,
+	currentQueueDepth: number,
+	rateLimitTokens: number,
+	rateLimitMax: number,
+	batchesSent: number,
+}
+
 --- Configuration for creating an RpcProvider
 export type RpcProviderConfig = {
 	nodeUrl: string,
@@ -11,10 +34,13 @@ export type RpcProviderConfig = {
 	maxRequestsPerMinute: number?,
 	retryAttempts: number?,
 	retryDelay: number?,
+	enableQueue: boolean?,
+	queueConfig: RequestQueueConfig?,
 	-- Internal overrides for testing (not part of public API)
 	_httpRequest: ((request: HttpRequest) -> HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,
 	_clock: (() -> number)?,
+	_defer: ((fn: () -> ()) -> ())?,
 }
 
 --- HTTP request structure (mirrors HttpService:RequestAsync input)

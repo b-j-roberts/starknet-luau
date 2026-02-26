@@ -4,6 +4,7 @@
 -- All public methods return Promises for async operation
 
 local RpcTypes = require("./RpcTypes")
+local RequestQueue = require("./RequestQueue")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -41,6 +42,7 @@ export type RpcProvider = {
 	) -> Promise<RpcTypes.TransactionReceipt>,
 	fetch: (self: RpcProvider, method: string, params: any) -> Promise<any>,
 	getNodeUrl: (self: RpcProvider) -> string,
+	getMetrics: (self: RpcProvider) -> RpcTypes.ProviderMetrics,
 }
 
 --------------------------------------------------------------------------------
@@ -115,6 +117,8 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 	local clockFn = config._clock or os.clock
 	local maxRpm = config.maxRequestsPerMinute or 450
 
+	local queueConfig = config.queueConfig or {}
+
 	local self = setmetatable({
 		_nodeUrl = config.nodeUrl,
 		_headers = config.headers or {},
@@ -128,7 +132,18 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		end,
 		_clock = clockFn,
 		_PromiseModule = nil :: any,
+		_queue = nil :: any,
+		_drainScheduled = false,
+		_defer = config._defer or function(fn: () -> ())
+			task.defer(fn)
+		end,
+		_maxBatchSize = queueConfig.maxBatchSize or 20,
+		_enableBatching = if queueConfig.enableBatching ~= nil then queueConfig.enableBatching else true,
 	}, RpcProviderClass)
+
+	if config.enableQueue then
+		self._queue = RequestQueue.new(queueConfig.maxQueueDepth)
+	end
 
 	-- Load Promise module (skip in test mode where _httpRequest is injected)
 	if not config._httpRequest then
@@ -291,8 +306,19 @@ end
 
 --- Raw RPC call for custom/unsupported methods.
 --- Returns a Promise that resolves to the raw JSON-RPC result.
+--- When queue is enabled, requests are enqueued and drained on the next defer cycle.
 function RpcProviderClass:fetch(method: string, params: any): any
 	local Promise = self:_getPromise()
+
+	-- Queue path: enqueue + schedule drain
+	if self._queue then
+		return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+			self._queue:enqueue(method, params, resolve, reject)
+			self:_scheduleDrain()
+		end)
+	end
+
+	-- Direct path (no queue)
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local ok, result = pcall(function()
 			return self:_requestWithRetry(method, params)
@@ -303,6 +329,278 @@ function RpcProviderClass:fetch(method: string, params: any): any
 			reject(result)
 		end
 	end)
+end
+
+--------------------------------------------------------------------------------
+-- Queue drain and batch dispatch
+--------------------------------------------------------------------------------
+
+--- Schedule a drain on the next defer cycle (idempotent).
+function RpcProviderClass:_scheduleDrain()
+	if self._drainScheduled then
+		return
+	end
+	self._drainScheduled = true
+	self._defer(function()
+		self._drainScheduled = false
+		self:_drainQueue()
+	end)
+end
+
+--- Drain the queue: HIGH items dispatched individually, batchable NORMAL/LOW grouped.
+function RpcProviderClass:_drainQueue()
+	local queue = self._queue
+	if not queue then
+		return
+	end
+
+	while not queue:isEmpty() do
+		local priority = queue:peekPriority()
+
+		-- HIGH priority: always dispatch individually
+		if priority == "high" then
+			local item = queue:dequeue()
+			if item then
+				self:_dispatchSingle(item)
+			end
+			continue
+		end
+
+		-- NORMAL/LOW: collect batchable items
+		if self._enableBatching then
+			local batchItems: { any } = {}
+			local nonBatchItems: { any } = {}
+
+			-- Collect items at the current priority level (and below)
+			while not queue:isEmpty() and #batchItems < self._maxBatchSize do
+				local nextPriority = queue:peekPriority()
+				-- Stop if we see a high-priority item (it should go first)
+				if nextPriority == "high" then
+					break
+				end
+				local item = queue:dequeue()
+				if item then
+					if RequestQueue.isBatchable(item.method) then
+						table.insert(batchItems, item)
+					else
+						table.insert(nonBatchItems, item)
+					end
+				end
+			end
+
+			-- Dispatch batch
+			if #batchItems > 1 then
+				self:_dispatchBatch(batchItems)
+			elseif #batchItems == 1 then
+				-- Single item: dispatch individually (no batching overhead)
+				self:_dispatchSingle(batchItems[1])
+			end
+
+			-- Dispatch non-batchable items individually
+			for _, item in nonBatchItems do
+				self:_dispatchSingle(item)
+			end
+		else
+			-- Batching disabled: dispatch everything individually
+			local item = queue:dequeue()
+			if item then
+				self:_dispatchSingle(item)
+			end
+		end
+	end
+end
+
+--- Dispatch a single queue item through the retry pipeline.
+function RpcProviderClass:_dispatchSingle(item: any)
+	local queue = self._queue
+	local ok, result = pcall(function()
+		return self:_requestWithRetry(item.method, item.params)
+	end)
+	if ok then
+		if queue then
+			queue:recordCompleted()
+		end
+		item.resolve(result)
+	else
+		if queue then
+			queue:recordFailed()
+		end
+		item.reject(result)
+	end
+end
+
+--- Dispatch a batch of items as a single JSON-RPC batch request.
+function RpcProviderClass:_dispatchBatch(items: { any })
+	local queue = self._queue
+
+	-- Acquire a single rate limit token for the batch
+	local maxWait = 10
+	local startTime = self._clock()
+	while not tryAcquire(self._rateLimiter, self._clock) do
+		if self._clock() - startTime > maxWait then
+			local err = StarknetError.rpc(
+				"Rate limit exceeded: could not acquire token within timeout",
+				ErrorCodes.RATE_LIMIT.code
+			)
+			for _, item in items do
+				if queue then
+					queue:recordFailed()
+				end
+				item.reject(err)
+			end
+			return
+		end
+		self._sleep(0.05)
+	end
+
+	-- Build JSON-RPC batch array
+	local batchRequest: { any } = {}
+	local idToItem: { [number]: any } = {}
+	for _, item in items do
+		self._requestId += 1
+		local rpcReq = {
+			jsonrpc = "2.0",
+			method = item.method,
+			params = item.params,
+			id = self._requestId,
+		}
+		table.insert(batchRequest, rpcReq)
+		idToItem[self._requestId] = item
+	end
+
+	local body = self:_jsonEncode(batchRequest)
+	local headers: { [string]: string } = {
+		["Content-Type"] = "application/json",
+	}
+	for k, v in self._headers do
+		headers[k] = v
+	end
+
+	local httpRequest: RpcTypes.HttpRequest = {
+		Url = self._nodeUrl,
+		Method = "POST",
+		Headers = headers,
+		Body = body,
+	}
+
+	local ok, response = pcall(function()
+		return self:_doHttpRequest(httpRequest)
+	end)
+
+	if not ok then
+		local err = StarknetError.rpc(`Batch HTTP request failed: {tostring(response)}`, ErrorCodes.BATCH_ERROR.code)
+		for _, item in items do
+			if queue then
+				queue:recordFailed()
+			end
+			item.reject(err)
+		end
+		return
+	end
+
+	if not response.Success and response.StatusCode ~= 200 then
+		local err = StarknetError.rpc(
+			`Batch HTTP {response.StatusCode}: {response.Body}`,
+			ErrorCodes.BATCH_ERROR.code,
+			response.StatusCode
+		)
+		for _, item in items do
+			if queue then
+				queue:recordFailed()
+			end
+			item.reject(err)
+		end
+		return
+	end
+
+	local decodeOk, decoded = pcall(function()
+		return self:_jsonDecode(response.Body)
+	end)
+
+	if not decodeOk then
+		local err = StarknetError.rpc(`Batch response decode failed: {tostring(decoded)}`, ErrorCodes.BATCH_ERROR.code)
+		for _, item in items do
+			if queue then
+				queue:recordFailed()
+			end
+			item.reject(err)
+		end
+		return
+	end
+
+	-- Distribute responses by id
+	if queue then
+		queue:recordBatchSent()
+		queue:recordBatched(#items)
+	end
+
+	local responseMap: { [number]: any } = {}
+	if type(decoded) == "table" then
+		for _, resp in decoded do
+			if type(resp) == "table" and resp.id then
+				responseMap[resp.id] = resp
+			end
+		end
+	end
+
+	for id, item in idToItem do
+		local resp = responseMap[id]
+		if not resp then
+			if queue then
+				queue:recordFailed()
+			end
+			item.reject(
+				StarknetError.rpc("No response for batch request id " .. tostring(id), ErrorCodes.BATCH_ERROR.code)
+			)
+		elseif resp.error then
+			if queue then
+				queue:recordFailed()
+			end
+			item.reject(
+				StarknetError.rpc(
+					resp.error.message or "Unknown RPC error",
+					ErrorCodes.RPC_ERROR.code,
+					resp.error.code,
+					resp.error.data
+				)
+			)
+		else
+			if queue then
+				queue:recordCompleted()
+			end
+			item.resolve(resp.result)
+		end
+	end
+end
+
+--- Get a snapshot of provider metrics (queue + rate limiter).
+function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
+	if self._queue then
+		local qm = self._queue:getMetrics()
+		return {
+			totalRequests = qm.totalRequests,
+			totalCompleted = qm.totalCompleted,
+			totalFailed = qm.totalFailed,
+			totalBatched = qm.totalBatched,
+			totalDropped = qm.totalDropped,
+			currentQueueDepth = qm.currentQueueDepth,
+			rateLimitTokens = math.floor(self._rateLimiter.tokens),
+			rateLimitMax = self._rateLimiter.maxTokens,
+			batchesSent = qm.batchesSent,
+		}
+	end
+
+	return {
+		totalRequests = 0,
+		totalCompleted = 0,
+		totalFailed = 0,
+		totalBatched = 0,
+		totalDropped = 0,
+		currentQueueDepth = 0,
+		rateLimitTokens = math.floor(self._rateLimiter.tokens),
+		rateLimitMax = self._rateLimiter.maxTokens,
+		batchesSent = 0,
+	}
 end
 
 --------------------------------------------------------------------------------

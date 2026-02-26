@@ -968,3 +968,214 @@ describe("RpcProvider - block ID formatting", function()
 		expect(requestLog[#requestLog].params[1].block_number):toBe(42)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Queue integration tests
+--------------------------------------------------------------------------------
+
+describe("RpcProvider - queue enableQueue flag", function()
+	it("creates a queue when enableQueue is true", function()
+		resetHandlers()
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		expect(provider):toBeTruthy()
+		-- Queue exists internally
+		expect((provider :: any)._queue ~= nil):toBe(true)
+	end)
+
+	it("does not create a queue when enableQueue is false", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		expect((provider :: any)._queue == nil):toBe(true)
+	end)
+
+	it("routes requests through queue when enabled", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		local result = provider:getChainId():expect()
+		expect(result):toBe("0x534e5f5345504f4c4941")
+	end)
+
+	it("all existing methods work with queue enabled", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		-- Verify multiple methods work
+		expect(provider:getChainId():expect()):toBe("0x534e5f5345504f4c4941")
+		expect(provider:getBlockNumber():expect()):toBe(123456)
+		expect(provider:getSpecVersion():expect()):toBe("0.7.1")
+		expect(provider:getNonce("0x1"):expect()):toBe("0x5")
+	end)
+
+	it("backward compat: without enableQueue all tests pass unchanged", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		expect(provider:getChainId():expect()):toBe("0x534e5f5345504f4c4941")
+		expect(provider:getBlockNumber():expect()):toBe(123456)
+	end)
+end)
+
+describe("RpcProvider - queue backpressure", function()
+	it("rejects with QUEUE_FULL when queue is full", function()
+		resetHandlers()
+		local deferFns: { () -> () } = {}
+		local provider = createTestProvider({
+			enableQueue = true,
+			queueConfig = { maxQueueDepth = 2 },
+			_defer = function(fn: () -> ())
+				table.insert(deferFns, fn)
+			end,
+		})
+
+		-- Enqueue 2 items (deferred, not yet drained)
+		provider:getChainId()
+		provider:getBlockNumber()
+
+		-- 3rd should be rejected (queue depth = 2)
+		local promise3 = provider:getSpecVersion()
+		-- MockPromise converts table error to string via .message, so check the string
+		expect(function()
+			promise3:expect()
+		end):toThrowMatching(function(err: any)
+			return type(err) == "string" and string.find(err, "queue full") ~= nil
+		end)
+	end)
+
+	it("tracks dropped count on backpressure", function()
+		resetHandlers()
+		local deferFns: { () -> () } = {}
+		local provider = createTestProvider({
+			enableQueue = true,
+			queueConfig = { maxQueueDepth = 1 },
+			_defer = function(fn: () -> ())
+				table.insert(deferFns, fn)
+			end,
+		})
+		provider:getChainId()
+		provider:getChainId() -- dropped
+		local metrics = provider:getMetrics()
+		expect(metrics.totalDropped):toBe(1)
+	end)
+end)
+
+describe("RpcProvider - getMetrics", function()
+	it("returns basic metrics when queue is disabled", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local metrics = provider:getMetrics()
+		expect(metrics.totalRequests):toBe(0)
+		expect(metrics.totalCompleted):toBe(0)
+		expect(metrics.totalFailed):toBe(0)
+		expect(metrics.currentQueueDepth):toBe(0)
+		expect(type(metrics.rateLimitTokens)):toBe("number")
+		expect(type(metrics.rateLimitMax)):toBe("number")
+	end)
+
+	it("returns queue metrics when queue is enabled", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		provider:getChainId():expect()
+		provider:getBlockNumber():expect()
+		local metrics = provider:getMetrics()
+		expect(metrics.totalRequests):toBe(2)
+		expect(metrics.totalCompleted):toBe(2)
+		expect(metrics.currentQueueDepth):toBe(0) -- drained
+	end)
+
+	it("tracks failed requests in metrics", function()
+		resetHandlers()
+		mockHandlers["starknet_chainId"] = function(_params)
+			error("Test error")
+		end
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		local p = provider:getChainId()
+		p:catch(function() end) -- swallow error
+		local metrics = provider:getMetrics()
+		expect(metrics.totalRequests):toBe(1)
+		expect(metrics.totalFailed):toBe(1)
+	end)
+
+	it("includes rate limiter info in metrics", function()
+		resetHandlers()
+		local provider = createTestProvider({
+			maxRequestsPerMinute = 100,
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		local metrics = provider:getMetrics()
+		expect(metrics.rateLimitMax):toBe(100)
+	end)
+end)
+
+describe("RpcProvider - queue priority ordering", function()
+	it("dispatches HIGH before NORMAL before LOW", function()
+		resetHandlers()
+		clearRequestLog()
+		local deferFns: { () -> () } = {}
+		local provider = createTestProvider({
+			enableQueue = true,
+			queueConfig = { enableBatching = false },
+			_defer = function(fn: () -> ())
+				table.insert(deferFns, fn)
+			end,
+		})
+
+		-- Enqueue in reverse priority order
+		provider:getEvents({ chunk_size = 10 }) -- LOW
+		provider:getChainId() -- NORMAL
+		provider:addInvokeTransaction({
+			type = "INVOKE",
+			version = "0x3",
+			sender_address = "0xsender",
+			calldata = { "0x1" },
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "L1",
+			fee_data_availability_mode = "L1",
+			account_deployment_data = {},
+		}) -- HIGH
+
+		-- Now drain all deferred callbacks
+		for _, fn in deferFns do
+			fn()
+		end
+
+		-- First request should be addInvokeTransaction (HIGH)
+		expect(#requestLog >= 3):toBe(true)
+		expect(requestLog[1].method):toBe("starknet_addInvokeTransaction")
+	end)
+end)
