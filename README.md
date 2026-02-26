@@ -67,6 +67,18 @@ contract:call("balanceOf", { accountAddress }):andThen(function(balance)
 end)
 ```
 
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](docs/guides/getting-started.md) | Installation, basic setup, first transaction |
+| [Contract Interaction](docs/guides/contracts.md) | Reading state, writing transactions, multicall, presets |
+| [Account Management](docs/guides/accounts.md) | Key generation, address derivation, account types, nonce handling |
+| [Common Patterns](docs/guides/patterns.md) | NFT gating, token rewards, onchain leaderboards |
+| [Roblox Considerations](docs/guides/roblox.md) | Rate limits, server-side patterns, security best practices |
+| [Crypto Deep Dive](docs/guides/crypto.md) | Understanding BigInt, StarkField, curves, hashes, ECDSA |
+| [API Reference](docs/guides/api-reference.md) | Complete API documentation for all modules |
+
 ## API Overview
 
 | Module | Description |
