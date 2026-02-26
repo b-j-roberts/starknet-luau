@@ -181,6 +181,25 @@ export type WaitOptions = {
 	maxAttempts: number?,
 }
 
+--- Parsed event with decoded fields
+export type ParsedEvent = {
+	name: string,
+	fields: { [string]: any },
+	raw: EmittedEvent | Event,
+}
+
+--- Configuration for EventPoller
+export type EventPollerConfig = {
+	provider: any,
+	filter: EventFilter,
+	interval: number?, -- polling interval in seconds (default 10)
+	onEvents: ((events: { EmittedEvent }) -> ())?,
+	onError: ((err: any) -> ())?,
+	-- Internal overrides for testing
+	_sleep: ((seconds: number) -> ())?,
+	_clock: (() -> number)?,
+}
+
 --- Error type constants
 RpcTypes.ErrorTypes = {
 	RPC_ERROR = "RPC_ERROR",

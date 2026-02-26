@@ -102,6 +102,69 @@ local function parseAbi(abi: Abi): ({ [string]: ParsedFunction }, AbiCodec.TypeM
 	return functions, typeMap
 end
 
+--- Parse event definitions from ABI.
+--- Handles both modern Cairo format (kind="struct" with key/data members)
+--- and legacy format (inputs array, all treated as data).
+local function parseAbiEvents(abi: Abi): { [string]: AbiCodec.EventDef }
+	local events: { [string]: AbiCodec.EventDef } = {}
+
+	local function addEvent(entry: any)
+		local name: string = entry.name or ""
+		-- Extract the short name from fully-qualified path (e.g. "pkg::module::Transfer" -> "Transfer")
+		local shortName = string.match(name, "([^:]+)$") or name
+		local selector = Keccak.getSelectorFromName(shortName)
+		local selectorHex = StarkField.toHex(selector)
+
+		local keyMembers: { { name: string, type: string } } = {}
+		local dataMembers: { { name: string, type: string } } = {}
+
+		-- Modern Cairo event: kind="struct" with members having kind="key" or kind="data"
+		if entry.kind == "struct" and entry.members then
+			for _, member in entry.members :: { any } do
+				if member.kind == "key" then
+					table.insert(keyMembers, { name = member.name, type = member.type })
+				else
+					-- kind="data" or unspecified → data
+					table.insert(dataMembers, { name = member.name, type = member.type })
+				end
+			end
+		elseif entry.inputs then
+			-- Legacy format: all inputs treated as data members
+			for _, input in entry.inputs :: { any } do
+				table.insert(dataMembers, { name = input.name, type = input.type })
+			end
+		end
+
+		events[selectorHex] = {
+			name = shortName,
+			selector = selectorHex,
+			keyMembers = keyMembers,
+			dataMembers = dataMembers,
+		}
+	end
+
+	for _, entry_ in abi do
+		local entry = entry_ :: any
+		if entry.type == "event" then
+			-- Skip enum event wrappers (kind="enum") — they just point to struct events
+			if entry.kind ~= "enum" then
+				addEvent(entry)
+			end
+		elseif entry.type == "interface" then
+			local items = entry.items
+			if items then
+				for _, item in items :: { any } do
+					if item.type == "event" and item.kind ~= "enum" then
+						addEvent(item)
+					end
+				end
+			end
+		end
+	end
+
+	return events
+end
+
 -- NOTE: Type encoding/decoding is now handled by AbiCodec module
 
 --------------------------------------------------------------------------------
@@ -178,6 +241,7 @@ function Contract.new(config: ContractConfig): any
 	end
 
 	local functions, typeMap = parseAbi(config.abi)
+	local eventDefs = parseAbiEvents(config.abi)
 
 	local self = setmetatable({
 		abi = config.abi,
@@ -185,6 +249,7 @@ function Contract.new(config: ContractConfig): any
 		_provider = config.provider,
 		_account = config.account,
 		_functions = functions,
+		_events = eventDefs,
 		_typeMap = typeMap,
 	}, Contract)
 
@@ -301,6 +366,100 @@ function Contract:hasFunction(name: string): boolean
 	local self_: any = self
 	local functions: { [string]: ParsedFunction } = self_._functions
 	return functions[name] ~= nil
+end
+
+--------------------------------------------------------------------------------
+-- Event methods
+--------------------------------------------------------------------------------
+
+--- Parse and decode events from a transaction receipt that match this contract's ABI.
+--- Filters events by this contract's address, then decodes using ABI event definitions.
+--- @param receipt -- TransactionReceipt (or table with events: { Event })
+--- @return Array of { name: string, fields: { [string]: any }, raw: Event }
+function Contract:parseEvents(receipt: any): { any }
+	local self_: any = self
+	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
+	local typeMap: AbiCodec.TypeMap = self_._typeMap
+	local contractAddress: string = string.lower(self_.address)
+
+	local rawEvents = receipt.events
+	if not rawEvents then
+		return {}
+	end
+
+	local parsed: { any } = {}
+	for _, event in rawEvents :: { any } do
+		-- Filter by contract address
+		local fromAddr: string = string.lower(event.from_address or "")
+		if fromAddr == contractAddress then
+			-- Match event by selector (keys[1])
+			local keys: { string } = event.keys or {}
+			if #keys >= 1 then
+				local selectorHex = keys[1]
+				local eventDef = eventDefs[selectorHex]
+				if eventDef then
+					local ok, fields = pcall(AbiCodec.decodeEvent, keys, event.data or {}, eventDef, typeMap)
+					if ok then
+						table.insert(parsed, {
+							name = eventDef.name,
+							fields = fields,
+							raw = event,
+						})
+					end
+				end
+			end
+		end
+	end
+
+	return parsed
+end
+
+--- Query events from the provider filtered to this contract's address.
+--- @param filter -- Optional partial EventFilter (from_block, to_block, keys, chunk_size)
+--- @return Promise resolving to EventsChunk
+function Contract:queryEvents(filter: any?): any
+	local self_: any = self
+	local provider: any = self_._provider
+	local filterOpts = filter or {}
+
+	local eventFilter = {
+		from_block = filterOpts.from_block,
+		to_block = filterOpts.to_block,
+		address = self_.address,
+		keys = filterOpts.keys,
+		chunk_size = filterOpts.chunk_size or 100,
+		continuation_token = filterOpts.continuation_token,
+	}
+
+	return provider:getEvents(eventFilter)
+end
+
+--- Get the list of event names in the ABI.
+function Contract:getEvents(): { string }
+	local self_: any = self
+	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
+	local names: { string } = {}
+	local seen: { [string]: boolean } = {}
+	for _, def in eventDefs do
+		if not seen[def.name] then
+			table.insert(names, def.name)
+			seen[def.name] = true
+		end
+	end
+	table.sort(names)
+	return names
+end
+
+--- Check if an event exists in the ABI.
+function Contract:hasEvent(name: string): boolean
+	local self_: any = self
+	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
+	for _, def in eventDefs do
+		if def.name == name then
+			return true
+		end
+	end
+	return false
 end
 
 return Contract

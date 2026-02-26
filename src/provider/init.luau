@@ -3,8 +3,10 @@
 
 local RpcProvider = require(script.RpcProvider)
 local RpcTypes = require(script.RpcTypes)
+local EventPoller = require(script.EventPoller)
 
 return {
 	RpcProvider = RpcProvider,
 	RpcTypes = RpcTypes,
+	EventPoller = EventPoller,
 }

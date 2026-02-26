@@ -31,6 +31,7 @@ export type RpcProvider = {
 	getClassHashAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<string>,
 	getStorageAt: (self: RpcProvider, contractAddress: string, key: string, blockId: string?) -> Promise<string>,
 	getEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<RpcTypes.EventsChunk>,
+	getAllEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<{ RpcTypes.EmittedEvent }>,
 	waitForTransaction: (
 		self: RpcProvider,
 		txHash: string,
@@ -452,6 +453,60 @@ function RpcProviderClass:getEvents(filter: RpcTypes.EventFilter): any
 	return self:fetch("starknet_getEvents", {
 		{ filter = filterParam },
 	})
+end
+
+--- Get all events matching a filter, automatically paginating through continuation tokens.
+--- Returns a Promise resolving to a flat array of all matching EmittedEvents.
+function RpcProviderClass:getAllEvents(filter: RpcTypes.EventFilter): any
+	local Promise = self:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		local allEvents: { RpcTypes.EmittedEvent } = {}
+		local continuationToken: string? = filter.continuation_token
+
+		local maxPages = 1000 -- safety limit to avoid infinite loops
+		for _ = 1, maxPages do
+			local pageFilter: RpcTypes.EventFilter = {
+				from_block = filter.from_block,
+				to_block = filter.to_block,
+				address = filter.address,
+				keys = filter.keys,
+				chunk_size = filter.chunk_size,
+				continuation_token = continuationToken,
+			}
+
+			local ok, chunk = pcall(function()
+				return self:_requestWithRetry("starknet_getEvents", {
+					{
+						filter = {
+							from_block = pageFilter.from_block,
+							to_block = pageFilter.to_block,
+							address = pageFilter.address,
+							keys = pageFilter.keys,
+							chunk_size = pageFilter.chunk_size or 100,
+							continuation_token = pageFilter.continuation_token,
+						},
+					},
+				})
+			end)
+
+			if not ok then
+				reject(chunk)
+				return
+			end
+
+			local events = chunk.events or {}
+			for _, event in events do
+				table.insert(allEvents, event)
+			end
+
+			continuationToken = chunk.continuation_token
+			if not continuationToken or continuationToken == "" then
+				break
+			end
+		end
+
+		resolve(allEvents)
+	end)
 end
 
 --- Poll until a transaction is confirmed (ACCEPTED_ON_L2 or ACCEPTED_ON_L1).

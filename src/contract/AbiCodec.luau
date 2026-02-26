@@ -654,4 +654,50 @@ function AbiCodec.decodeOutputs(
 	return parsed
 end
 
+--------------------------------------------------------------------------------
+-- Event decoding
+--------------------------------------------------------------------------------
+
+--- Parsed event definition from ABI
+export type EventDef = {
+	name: string,
+	selector: string, -- hex string of sn_keccak(event_name)
+	keyMembers: { { name: string, type: string } }, -- members with kind="key"
+	dataMembers: { { name: string, type: string } }, -- members with kind="data"
+}
+
+--- Decode event keys and data using an event definition.
+--- keys[1] is the selector (skipped), keys[2..] are key members, data[1..] are data members.
+--- Returns a table of decoded fields keyed by member name.
+function AbiCodec.decodeEvent(
+	keys: { string },
+	data: { string },
+	eventDef: EventDef,
+	typeMap: TypeMap
+): { [string]: any }
+	local fields: { [string]: any } = {}
+
+	-- Decode key members from keys[2..] (keys[1] is the selector)
+	local keyOffset = 2
+	for _, member in eventDef.keyMembers do
+		if keyOffset <= #keys then
+			local decoded, consumed = AbiCodec.decode(keys, keyOffset, member.type, typeMap)
+			fields[member.name] = decoded
+			keyOffset += consumed
+		end
+	end
+
+	-- Decode data members from data[1..]
+	local dataOffset = 1
+	for _, member in eventDef.dataMembers do
+		if dataOffset <= #data then
+			local decoded, consumed = AbiCodec.decode(data, dataOffset, member.type, typeMap)
+			fields[member.name] = decoded
+			dataOffset += consumed
+		end
+	end
+
+	return fields
+end
+
 return AbiCodec
