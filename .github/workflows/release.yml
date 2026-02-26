@@ -28,10 +28,9 @@ jobs:
 
       - name: Publish to Wally
         env:
-          WALLY_AUTH: ${{ secrets.WALLY_AUTH_TOKEN }}
+          WALLY_AUTH_TOKEN: ${{ secrets.WALLY_AUTH_TOKEN }}
         run: |
-          mkdir -p ~/.wally
-          echo "$WALLY_AUTH" > ~/.wally/auth.toml
+          wally login --project-path . --token "$WALLY_AUTH_TOKEN"
           wally publish
 
       - name: Install Pesde
