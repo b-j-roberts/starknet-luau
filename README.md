@@ -1,5 +1,9 @@
 # starknet-luau
 
+[![CI](https://github.com/b-j-roberts/starknet-luau/actions/workflows/ci.yml/badge.svg)](https://github.com/b-j-roberts/starknet-luau/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/b-j-roberts/starknet-luau/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Pure Luau SDK for interacting with the Starknet blockchain from Roblox games. Provides cryptographic primitives, account management, transaction building/signing, contract interaction, and RPC connectivity -- all implemented in Luau with no external native dependencies.
 
 ## Installation
