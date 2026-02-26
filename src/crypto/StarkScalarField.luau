@@ -6,6 +6,8 @@
 -- Same API pattern as StarkField but with modulus N instead of P
 
 local BigInt = require("./BigInt")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 export type Scalar = buffer
 
@@ -105,7 +107,7 @@ end
 
 function StarkScalarField.inv(a: Scalar): Scalar
 	if BigInt.isZero(a) then
-		error("StarkScalarField: cannot invert zero")
+		error(StarknetError.validation("StarkScalarField: cannot invert zero", ErrorCodes.MATH_ERROR.code))
 	end
 	-- Fermat's little theorem: a^(N-2) mod N
 	return powmodBarrett(a, N_MINUS_2)

@@ -4,6 +4,8 @@
 -- Provides both snake_case (Cairo standard) and camelCase method names.
 
 local Contract = require("./Contract")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Standard OpenZeppelin Cairo ERC-721 ABI
@@ -181,10 +183,10 @@ local ERC721 = {}
 --- @return Contract instance with ERC-721 ABI
 function ERC721.new(address: string, provider: any, account: any?): any
 	if not address then
-		error("ERC721: address is required")
+		error(StarknetError.validation("ERC721: address is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not provider then
-		error("ERC721: provider is required")
+		error(StarknetError.validation("ERC721: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	return Contract.new({

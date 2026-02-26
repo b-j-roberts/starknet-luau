@@ -56,12 +56,13 @@ export type JsonRpcError = {
 	data: any?,
 }
 
---- SDK error structure
+--- SDK error structure (structured errors with :is() method)
 export type StarknetError = {
-	type: string,
+	_type: string,
 	message: string,
 	code: number?,
 	data: any?,
+	is: (self: StarknetError, errorType: string) -> boolean,
 }
 
 --- Request for starknet_call

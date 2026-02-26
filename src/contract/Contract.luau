@@ -7,6 +7,8 @@ local Keccak = require("../crypto/Keccak")
 local StarkField = require("../crypto/StarkField")
 local CallData = require("../tx/CallData")
 local AbiCodec = require("./AbiCodec")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Types
@@ -231,13 +233,13 @@ end
 --- @param config -- { abi, address, provider, account? }
 function Contract.new(config: ContractConfig): any
 	if not config.abi then
-		error("Contract: abi is required")
+		error(StarknetError.validation("Contract: abi is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.address then
-		error("Contract: address is required")
+		error(StarknetError.validation("Contract: address is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.provider then
-		error("Contract: provider is required")
+		error(StarknetError.validation("Contract: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local functions, typeMap = parseAbi(config.abi)
@@ -266,7 +268,7 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 	local functions: { [string]: ParsedFunction } = self_._functions
 	local fn = functions[method]
 	if not fn then
-		error(`Contract: function "{method}" not found in ABI`)
+		error(StarknetError.abi(`Contract: function "{method}" not found in ABI`, ErrorCodes.FUNCTION_NOT_FOUND.code))
 	end
 
 	local callArgs = args or {}
@@ -274,7 +276,12 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 	local typeMap: AbiCodec.TypeMap = self_._typeMap
 
 	if #callArgs ~= #inputs then
-		error(`Contract: {method} expects {#inputs} arguments, got {#callArgs}`)
+		error(
+			StarknetError.abi(
+				`Contract: {method} expects {#inputs} arguments, got {#callArgs}`,
+				ErrorCodes.ARGUMENT_COUNT.code
+			)
+		)
 	end
 
 	-- Encode calldata via AbiCodec
@@ -304,7 +311,7 @@ function Contract:populate(method: string, args: { any }?): Call
 	local functions: { [string]: ParsedFunction } = self_._functions
 	local fn = functions[method]
 	if not fn then
-		error(`Contract: function "{method}" not found in ABI`)
+		error(StarknetError.abi(`Contract: function "{method}" not found in ABI`, ErrorCodes.FUNCTION_NOT_FOUND.code))
 	end
 
 	local callArgs = args or {}
@@ -312,7 +319,12 @@ function Contract:populate(method: string, args: { any }?): Call
 	local typeMap: AbiCodec.TypeMap = self_._typeMap
 
 	if #callArgs ~= #inputs then
-		error(`Contract: {method} expects {#inputs} arguments, got {#callArgs}`)
+		error(
+			StarknetError.abi(
+				`Contract: {method} expects {#inputs} arguments, got {#callArgs}`,
+				ErrorCodes.ARGUMENT_COUNT.code
+			)
+		)
 	end
 
 	-- Encode calldata via AbiCodec
@@ -335,7 +347,12 @@ function Contract:invoke(method: string, args: { any }?, options: InvokeOptions?
 	local self_: any = self
 	local account: any = self_._account
 	if not account then
-		error("Contract: account is required for invoke(). Pass account in Contract.new config.")
+		error(
+			StarknetError.validation(
+				"Contract: account is required for invoke(). Pass account in Contract.new config.",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
 	end
 
 	local call = Contract.populate(self_, method, args)

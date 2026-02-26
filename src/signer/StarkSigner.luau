@@ -5,6 +5,8 @@
 local BigInt = require("../crypto/BigInt")
 local StarkCurve = require("../crypto/StarkCurve")
 local ECDSA = require("../crypto/ECDSA")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 export type StarkSigner = {
 	getPubKey: (self: StarkSigner) -> StarkCurve.AffinePoint,
@@ -23,10 +25,15 @@ function StarkSignerClass.new(privateKeyHex: string): StarkSigner
 
 	-- Validate private key range: must be in [1, N-1]
 	if BigInt.isZero(privKey) then
-		error("StarkSigner: private key must not be zero")
+		error(StarknetError.signing("StarkSigner: private key must not be zero", ErrorCodes.INVALID_PRIVATE_KEY.code))
 	end
 	if BigInt.cmp(privKey, StarkCurve.N) >= 0 then
-		error("StarkSigner: private key must be less than curve order N")
+		error(
+			StarknetError.signing(
+				"StarkSigner: private key must be less than curve order N",
+				ErrorCodes.KEY_OUT_OF_RANGE.code
+			)
+		)
 	end
 
 	local self = setmetatable({

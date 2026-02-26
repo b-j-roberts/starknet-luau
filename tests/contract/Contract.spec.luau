@@ -325,7 +325,7 @@ describe("Contract.new - constructor validation", function()
 				address = CONTRACT_ADDR,
 				provider = provider,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when address is missing", function()
@@ -338,7 +338,7 @@ describe("Contract.new - constructor validation", function()
 				address = nil :: any,
 				provider = provider,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when provider is missing", function()
@@ -348,7 +348,7 @@ describe("Contract.new - constructor validation", function()
 				address = CONTRACT_ADDR,
 				provider = nil :: any,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 

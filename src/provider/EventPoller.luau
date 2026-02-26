@@ -4,6 +4,8 @@
 -- Configurable interval with rate-limit awareness
 
 local RpcTypes = require("./RpcTypes")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Types
@@ -26,13 +28,13 @@ EventPollerClass.__index = EventPollerClass
 --- @param config -- EventPollerConfig with provider, filter, interval, callbacks
 function EventPollerClass.new(config: RpcTypes.EventPollerConfig): EventPoller
 	if not config.provider then
-		error("EventPoller: provider is required")
+		error(StarknetError.validation("EventPoller: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.filter then
-		error("EventPoller: filter is required")
+		error(StarknetError.validation("EventPoller: filter is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.onEvents then
-		error("EventPoller: onEvents callback is required")
+		error(StarknetError.validation("EventPoller: onEvents callback is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local self = setmetatable({

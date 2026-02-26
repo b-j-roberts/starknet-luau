@@ -6,6 +6,8 @@
 
 local CallData = require("../tx/CallData")
 local BigInt = require("../crypto/BigInt")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 local AbiCodec = {}
 
@@ -421,20 +423,12 @@ end
 ---   Option: { Some = val } | { None = true } | nil (→ None)
 ---   Result: { Ok = val } | { Err = val }
 ---   Custom: { variant = "Name", value = data }
-function AbiCodec.encodeEnum(
-	value: any,
-	variants: { { name: string, type: string } },
-	typeMap: TypeMap
-): { string }
+function AbiCodec.encodeEnum(value: any, variants: { { name: string, type: string } }, typeMap: TypeMap): { string }
 	-- Check if this is an Option-like enum (Some/None)
-	local isOption = #variants == 2
-		and variants[1].name == "Some"
-		and variants[2].name == "None"
+	local isOption = #variants == 2 and variants[1].name == "Some" and variants[2].name == "None"
 
 	-- Check if this is a Result-like enum (Ok/Err)
-	local isResult = #variants == 2
-		and variants[1].name == "Ok"
-		and variants[2].name == "Err"
+	local isResult = #variants == 2 and variants[1].name == "Ok" and variants[2].name == "Err"
 
 	if isOption then
 		-- Accept { Some = val } or { None = true } or nil
@@ -493,7 +487,7 @@ function AbiCodec.encodeEnum(
 			end
 			return result
 		end
-		error("AbiCodec: Result value must have Ok or Err key")
+		error(StarknetError.abi("AbiCodec: Result value must have Ok or Err key", ErrorCodes.ENCODE_ERROR.code))
 	end
 
 	-- Custom enum: { variant = "Name", value = data }
@@ -510,10 +504,15 @@ function AbiCodec.encodeEnum(
 				return result
 			end
 		end
-		error(`AbiCodec: unknown enum variant "{tbl.variant}"`)
+		error(StarknetError.abi(`AbiCodec: unknown enum variant "{tbl.variant}"`, ErrorCodes.UNKNOWN_ENUM_VARIANT.code))
 	end
 
-	error("AbiCodec: enum value must be a table with variant key or Option/Result format")
+	error(
+		StarknetError.abi(
+			"AbiCodec: enum value must be a table with variant key or Option/Result format",
+			ErrorCodes.ENCODE_ERROR.code
+		)
+	)
 end
 
 --------------------------------------------------------------------------------
@@ -596,7 +595,7 @@ function AbiCodec.decodeEnum(
 
 	local variant = variants[idx + 1] -- 1-indexed
 	if not variant then
-		error(`AbiCodec: invalid enum variant index {idx}`)
+		error(StarknetError.abi(`AbiCodec: invalid enum variant index {idx}`, ErrorCodes.DECODE_ERROR.code))
 	end
 
 	-- Decode variant data
@@ -611,11 +610,7 @@ end
 --------------------------------------------------------------------------------
 
 --- Encode all function inputs into a flat calldata array.
-function AbiCodec.encodeInputs(
-	args: { any },
-	inputs: { { name: string, type: string } },
-	typeMap: TypeMap
-): { string }
+function AbiCodec.encodeInputs(args: { any }, inputs: { { name: string, type: string } }, typeMap: TypeMap): { string }
 	local calldata: { string } = {}
 	for i, input in inputs do
 		local encoded = AbiCodec.encode(args[i], input.type, typeMap)
@@ -628,11 +623,7 @@ end
 
 --- Decode function outputs from a result felt array.
 --- Returns a single value for single output, or a table keyed by output name for multiple.
-function AbiCodec.decodeOutputs(
-	results: { string },
-	outputs: { { name: string, type: string } },
-	typeMap: TypeMap
-): any
+function AbiCodec.decodeOutputs(results: { string }, outputs: { { name: string, type: string } }, typeMap: TypeMap): any
 	if #outputs == 0 then
 		return results
 	end

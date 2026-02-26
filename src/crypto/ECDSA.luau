@@ -10,6 +10,8 @@ local BigInt = require("./BigInt")
 local StarkScalarField = require("./StarkScalarField")
 local StarkCurve = require("./StarkCurve")
 local SHA256 = require("./SHA256")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 local ECDSA = {}
 
@@ -195,7 +197,12 @@ function ECDSA.generateK(messageHash: buffer, privateKey: buffer): buffer
 		V = SHA256.hmac(K, V)
 	end
 
-	error("RFC 6979: failed to generate valid k after 1000 iterations")
+	error(
+		StarknetError.signing(
+			"RFC 6979: failed to generate valid k after 1000 iterations",
+			ErrorCodes.SIGNING_ERROR.code
+		)
+	)
 end
 
 --------------------------------------------------------------------------------
@@ -209,10 +216,15 @@ end
 function ECDSA.sign(messageHash: buffer, privateKey: buffer): Signature
 	-- Validate private key: must be in [1, N-1]
 	if BigInt.isZero(privateKey) then
-		error("ECDSA.sign: private key must not be zero")
+		error(StarknetError.signing("ECDSA.sign: private key must not be zero", ErrorCodes.INVALID_PRIVATE_KEY.code))
 	end
 	if BigInt.cmp(privateKey, N) >= 0 then
-		error("ECDSA.sign: private key must be less than curve order N")
+		error(
+			StarknetError.signing(
+				"ECDSA.sign: private key must be less than curve order N",
+				ErrorCodes.KEY_OUT_OF_RANGE.code
+			)
+		)
 	end
 
 	-- Compute message scalar: m = bits2int_modN(h1Bytes)
@@ -225,13 +237,13 @@ function ECDSA.sign(messageHash: buffer, privateKey: buffer): Signature
 	-- Compute R = k * G
 	local R = StarkCurve.scalarMul(StarkCurve.G, k)
 	if R == nil then
-		error("ECDSA.sign: k * G produced identity point")
+		error(StarknetError.signing("ECDSA.sign: k * G produced identity point", ErrorCodes.SIGNING_ERROR.code))
 	end
 
 	-- r = R.x mod N
 	local r = BigInt.mod(R.x, N)
 	if BigInt.isZero(r) then
-		error("ECDSA.sign: r is zero")
+		error(StarknetError.signing("ECDSA.sign: r is zero", ErrorCodes.SIGNING_ERROR.code))
 	end
 
 	-- s = k^(-1) * (m + r * privateKey) mod N
@@ -241,7 +253,7 @@ function ECDSA.sign(messageHash: buffer, privateKey: buffer): Signature
 	local s = StarkScalarField.mul(kInv, sum)
 
 	if BigInt.isZero(s) then
-		error("ECDSA.sign: s is zero")
+		error(StarknetError.signing("ECDSA.sign: s is zero", ErrorCodes.SIGNING_ERROR.code))
 	end
 
 	return { r = r, s = s }

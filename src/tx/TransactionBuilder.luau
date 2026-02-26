@@ -6,6 +6,8 @@
 local BigInt = require("../crypto/BigInt")
 local CallData = require("./CallData")
 local TransactionHash = require("./TransactionHash")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Types
@@ -159,7 +161,7 @@ TransactionBuilder.__index = TransactionBuilder
 --- @param provider -- RpcProvider instance for network communication
 function TransactionBuilder.new(provider: any): any
 	if not provider then
-		error("TransactionBuilder: provider is required")
+		error(StarknetError.validation("TransactionBuilder: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local self = setmetatable({

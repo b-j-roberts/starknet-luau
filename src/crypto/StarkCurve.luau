@@ -7,6 +7,8 @@
 
 local BigInt = require("./BigInt")
 local StarkField = require("./StarkField")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 type Felt = StarkField.Felt
 
@@ -211,14 +213,24 @@ end
 
 function StarkCurve.getPublicKey(privateKey: buffer): AffinePoint
 	if BigInt.isZero(privateKey) then
-		error("StarkCurve: private key cannot be zero")
+		error(StarknetError.signing("StarkCurve: private key cannot be zero", ErrorCodes.INVALID_PRIVATE_KEY.code))
 	end
 	if BigInt.cmp(privateKey, StarkCurve.N) >= 0 then
-		error("StarkCurve: private key must be less than curve order N")
+		error(
+			StarknetError.signing(
+				"StarkCurve: private key must be less than curve order N",
+				ErrorCodes.KEY_OUT_OF_RANGE.code
+			)
+		)
 	end
 	local result = StarkCurve.scalarMul(StarkCurve.G, privateKey)
 	if result == nil then
-		error("StarkCurve: invalid private key (maps to infinity)")
+		error(
+			StarknetError.signing(
+				"StarkCurve: invalid private key (maps to infinity)",
+				ErrorCodes.INVALID_PRIVATE_KEY.code
+			)
+		)
 	end
 	return result :: AffinePoint
 end

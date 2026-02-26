@@ -72,6 +72,48 @@ function expect(value: any)
 				error("Expected function to throw, but it did not", 2)
 			end
 		end,
+		toThrowType = function(_, errorType: string)
+			if typeof(value) ~= "function" then
+				error("Expected a function for toThrowType", 2)
+			end
+			local ok, err = pcall(value)
+			if ok then
+				error("Expected function to throw, but it did not", 2)
+			end
+			if typeof(err) ~= "table" or typeof(err.is) ~= "function" then
+				error(`Expected a StarknetError, got {typeof(err)}: {tostring(err)}`, 2)
+			end
+			if not err:is(errorType) then
+				error(`Expected error type "{errorType}", got "{err._type}"`, 2)
+			end
+		end,
+		toThrowCode = function(_, expectedCode: number)
+			if typeof(value) ~= "function" then
+				error("Expected a function for toThrowCode", 2)
+			end
+			local ok, err = pcall(value)
+			if ok then
+				error("Expected function to throw, but it did not", 2)
+			end
+			if typeof(err) ~= "table" then
+				error(`Expected a StarknetError table, got {typeof(err)}: {tostring(err)}`, 2)
+			end
+			if err.code ~= expectedCode then
+				error(`Expected error code {expectedCode}, got {err.code}`, 2)
+			end
+		end,
+		toThrowMatching = function(_, predicate: (any) -> boolean)
+			if typeof(value) ~= "function" then
+				error("Expected a function for toThrowMatching", 2)
+			end
+			local ok, err = pcall(value)
+			if ok then
+				error("Expected function to throw, but it did not", 2)
+			end
+			if not predicate(err) then
+				error(`Error did not match predicate: {tostring(err)}`, 2)
+			end
+		end,
 	}
 end
 

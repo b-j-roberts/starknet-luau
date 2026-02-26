@@ -10,6 +10,8 @@ local Pedersen = require("../crypto/Pedersen")
 local StarkSigner = require("../signer/StarkSigner")
 local TransactionBuilder = require("../tx/TransactionBuilder")
 local TypedData = require("./TypedData")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 type Felt = StarkField.Felt
 
@@ -173,13 +175,13 @@ function Account.new(config: {
 	provider: any,
 }): any
 	if not config.address then
-		error("Account: address is required")
+		error(StarknetError.validation("Account: address is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.signer then
-		error("Account: signer is required")
+		error(StarknetError.validation("Account: signer is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.provider then
-		error("Account: provider is required")
+		error(StarknetError.validation("Account: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local self = setmetatable({
@@ -203,19 +205,29 @@ function Account.fromPrivateKey(config: {
 	guardian: string?,
 }): any
 	if not config.privateKey then
-		error("Account: privateKey is required")
+		error(StarknetError.validation("Account: privateKey is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 	if not config.provider then
-		error("Account: provider is required")
+		error(StarknetError.validation("Account: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local accountType = config.accountType or "oz"
 	if accountType ~= "oz" and accountType ~= "argent" and accountType ~= "braavos" then
-		error(`Account: unsupported accountType "{accountType}", expected "oz", "argent", or "braavos"`)
+		error(
+			StarknetError.validation(
+				`Account: unsupported accountType "{accountType}", expected "oz", "argent", or "braavos"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
 	end
 
 	if config.guardian and accountType ~= "argent" then
-		error("Account: guardian is only supported for Argent accounts")
+		error(
+			StarknetError.validation(
+				"Account: guardian is only supported for Argent accounts",
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
 	end
 
 	local signer = StarkSigner.new(config.privateKey)

@@ -8,6 +8,7 @@ local tx = require(script.tx)
 local wallet = require(script.wallet)
 local contract = require(script.contract)
 local constants = require(script.constants)
+local errors = require(script.errors)
 
 return {
 	crypto = crypto,
@@ -17,4 +18,5 @@ return {
 	wallet = wallet,
 	contract = contract,
 	constants = constants,
+	errors = errors,
 }

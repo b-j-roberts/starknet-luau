@@ -6,6 +6,8 @@
 local BigInt = require("../crypto/BigInt")
 local StarkField = require("../crypto/StarkField")
 local Keccak = require("../crypto/Keccak")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 local CallData = {}
 
@@ -57,11 +59,11 @@ function CallData.encodeShortString(str: string): { string }
 		return { "0x0" }
 	end
 	if #str > 31 then
-		error("CallData: short string exceeds 31 characters")
+		error(StarknetError.validation("CallData: short string exceeds 31 characters", ErrorCodes.INVALID_FORMAT.code))
 	end
 	for i = 1, #str do
 		if string.byte(str, i) > 127 then
-			error("CallData: short string must be ASCII only")
+			error(StarknetError.validation("CallData: short string must be ASCII only", ErrorCodes.INVALID_FORMAT.code))
 		end
 	end
 	local hexParts = {}

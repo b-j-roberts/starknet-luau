@@ -5,6 +5,8 @@
 -- Dedicated Felt type backed by buffer, using BigInt with pre-computed Barrett context
 
 local BigInt = require("./BigInt")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 export type Felt = buffer
 
@@ -111,7 +113,7 @@ end
 
 function StarkField.inv(a: Felt): Felt
 	if BigInt.isZero(a) then
-		error("StarkField: cannot invert zero")
+		error(StarknetError.validation("StarkField: cannot invert zero", ErrorCodes.MATH_ERROR.code))
 	end
 	-- Fermat's little theorem: a^(P-2) mod P
 	return powmodBarrett(a, P_MINUS_2)

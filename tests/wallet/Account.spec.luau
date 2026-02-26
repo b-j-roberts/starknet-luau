@@ -425,7 +425,7 @@ describe("Account.new", function()
 				signer = signer,
 				provider = provider,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when signer is missing", function()
@@ -438,7 +438,7 @@ describe("Account.new", function()
 				signer = nil :: any,
 				provider = provider,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when provider is missing", function()
@@ -450,7 +450,7 @@ describe("Account.new", function()
 				signer = signer,
 				provider = nil :: any,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -525,7 +525,7 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 				privateKey = nil :: any,
 				provider = provider,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when provider is missing", function()
@@ -534,7 +534,7 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 				privateKey = PRIVKEY_1,
 				provider = nil :: any,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("stores the signer for later use", function()

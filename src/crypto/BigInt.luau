@@ -5,6 +5,9 @@
 -- 11 limbs x 24 bits = 264 bits, little-endian, f64 values
 -- Following rbx-cryptography's proven performance patterns
 
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
+
 local LIMB_BITS = 24
 local LIMB_BASE: number = 2 ^ LIMB_BITS -- 16777216
 local NUM_LIMBS = 11
@@ -469,7 +472,7 @@ end
 
 function BigInt.divmod(a: BigInt, b: BigInt): (BigInt, BigInt)
 	if isZeroBuf(b) then
-		error("BigInt: division by zero")
+		error(StarknetError.validation("BigInt: division by zero", ErrorCodes.MATH_ERROR.code))
 	end
 
 	local cmpResult = BigInt.cmp(a, b)
@@ -618,7 +621,7 @@ end
 
 function BigInt.powmod(a: BigInt, e: BigInt, m: BigInt): BigInt
 	if isZeroBuf(m) then
-		error("BigInt: modulus cannot be zero")
+		error(StarknetError.validation("BigInt: modulus cannot be zero", ErrorCodes.MATH_ERROR.code))
 	end
 	if isZeroBuf(e) then
 		return BigInt.one()
@@ -642,7 +645,7 @@ end
 function BigInt.invmod(a: BigInt, m: BigInt): BigInt
 	-- Extended Euclidean Algorithm with sign tracking
 	if isZeroBuf(a) then
-		error("BigInt: cannot invert zero")
+		error(StarknetError.validation("BigInt: cannot invert zero", ErrorCodes.MATH_ERROR.code))
 	end
 
 	local old_r = BigInt.mod(a, m)
@@ -691,7 +694,7 @@ function BigInt.invmod(a: BigInt, m: BigInt): BigInt
 
 	-- old_r should be 1 (gcd)
 	if not BigInt.eq(old_r, BigInt.one()) then
-		error("BigInt: not invertible (gcd != 1)")
+		error(StarknetError.validation("BigInt: not invertible (gcd != 1)", ErrorCodes.MATH_ERROR.code))
 	end
 
 	if old_s_neg then

@@ -114,7 +114,7 @@ describe("EventPoller - constructor", function()
 				filter = { address = "0xcontract1" },
 				onEvents = function(_events) end,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when filter is missing", function()
@@ -126,7 +126,7 @@ describe("EventPoller - constructor", function()
 				filter = nil :: any,
 				onEvents = function(_events) end,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors when onEvents is missing", function()
@@ -138,7 +138,7 @@ describe("EventPoller - constructor", function()
 				filter = { address = "0xcontract1" },
 				onEvents = nil :: any,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("defaults interval to 10 seconds", function()

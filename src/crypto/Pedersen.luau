@@ -10,6 +10,8 @@
 local BigInt = require("./BigInt")
 local StarkField = require("./StarkField")
 local StarkCurve = require("./StarkCurve")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 type Felt = StarkField.Felt
 type AffinePoint = StarkCurve.AffinePoint
@@ -120,7 +122,7 @@ function Pedersen.hash(a: Felt, b: Felt): Felt
 
 	local result = StarkCurve.affineFromJacobian(acc)
 	if result == nil then
-		error("Pedersen: hash resulted in point at infinity")
+		error(StarknetError.new("Pedersen: hash resulted in point at infinity", ErrorCodes.MATH_ERROR.code))
 	end
 	return (result :: AffinePoint).x
 end

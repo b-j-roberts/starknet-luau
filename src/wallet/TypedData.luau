@@ -9,6 +9,8 @@ local StarkField = require("../crypto/StarkField")
 local Pedersen = require("../crypto/Pedersen")
 local Poseidon = require("../crypto/Poseidon")
 local Keccak = require("../crypto/Keccak")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 type Felt = StarkField.Felt
 
@@ -73,7 +75,7 @@ local function getHex(value: any): string
 		-- Treat as short string (ASCII → felt)
 		return BigInt.toHex(BigInt.fromHex(encodeShortString(s)))
 	end
-	error(`TypedData: cannot convert value to hex: {tostring(value)}`)
+	error(StarknetError.abi(`TypedData: cannot convert value to hex: {tostring(value)}`, ErrorCodes.ENCODE_ERROR.code))
 end
 
 --- Pedersen-based hash method (LEGACY revision).
@@ -437,7 +439,13 @@ end
 --------------------------------------------------------------------------------
 
 -- Forward declarations for mutual recursion
-local encodeValue: (types: { [string]: any }, typeName: string, data: any, ctx: { parent: string?, key: string? }?, revision: string?) -> (string, string)
+local encodeValue: (
+	types: { [string]: any },
+	typeName: string,
+	data: any,
+	ctx: { parent: string?, key: string? }?,
+	revision: string?
+) -> (string, string)
 local encodeData: (types: { [string]: any }, typeName: string, data: any, revision: string?) -> ({ string }, { string })
 local getStructHash: (types: { [string]: any }, typeName: string, data: any, revision: string?) -> string
 
@@ -449,7 +457,7 @@ local function getMerkleTreeType(types: { [string]: any }, ctx: { parent: string
 			local f = field :: any
 			if f.name == ctx.key then
 				if f.type ~= "merkletree" then
-					error(`{ctx.key} is not a merkle tree`)
+					error(StarknetError.abi(`{ctx.key} is not a merkle tree`, ErrorCodes.ENCODE_ERROR.code))
 				end
 				return f.contains :: string
 			end
@@ -626,7 +634,7 @@ encodeValue = function(types, typeName, data, ctx, revision)
 
 	-- Default: try to convert to hex (LEGACY allows unknown types)
 	if rev == REVISION_ACTIVE then
-		error(`TypedData: unsupported type: {typeName}`)
+		error(StarknetError.abi(`TypedData: unsupported type: {typeName}`, ErrorCodes.UNKNOWN_TYPE.code))
 	end
 	return typeName, getHex(data)
 end

@@ -4,6 +4,8 @@
 -- All public methods return Promises for async operation
 
 local RpcTypes = require("./RpcTypes")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = StarknetError.ErrorCodes
 
 --- Promise-like type for return annotations
 --- In Roblox runtime, this is evaera/promise; in tests, a compatible mock is injected
@@ -79,16 +81,6 @@ end
 -- Helpers
 --------------------------------------------------------------------------------
 
---- Create a StarknetError
-local function makeError(errType: string, message: string, code: number?, data: any?): RpcTypes.StarknetError
-	return {
-		type = errType,
-		message = message,
-		code = code,
-		data = data,
-	}
-end
-
 --- Format a block ID parameter for RPC calls
 local function formatBlockId(blockId: string?): any
 	if blockId == nil or blockId == "latest" then
@@ -117,7 +109,7 @@ RpcProviderClass.__index = RpcProviderClass
 --- @param config -- RpcProviderConfig with nodeUrl and optional settings
 function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 	if not config.nodeUrl or config.nodeUrl == "" then
-		error("RpcProvider: nodeUrl is required")
+		error(StarknetError.validation("RpcProvider: nodeUrl is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
 	local clockFn = config._clock or os.clock
@@ -161,7 +153,12 @@ function RpcProviderClass:_getPromise(): any
 	if self._PromiseModule then
 		return self._PromiseModule
 	end
-	error("RpcProvider: Promise module not available. In tests, set _PromiseModule on the provider instance.")
+	error(
+		StarknetError.validation(
+			"RpcProvider: Promise module not available. In tests, set _PromiseModule on the provider instance.",
+			ErrorCodes.REQUIRED_FIELD.code
+		)
+	)
 end
 
 --- Internal: Perform an HTTP request (with injection point for testing)
@@ -203,7 +200,10 @@ function RpcProviderClass:_rawRequest(method: string, params: any): any
 	while not tryAcquire(self._rateLimiter, self._clock) do
 		if self._clock() - startTime > maxWait then
 			error(
-				makeError(RpcTypes.ErrorTypes.RATE_LIMIT, "Rate limit exceeded: could not acquire token within timeout")
+				StarknetError.rpc(
+					"Rate limit exceeded: could not acquire token within timeout",
+					ErrorCodes.RATE_LIMIT.code
+				)
 			)
 		end
 		self._sleep(0.05)
@@ -237,9 +237,9 @@ function RpcProviderClass:_rawRequest(method: string, params: any): any
 
 	if not response.Success and response.StatusCode ~= 200 then
 		error(
-			makeError(
-				RpcTypes.ErrorTypes.NETWORK_ERROR,
+			StarknetError.rpc(
 				`HTTP {response.StatusCode}: {response.Body}`,
+				ErrorCodes.NETWORK_ERROR.code,
 				response.StatusCode
 			)
 		)
@@ -249,9 +249,9 @@ function RpcProviderClass:_rawRequest(method: string, params: any): any
 
 	if decoded.error then
 		error(
-			makeError(
-				RpcTypes.ErrorTypes.RPC_ERROR,
+			StarknetError.rpc(
 				decoded.error.message or "Unknown RPC error",
+				ErrorCodes.RPC_ERROR.code,
 				decoded.error.code,
 				decoded.error.data
 			)
@@ -275,7 +275,7 @@ function RpcProviderClass:_requestWithRetry(method: string, params: any): any
 		lastErr = result
 
 		-- Don't retry on RPC errors (they're deterministic)
-		if typeof(result) == "table" and result.type == RpcTypes.ErrorTypes.RPC_ERROR then
+		if typeof(result) == "table" and result._type == "RpcError" and result.code == ErrorCodes.RPC_ERROR.code then
 			error(result)
 		end
 
@@ -535,9 +535,10 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 					if receiptOk then
 						if execution == "REVERTED" then
 							reject(
-								makeError(
-									RpcTypes.ErrorTypes.RPC_ERROR,
+								StarknetError.transaction(
 									`Transaction {txHash} reverted: {receipt.revert_reason or "unknown reason"}`,
+									ErrorCodes.TRANSACTION_REVERTED.code,
+									receipt.revert_reason,
 									nil,
 									receipt
 								)
@@ -551,7 +552,13 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 					return
 				elseif finality == "REJECTED" then
 					reject(
-						makeError(RpcTypes.ErrorTypes.RPC_ERROR, `Transaction {txHash} was rejected`, nil, statusResult)
+						StarknetError.transaction(
+							`Transaction {txHash} was rejected`,
+							ErrorCodes.TRANSACTION_REJECTED.code,
+							nil,
+							nil,
+							statusResult
+						)
 					)
 					return
 				end
@@ -564,7 +571,10 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 		end
 
 		reject(
-			makeError(RpcTypes.ErrorTypes.TIMEOUT, `Transaction {txHash} not confirmed after {maxAttempts} attempts`)
+			StarknetError.rpc(
+				`Transaction {txHash} not confirmed after {maxAttempts} attempts`,
+				ErrorCodes.TIMEOUT.code
+			)
 		)
 	end)
 end
