@@ -9,6 +9,7 @@ local StarkField = require("../crypto/StarkField")
 local Pedersen = require("../crypto/Pedersen")
 local StarkSigner = require("../signer/StarkSigner")
 local TransactionBuilder = require("../tx/TransactionBuilder")
+local TypedData = require("./TypedData")
 
 type Felt = StarkField.Felt
 
@@ -272,6 +273,21 @@ end
 --- Get the public key hex of the signer.
 function Account:getPublicKeyHex(): string
 	return self.signer:getPublicKeyHex()
+end
+
+--- Compute the SNIP-12 message hash for a typed data object.
+--- Returns the hex string hash that would be signed.
+function Account:hashMessage(typedData: { [string]: any }): string
+	return TypedData.getMessageHash(typedData, self.address)
+end
+
+--- Sign a SNIP-12 typed data message.
+--- Returns { r_hex, s_hex } signature array.
+function Account:signMessage(typedData: { [string]: any }): { string }
+	local msgHash = self:hashMessage(typedData)
+	local hashBuf = BigInt.fromHex(msgHash)
+	local sig = self.signer:signRaw(hashBuf)
+	return { BigInt.toHex(sig.r), BigInt.toHex(sig.s) }
 end
 
 return Account
