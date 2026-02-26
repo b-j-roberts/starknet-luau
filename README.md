@@ -4,6 +4,12 @@ Pure Luau SDK for interacting with the Starknet blockchain from Roblox games. Pr
 
 ## Installation
 
+**Via Pesde:**
+```toml
+[dependencies]
+starknet_luau = { name = "magic/starknet_luau", version = "^0.1.0" }
+```
+
 **Via Wally:**
 ```toml
 [dependencies]
@@ -18,6 +24,7 @@ Download the latest `.rbxm` from [Releases](../../releases) and drop it into you
 ### Prerequisites
 
 - [Rokit](https://github.com/rojo-rbx/rokit) (toolchain manager)
+- [Pesde](https://pesde.dev) (optional, if using Pesde for dependencies)
 
 ### Setup
 
@@ -30,7 +37,8 @@ rojo serve          # Start live sync to Roblox Studio
 ### Commands
 
 ```bash
-make install        # Install deps, generate sourcemap + package types
+make install        # Install deps via Wally, generate sourcemap + package types
+make pesde-install  # Install deps via Pesde
 make serve          # Start Rojo live sync
 make build          # Build .rbxm model file
 make test           # Run tests with Lune
@@ -88,7 +96,8 @@ starknet-luau/
 ├── default.project.json        # Rojo project (library)
 ├── dev.project.json            # Rojo project (development)
 ├── rokit.toml                  # Toolchain versions
-├── wally.toml                  # Package manifest
+├── wally.toml                  # Package manifest (Wally)
+├── pesde.toml                  # Package manifest (Pesde)
 └── Makefile                    # Build commands
 ```
 

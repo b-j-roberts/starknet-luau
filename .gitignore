@@ -15,7 +15,7 @@ DevPackages/
 
 # pesde
 .pesde/
-pesde.lock
+roblox_packages/
 
 # Generated
 roblox.yml

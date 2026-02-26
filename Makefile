@@ -1,10 +1,13 @@
-.PHONY: test serve build lint fmt check install
+.PHONY: test serve build lint fmt check install pesde-install
 
 install:
 	wally install
 	rojo sourcemap default.project.json --output sourcemap.json
 	mkdir -p Packages
 	wally-package-types --sourcemap sourcemap.json Packages/
+
+pesde-install:
+	pesde install
 
 test:
 	lune run tests/run

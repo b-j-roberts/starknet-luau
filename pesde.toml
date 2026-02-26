@@ -1,0 +1,25 @@
+name = "magic/starknet_luau"
+version = "0.1.0"
+description = "Pure Luau SDK for Starknet blockchain interaction from Roblox games"
+license = "MIT"
+authors = ["Brandon Roberts"]
+repository = "https://github.com/b-j-roberts/starknet-luau"
+includes = ["pesde.toml", "README.md", "LICENSE", "src/**/*"]
+
+[target]
+environment = "roblox"
+lib = "src/init.luau"
+build_files = ["src"]
+
+[indices]
+default = "https://github.com/pesde-pkg/index"
+
+[wally_indices]
+default = "https://github.com/UpliftGames/wally-index"
+
+[dependencies]
+Promise = { wally = "evaera/promise", version = "^3.1.0", index = "default" }
+
+[peer_dependencies]
+
+[dev_dependencies]

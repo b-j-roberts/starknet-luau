@@ -27,3 +27,11 @@ jobs:
           mkdir -p ~/.wally
           echo "$WALLY_AUTH" > ~/.wally/auth.toml
           wally publish
+
+      - name: Install Pesde
+        uses: axiom-co/setup-pesde@v0.4.1
+        with:
+          token: ${{ secrets.PESDE_TOKEN }}
+
+      - name: Publish to Pesde
+        run: pesde publish -y
