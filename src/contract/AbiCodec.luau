@@ -5,7 +5,6 @@
 -- Reference: starknet.js CallData.compile / CallData.parse
 
 local CallData = require("../tx/CallData")
-local BigInt = require("../crypto/BigInt")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -132,12 +131,7 @@ end
 --- Build a TypeMap from a full Cairo ABI array.
 --- Parses struct and enum definitions, registers built-in aliases.
 function AbiCodec.buildTypeMap(abi: { any }): TypeMap
-	local typeMap: TypeMap = {}
-
-	-- Copy built-in types
-	for name, def in BUILTIN_TYPES do
-		typeMap[name] = def
-	end
+	local typeMap: TypeMap = table.clone(BUILTIN_TYPES)
 
 	-- Parse ABI entries
 	for _, entry_ in abi do

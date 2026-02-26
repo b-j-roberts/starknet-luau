@@ -355,10 +355,7 @@ function TypedData.encodeType(types: { [string]: any }, typeName: string, revisi
 	local rev = revision or REVISION_LEGACY
 
 	-- Merge preset types for ACTIVE revision
-	local allTypes: { [string]: any } = {}
-	for k, v in types :: { [string]: any } do
-		allTypes[k] = v
-	end
+	local allTypes = table.clone(types :: { [string]: any })
 	if rev == REVISION_ACTIVE then
 		for k, v in PRESET_TYPES do
 			if not allTypes[k] then

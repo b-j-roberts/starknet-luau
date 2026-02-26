@@ -284,10 +284,12 @@ function Account:execute(calls: { TransactionBuilder.Call }, options: Transactio
 
 			-- Execute with the reserved nonce
 			local execOk, execResult = pcall(function()
-				return self._builder:execute({
-					address = self.address,
-					signer = self.signer,
-				}, calls, opts):expect()
+				return self._builder
+					:execute({
+						address = self.address,
+						signer = self.signer,
+					}, calls, opts)
+					:expect()
 			end)
 
 			if execOk then
