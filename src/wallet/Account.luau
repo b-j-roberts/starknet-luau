@@ -254,7 +254,52 @@ end
 
 --- Execute calls via the internal TransactionBuilder.
 --- Returns a Promise resolving to { transactionHash: string }.
+--- When the provider has a NonceManager enabled and no explicit nonce is provided,
+--- automatically reserves a nonce, confirms on success, and rejects on failure.
 function Account:execute(calls: { TransactionBuilder.Call }, options: TransactionBuilder.ExecuteOptions?): any
+	local nm = self._provider._nonceManager
+	local hasExplicitNonce = options and options.nonce
+
+	-- If NonceManager is available and no explicit nonce override, use managed nonces
+	if nm and not hasExplicitNonce then
+		local Promise = self._provider:_getPromise()
+		return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+			-- Reserve a nonce
+			local reserveOk, reservedNonce = pcall(function()
+				return nm:reserve(self.address):expect()
+			end)
+			if not reserveOk then
+				reject(reservedNonce)
+				return
+			end
+
+			-- Build options with reserved nonce
+			local opts: TransactionBuilder.ExecuteOptions
+			if options then
+				opts = table.clone(options) :: TransactionBuilder.ExecuteOptions
+			else
+				opts = {} :: TransactionBuilder.ExecuteOptions
+			end
+			opts.nonce = reservedNonce
+
+			-- Execute with the reserved nonce
+			local execOk, execResult = pcall(function()
+				return self._builder:execute({
+					address = self.address,
+					signer = self.signer,
+				}, calls, opts):expect()
+			end)
+
+			if execOk then
+				nm:confirm(self.address, reservedNonce)
+				resolve(execResult)
+			else
+				nm:reject(self.address, reservedNonce)
+				reject(execResult)
+			end
+		end)
+	end
+
 	return self._builder:execute({
 		address = self.address,
 		signer = self.signer,

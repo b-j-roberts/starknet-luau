@@ -6,6 +6,7 @@
 local RpcTypes = require("./RpcTypes")
 local RequestQueue = require("./RequestQueue")
 local ResponseCache = require("./ResponseCache")
+local NonceManager = require("./NonceManager")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -136,6 +137,7 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		_PromiseModule = nil :: any,
 		_queue = nil :: any,
 		_cache = nil :: any,
+		_nonceManager = nil :: any,
 		_lastKnownBlockNumber = 0,
 		_drainScheduled = false,
 		_defer = config._defer or function(fn: () -> ())
@@ -151,6 +153,10 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 
 	if config.enableCache then
 		self._cache = ResponseCache.new(config.cacheConfig or {}, clockFn)
+	end
+
+	if config.enableNonceManager then
+		self._nonceManager = NonceManager.new(self, config.nonceManagerConfig or {})
 	end
 
 	-- Load Promise module (skip in test mode where _httpRequest is injected)
@@ -611,6 +617,11 @@ function RpcProviderClass:_dispatchBatch(items: { any })
 	end
 end
 
+--- Get the nonce manager instance (nil if not enabled).
+function RpcProviderClass:getNonceManager(): any
+	return self._nonceManager
+end
+
 --- Flush all cached responses.
 function RpcProviderClass:flushCache()
 	if self._cache then
@@ -618,7 +629,7 @@ function RpcProviderClass:flushCache()
 	end
 end
 
---- Get a snapshot of provider metrics (queue + rate limiter + cache).
+--- Get a snapshot of provider metrics (queue + rate limiter + cache + nonce).
 function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 	local cacheHits = 0
 	local cacheMisses = 0
@@ -630,6 +641,18 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 		cacheMisses = cm.cacheMisses
 		cacheEvictions = cm.cacheEvictions
 		cacheSize = cm.cacheSize
+	end
+
+	local nonceReserved = 0
+	local nonceConfirmed = 0
+	local nonceRejected = 0
+	local nonceResyncs = 0
+	if self._nonceManager then
+		local nm = self._nonceManager:getMetrics()
+		nonceReserved = nm.totalReserved
+		nonceConfirmed = nm.totalConfirmed
+		nonceRejected = nm.totalRejected
+		nonceResyncs = nm.totalResyncs
 	end
 
 	if self._queue then
@@ -648,6 +671,10 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 			cacheMisses = cacheMisses,
 			cacheEvictions = cacheEvictions,
 			cacheSize = cacheSize,
+			nonceReserved = nonceReserved,
+			nonceConfirmed = nonceConfirmed,
+			nonceRejected = nonceRejected,
+			nonceResyncs = nonceResyncs,
 		}
 	end
 
@@ -665,6 +692,10 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 		cacheMisses = cacheMisses,
 		cacheEvictions = cacheEvictions,
 		cacheSize = cacheSize,
+		nonceReserved = nonceReserved,
+		nonceConfirmed = nonceConfirmed,
+		nonceRejected = nonceRejected,
+		nonceResyncs = nonceResyncs,
 	}
 end
 

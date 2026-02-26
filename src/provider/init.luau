@@ -6,6 +6,7 @@ local RpcTypes = require(script.RpcTypes)
 local EventPoller = require(script.EventPoller)
 local RequestQueue = require(script.RequestQueue)
 local ResponseCache = require(script.ResponseCache)
+local NonceManager = require(script.NonceManager)
 
 return {
 	RpcProvider = RpcProvider,
@@ -13,4 +14,5 @@ return {
 	EventPoller = EventPoller,
 	RequestQueue = RequestQueue,
 	ResponseCache = ResponseCache,
+	NonceManager = NonceManager,
 }

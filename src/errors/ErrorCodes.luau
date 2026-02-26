@@ -20,6 +20,9 @@ ErrorCodes.TRANSACTION_REJECTED = { code = 2005, name = "TRANSACTION_REJECTED" }
 ErrorCodes.QUEUE_FULL = { code = 2010, name = "QUEUE_FULL" }
 ErrorCodes.BATCH_ERROR = { code = 2011, name = "BATCH_ERROR" }
 ErrorCodes.CACHE_ERROR = { code = 2012, name = "CACHE_ERROR" }
+ErrorCodes.NONCE_FETCH_ERROR = { code = 2013, name = "NONCE_FETCH_ERROR" }
+ErrorCodes.NONCE_EXHAUSTED = { code = 2014, name = "NONCE_EXHAUSTED" }
+ErrorCodes.NONCE_MANAGER_ERROR = { code = 2015, name = "NONCE_MANAGER_ERROR" }
 
 -- 3000-3099: Signing / Crypto errors
 ErrorCodes.SIGNING_ERROR = { code = 3000, name = "SIGNING_ERROR" }

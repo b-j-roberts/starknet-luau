@@ -14,6 +14,12 @@ export type RequestQueueConfig = {
 	enableBatching: boolean?, -- whether to batch read-only requests (default true)
 }
 
+--- Configuration for the nonce manager
+export type NonceManagerConfig = {
+	maxPendingNonces: number?, -- max concurrent pending nonces per address (default 10)
+	autoResyncOnError: boolean?, -- auto re-sync on-chain on nonce failure (default true)
+}
+
 --- Configuration for the response cache
 export type CacheConfig = {
 	maxEntries: number?, -- max cached entries before LRU eviction (default 256)
@@ -46,6 +52,10 @@ export type ProviderMetrics = {
 	cacheMisses: number,
 	cacheEvictions: number,
 	cacheSize: number,
+	nonceReserved: number,
+	nonceConfirmed: number,
+	nonceRejected: number,
+	nonceResyncs: number,
 }
 
 --- Configuration for creating an RpcProvider
@@ -59,6 +69,8 @@ export type RpcProviderConfig = {
 	queueConfig: RequestQueueConfig?,
 	enableCache: boolean?,
 	cacheConfig: CacheConfig?,
+	enableNonceManager: boolean?,
+	nonceManagerConfig: NonceManagerConfig?,
 	-- Internal overrides for testing (not part of public API)
 	_httpRequest: ((request: HttpRequest) -> HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,
