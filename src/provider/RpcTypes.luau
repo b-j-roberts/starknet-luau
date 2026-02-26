@@ -14,6 +14,23 @@ export type RequestQueueConfig = {
 	enableBatching: boolean?, -- whether to batch read-only requests (default true)
 }
 
+--- Configuration for the response cache
+export type CacheConfig = {
+	maxEntries: number?, -- max cached entries before LRU eviction (default 256)
+	chainIdTTL: number?, -- TTL for chainId in seconds (default 0 = indefinite)
+	specVersionTTL: number?, -- TTL for specVersion in seconds (default 0 = indefinite)
+	blockNumberTTL: number?, -- TTL for blockNumber in seconds (default 10)
+	blockTTL: number?, -- TTL for getBlockWithTxHashes in seconds (default 10)
+	classHashTTL: number?, -- TTL for getClassHashAt in seconds (default 0 = indefinite)
+	storageTTL: number?, -- TTL for getStorageAt in seconds (default 30)
+	callTTL: number?, -- TTL for call in seconds (default 30)
+}
+
+--- Options for individual fetch calls
+export type FetchOptions = {
+	bypassCache: boolean?, -- skip cache lookup and storage for this request
+}
+
 --- Provider metrics snapshot
 export type ProviderMetrics = {
 	totalRequests: number,
@@ -25,6 +42,10 @@ export type ProviderMetrics = {
 	rateLimitTokens: number,
 	rateLimitMax: number,
 	batchesSent: number,
+	cacheHits: number,
+	cacheMisses: number,
+	cacheEvictions: number,
+	cacheSize: number,
 }
 
 --- Configuration for creating an RpcProvider
@@ -36,6 +57,8 @@ export type RpcProviderConfig = {
 	retryDelay: number?,
 	enableQueue: boolean?,
 	queueConfig: RequestQueueConfig?,
+	enableCache: boolean?,
+	cacheConfig: CacheConfig?,
 	-- Internal overrides for testing (not part of public API)
 	_httpRequest: ((request: HttpRequest) -> HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,

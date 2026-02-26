@@ -1179,3 +1179,525 @@ describe("RpcProvider - queue priority ordering", function()
 		expect(requestLog[1].method):toBe("starknet_addInvokeTransaction")
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Tests: Response caching
+--------------------------------------------------------------------------------
+
+describe("RpcProvider - cache enablement", function()
+	it("cache is disabled by default", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		-- Two calls should both hit network
+		provider:getChainId():expect()
+		provider:getChainId():expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("cache can be enabled via enableCache", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getChainId():expect()
+		provider:getChainId():expect()
+		-- Second call should be served from cache
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("flushCache is safe when cache is disabled", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		-- Should not error
+		provider:flushCache()
+	end)
+end)
+
+describe("RpcProvider - cache hit/miss", function()
+	it("second getChainId call is served from cache (no HTTP)", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local r1 = provider:getChainId():expect()
+		local r2 = provider:getChainId():expect()
+		expect(r1):toBe(r2)
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("second getSpecVersion call is served from cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local r1 = provider:getSpecVersion():expect()
+		local r2 = provider:getSpecVersion():expect()
+		expect(r1):toBe(r2)
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("second getClassHashAt call is served from cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local r1 = provider:getClassHashAt("0xaddr1"):expect()
+		local r2 = provider:getClassHashAt("0xaddr1"):expect()
+		expect(r1):toBe(r2)
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("different params produce separate cache entries", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getClassHashAt("0xaddr1"):expect()
+		provider:getClassHashAt("0xaddr2"):expect()
+		-- Different params = different cache keys = 2 HTTP calls
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("getStorageAt is cached with 30s default TTL", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("call is cached with 30s default TTL", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local request = {
+			contract_address = "0xaddr",
+			entry_point_selector = "0xsel",
+			calldata = { "0x1" },
+		}
+		provider:call(request):expect()
+		provider:call(request):expect()
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("getBlockNumber is cached briefly", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getBlockNumber():expect()
+		provider:getBlockNumber():expect()
+		-- Second call triggers cache hit for the raw fetch, but still goes through andThen
+		-- The raw starknet_blockNumber call should only happen once
+		expect(#requestLog):toBe(1)
+	end)
+end)
+
+describe("RpcProvider - uncacheable methods", function()
+	it("getNonce is never cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getNonce("0xaddr"):expect()
+		provider:getNonce("0xaddr"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("estimateFee is never cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local tx = {
+			type = "INVOKE",
+			version = "0x3",
+			sender_address = "0xsender",
+			calldata = { "0x1" },
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "L1",
+			fee_data_availability_mode = "L1",
+			account_deployment_data = {},
+		}
+		provider:estimateFee({ tx }):expect()
+		provider:estimateFee({ tx }):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("addInvokeTransaction is never cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local tx = {
+			type = "INVOKE",
+			version = "0x3",
+			sender_address = "0xsender",
+			calldata = { "0x1" },
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "L1",
+			fee_data_availability_mode = "L1",
+			account_deployment_data = {},
+		}
+		provider:addInvokeTransaction(tx):expect()
+		provider:addInvokeTransaction(tx):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("getTransactionReceipt is never cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getTransactionReceipt("0xtx1"):expect()
+		provider:getTransactionReceipt("0xtx1"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("getTransactionStatus is never cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getTransactionStatus("0xtx1"):expect()
+		provider:getTransactionStatus("0xtx1"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - cache TTL expiration", function()
+	it("storage cache expires after TTL", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		local provider = createTestProvider({
+			enableCache = true,
+			cacheConfig = { storageTTL = 5 },
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		expect(#requestLog):toBe(1)
+		-- Advance past TTL
+		currentTime = 5
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("chainId cache never expires (TTL=0)", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getChainId():expect()
+		currentTime = 999999
+		provider:getChainId():expect()
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("custom TTL overrides default", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		local provider = createTestProvider({
+			enableCache = true,
+			cacheConfig = { callTTL = 2 },
+			_clock = function()
+				return currentTime
+			end,
+		})
+		local request = {
+			contract_address = "0xaddr",
+			entry_point_selector = "0xsel",
+			calldata = {},
+		}
+		provider:call(request):expect()
+		currentTime = 1
+		provider:call(request):expect() -- still cached
+		expect(#requestLog):toBe(1)
+		currentTime = 2
+		provider:call(request):expect() -- expired
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - cache bypass", function()
+	it("bypassCache skips cache lookup", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getChainId():expect() -- populates cache
+		expect(#requestLog):toBe(1)
+		-- Bypass cache — should hit network again
+		provider:fetch("starknet_chainId", {}, { bypassCache = true }):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("bypassCache does not store result in cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		-- First call with bypass — should not populate cache
+		provider:fetch("starknet_chainId", {}, { bypassCache = true }):expect()
+		-- Second normal call — should still miss cache
+		provider:getChainId():expect()
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - block-based cache invalidation", function()
+	it("new block number invalidates storage cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		-- Cache storage
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		expect(#requestLog):toBe(1)
+
+		-- First getBlockNumber — sets baseline, no invalidation
+		provider:getBlockNumber():expect()
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		expect(#requestLog):toBe(2) -- blockNumber was a miss, storage was a hit
+
+		-- Advance past blockNumber TTL so next getBlockNumber fetches from network
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect()
+		-- This should invalidate storage cache (block changed from 100 to 101)
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		-- blockNumber(network, cached expired) + storage(network, invalidated) = 2 more
+		expect(#requestLog):toBe(4)
+	end)
+
+	it("new block does NOT invalidate chainId cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getChainId():expect()
+		expect(#requestLog):toBe(1)
+
+		-- Set baseline block
+		provider:getBlockNumber():expect()
+
+		-- Advance past blockNumber TTL, new block
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect()
+
+		-- chainId should still be cached
+		provider:getChainId():expect()
+		local chainIdRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_chainId" then
+				chainIdRequests += 1
+			end
+		end
+		expect(chainIdRequests):toBe(1)
+	end)
+
+	it("new block does NOT invalidate classHash cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getClassHashAt("0xaddr"):expect()
+		expect(#requestLog):toBe(1)
+
+		-- Set baseline block
+		provider:getBlockNumber():expect()
+
+		-- Advance past blockNumber TTL, new block
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect()
+
+		provider:getClassHashAt("0xaddr"):expect()
+		local classHashRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getClassHashAt" then
+				classHashRequests += 1
+			end
+		end
+		expect(classHashRequests):toBe(1)
+	end)
+
+	it("new block invalidates call cache", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		local request = {
+			contract_address = "0xaddr",
+			entry_point_selector = "0xsel",
+			calldata = {},
+		}
+		provider:call(request):expect()
+
+		-- Set baseline block
+		provider:getBlockNumber():expect()
+
+		-- Advance past blockNumber TTL, new block
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect()
+
+		provider:call(request):expect()
+		local callRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_call" then
+				callRequests += 1
+			end
+		end
+		expect(callRequests):toBe(2) -- original + after invalidation
+	end)
+
+	it("same block number does not invalidate", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return 100
+		end
+
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		provider:getBlockNumber():expect() -- sets baseline to 100
+
+		-- Expire blockNumber TTL, but same block
+		currentTime = 11
+		provider:getBlockNumber():expect()
+		-- Storage should still be cached (same block, no invalidation)
+		provider:getStorageAt("0xaddr", "0xkey"):expect()
+		local storageRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getStorageAt" then
+				storageRequests += 1
+			end
+		end
+		expect(storageRequests):toBe(1)
+	end)
+end)
+
+describe("RpcProvider - flushCache", function()
+	it("clears all cached entries", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getChainId():expect()
+		provider:getClassHashAt("0xaddr"):expect()
+		expect(#requestLog):toBe(2)
+
+		provider:flushCache()
+
+		-- Both should miss cache now
+		provider:getChainId():expect()
+		provider:getClassHashAt("0xaddr"):expect()
+		expect(#requestLog):toBe(4)
+	end)
+end)
+
+describe("RpcProvider - cache metrics", function()
+	it("reports cache metrics when cache is enabled", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+
+		local m0 = provider:getMetrics()
+		expect(m0.cacheHits):toBe(0)
+		expect(m0.cacheMisses):toBe(0)
+		expect(m0.cacheSize):toBe(0)
+
+		provider:getChainId():expect() -- miss + store
+		local m1 = provider:getMetrics()
+		expect(m1.cacheMisses):toBe(1)
+		expect(m1.cacheSize):toBe(1)
+
+		provider:getChainId():expect() -- hit
+		local m2 = provider:getMetrics()
+		expect(m2.cacheHits):toBe(1)
+		expect(m2.cacheSize):toBe(1)
+	end)
+
+	it("reports zero cache metrics when cache is disabled", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local m = provider:getMetrics()
+		expect(m.cacheHits):toBe(0)
+		expect(m.cacheMisses):toBe(0)
+		expect(m.cacheEvictions):toBe(0)
+		expect(m.cacheSize):toBe(0)
+	end)
+
+	it("cache evictions are tracked in metrics", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({
+			enableCache = true,
+			cacheConfig = { maxEntries = 1 },
+		})
+
+		provider:getChainId():expect() -- stores chainId
+		provider:getSpecVersion():expect() -- evicts chainId, stores specVersion
+		local m = provider:getMetrics()
+		expect(m.cacheEvictions):toBe(1)
+		expect(m.cacheSize):toBe(1)
+	end)
+end)

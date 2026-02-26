@@ -5,10 +5,12 @@ local RpcProvider = require(script.RpcProvider)
 local RpcTypes = require(script.RpcTypes)
 local EventPoller = require(script.EventPoller)
 local RequestQueue = require(script.RequestQueue)
+local ResponseCache = require(script.ResponseCache)
 
 return {
 	RpcProvider = RpcProvider,
 	RpcTypes = RpcTypes,
 	EventPoller = EventPoller,
 	RequestQueue = RequestQueue,
+	ResponseCache = ResponseCache,
 }

@@ -5,6 +5,7 @@
 
 local RpcTypes = require("./RpcTypes")
 local RequestQueue = require("./RequestQueue")
+local ResponseCache = require("./ResponseCache")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -40,9 +41,10 @@ export type RpcProvider = {
 		txHash: string,
 		options: RpcTypes.WaitOptions?
 	) -> Promise<RpcTypes.TransactionReceipt>,
-	fetch: (self: RpcProvider, method: string, params: any) -> Promise<any>,
+	fetch: (self: RpcProvider, method: string, params: any, options: RpcTypes.FetchOptions?) -> Promise<any>,
 	getNodeUrl: (self: RpcProvider) -> string,
 	getMetrics: (self: RpcProvider) -> RpcTypes.ProviderMetrics,
+	flushCache: (self: RpcProvider) -> (),
 }
 
 --------------------------------------------------------------------------------
@@ -133,6 +135,8 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		_clock = clockFn,
 		_PromiseModule = nil :: any,
 		_queue = nil :: any,
+		_cache = nil :: any,
+		_lastKnownBlockNumber = 0,
 		_drainScheduled = false,
 		_defer = config._defer or function(fn: () -> ())
 			task.defer(fn)
@@ -143,6 +147,10 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 
 	if config.enableQueue then
 		self._queue = RequestQueue.new(queueConfig.maxQueueDepth)
+	end
+
+	if config.enableCache then
+		self._cache = ResponseCache.new(config.cacheConfig or {}, clockFn)
 	end
 
 	-- Load Promise module (skip in test mode where _httpRequest is injected)
@@ -306,8 +314,38 @@ end
 
 --- Raw RPC call for custom/unsupported methods.
 --- Returns a Promise that resolves to the raw JSON-RPC result.
+--- When cache is enabled, checks cache first and stores successful results.
 --- When queue is enabled, requests are enqueued and drained on the next defer cycle.
-function RpcProviderClass:fetch(method: string, params: any): any
+function RpcProviderClass:fetch(method: string, params: any, options: RpcTypes.FetchOptions?): any
+	local Promise = self:_getPromise()
+	local cache = self._cache
+	local bypassCache = options and options.bypassCache
+
+	-- Cache check: return cached result immediately on hit
+	if cache and not bypassCache then
+		local ttl = cache:getTTLForMethod(method)
+		if ttl ~= nil then
+			local cacheKey = method .. ":" .. self:_jsonEncode(params)
+			local cached = cache:get(cacheKey)
+			if cached ~= nil then
+				return Promise.resolve(cached)
+			end
+
+			-- Cache miss: proceed to network, store result on success
+			local networkPromise = self:_fetchNetwork(method, params)
+			return networkPromise:andThen(function(result: any)
+				cache:set(cacheKey, result, ttl)
+				return result
+			end)
+		end
+	end
+
+	-- Uncacheable or cache disabled: go straight to network
+	return self:_fetchNetwork(method, params)
+end
+
+--- Internal: perform the actual network fetch (queue or direct path).
+function RpcProviderClass:_fetchNetwork(method: string, params: any): any
 	local Promise = self:_getPromise()
 
 	-- Queue path: enqueue + schedule drain
@@ -573,8 +611,27 @@ function RpcProviderClass:_dispatchBatch(items: { any })
 	end
 end
 
---- Get a snapshot of provider metrics (queue + rate limiter).
+--- Flush all cached responses.
+function RpcProviderClass:flushCache()
+	if self._cache then
+		self._cache:flush()
+	end
+end
+
+--- Get a snapshot of provider metrics (queue + rate limiter + cache).
 function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
+	local cacheHits = 0
+	local cacheMisses = 0
+	local cacheEvictions = 0
+	local cacheSize = 0
+	if self._cache then
+		local cm = self._cache:getMetrics()
+		cacheHits = cm.cacheHits
+		cacheMisses = cm.cacheMisses
+		cacheEvictions = cm.cacheEvictions
+		cacheSize = cm.cacheSize
+	end
+
 	if self._queue then
 		local qm = self._queue:getMetrics()
 		return {
@@ -587,6 +644,10 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 			rateLimitTokens = math.floor(self._rateLimiter.tokens),
 			rateLimitMax = self._rateLimiter.maxTokens,
 			batchesSent = qm.batchesSent,
+			cacheHits = cacheHits,
+			cacheMisses = cacheMisses,
+			cacheEvictions = cacheEvictions,
+			cacheSize = cacheSize,
 		}
 	end
 
@@ -600,6 +661,10 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 		rateLimitTokens = math.floor(self._rateLimiter.tokens),
 		rateLimitMax = self._rateLimiter.maxTokens,
 		batchesSent = 0,
+		cacheHits = cacheHits,
+		cacheMisses = cacheMisses,
+		cacheEvictions = cacheEvictions,
+		cacheSize = cacheSize,
 	}
 end
 
@@ -614,12 +679,29 @@ function RpcProviderClass:getChainId(): any
 end
 
 --- Get the latest block number.
+--- When caching is enabled, detects new blocks and invalidates storage/call/block caches.
 function RpcProviderClass:getBlockNumber(): any
 	return self:fetch("starknet_blockNumber", {}):andThen(function(result: any)
+		local blockNum: number
 		if type(result) == "number" then
-			return result
+			blockNum = result
+		else
+			blockNum = tonumber(result) or 0
 		end
-		return tonumber(result) or result
+
+		-- Block-based cache invalidation: only on block transitions (not first discovery)
+		if self._cache and blockNum > self._lastKnownBlockNumber then
+			local isFirstDiscovery = self._lastKnownBlockNumber == 0
+			self._lastKnownBlockNumber = blockNum
+			if not isFirstDiscovery then
+				-- Invalidate block-sensitive caches (NOT chainId/classHash/specVersion/blockNumber)
+				self._cache:invalidateByPrefix("starknet_getStorageAt:")
+				self._cache:invalidateByPrefix("starknet_call:")
+				self._cache:invalidateByPrefix("starknet_getBlockWithTxHashes:")
+			end
+		end
+
+		return blockNum
 	end)
 end
 
