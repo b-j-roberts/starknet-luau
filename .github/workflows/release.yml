@@ -39,4 +39,6 @@ jobs:
           token: ${{ secrets.PESDE_TOKEN }}
 
       - name: Publish to Pesde
-        run: pesde publish -y
+        run: |
+          pesde install
+          pesde publish -y
