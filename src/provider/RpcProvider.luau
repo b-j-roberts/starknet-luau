@@ -33,8 +33,19 @@ export type RpcProvider = {
 	getTransactionReceipt: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionReceipt>,
 	getTransactionStatus: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionStatus>,
 	getBlockWithTxHashes: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.Block>,
+	getBlockWithTxs: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.BlockWithTxs>,
+	getBlockWithReceipts: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.BlockWithReceipts>,
+	getTransactionByHash: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.Transaction>,
 	getClassHashAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<string>,
 	getStorageAt: (self: RpcProvider, contractAddress: string, key: string, blockId: string?) -> Promise<string>,
+	getClass: (self: RpcProvider, classHash: string, blockId: string?) -> Promise<RpcTypes.ContractClass>,
+	getClassAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<RpcTypes.ContractClass>,
+	estimateMessageFee: (
+		self: RpcProvider,
+		message: RpcTypes.MessageFromL1,
+		blockId: string?
+	) -> Promise<RpcTypes.FeeEstimate>,
+	getSyncingStats: (self: RpcProvider) -> Promise<any>,
 	getEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<RpcTypes.EventsChunk>,
 	getAllEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<{ RpcTypes.EmittedEvent }>,
 	waitForTransaction: (
@@ -729,6 +740,8 @@ function RpcProviderClass:getBlockNumber(): any
 				self._cache:invalidateByPrefix("starknet_getStorageAt:")
 				self._cache:invalidateByPrefix("starknet_call:")
 				self._cache:invalidateByPrefix("starknet_getBlockWithTxHashes:")
+				self._cache:invalidateByPrefix("starknet_getBlockWithTxs:")
+				self._cache:invalidateByPrefix("starknet_getBlockWithReceipts:")
 			end
 		end
 
@@ -840,6 +853,71 @@ function RpcProviderClass:getStorageAt(contractAddress: string, key: string, blo
 		key,
 		formatBlockId(blockId),
 	})
+end
+
+--- Get a block with full transaction objects.
+--- @param blockId -- optional block identifier (default: "latest")
+function RpcProviderClass:getBlockWithTxs(blockId: string?): any
+	return self:fetch("starknet_getBlockWithTxs", {
+		formatBlockId(blockId),
+	})
+end
+
+--- Get a block with transaction receipts.
+--- @param blockId -- optional block identifier (default: "latest")
+function RpcProviderClass:getBlockWithReceipts(blockId: string?): any
+	return self:fetch("starknet_getBlockWithReceipts", {
+		formatBlockId(blockId),
+	})
+end
+
+--- Get full transaction details by hash.
+--- @param txHash -- the transaction hash
+function RpcProviderClass:getTransactionByHash(txHash: string): any
+	return self:fetch("starknet_getTransactionByHash", {
+		txHash,
+	})
+end
+
+--- Get the contract class definition for a given class hash.
+--- @param classHash -- the class hash
+--- @param blockId -- optional block identifier (default: "latest")
+function RpcProviderClass:getClass(classHash: string, blockId: string?): any
+	return self:fetch("starknet_getClass", {
+		formatBlockId(blockId),
+		classHash,
+	})
+end
+
+--- Get the contract class at a given address.
+--- @param contractAddress -- hex address
+--- @param blockId -- optional block identifier (default: "latest")
+function RpcProviderClass:getClassAt(contractAddress: string, blockId: string?): any
+	return self:fetch("starknet_getClassAt", {
+		formatBlockId(blockId),
+		contractAddress,
+	})
+end
+
+--- Estimate the fee for an L1→L2 message.
+--- @param message -- MessageFromL1 with from_address, to_address, entry_point_selector, payload
+--- @param blockId -- optional block identifier (default: "latest")
+function RpcProviderClass:estimateMessageFee(message: RpcTypes.MessageFromL1, blockId: string?): any
+	return self:fetch("starknet_estimateMessageFee", {
+		{
+			from_address = message.from_address,
+			to_address = message.to_address,
+			entry_point_selector = message.entry_point_selector,
+			payload = message.payload,
+		},
+		formatBlockId(blockId),
+	})
+end
+
+--- Get the syncing status of the node.
+--- Returns false if not syncing, or a SyncingStatus object with block progress.
+function RpcProviderClass:getSyncingStats(): any
+	return self:fetch("starknet_syncing", {})
 end
 
 --- Get events matching a filter.

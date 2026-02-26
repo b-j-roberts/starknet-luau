@@ -41,10 +41,13 @@ export type ResponseCache = {
 local UNCACHEABLE: { [string]: boolean } = {
 	["starknet_addInvokeTransaction"] = true,
 	["starknet_estimateFee"] = true,
+	["starknet_estimateMessageFee"] = true,
 	["starknet_getNonce"] = true,
 	["starknet_getTransactionReceipt"] = true,
 	["starknet_getTransactionStatus"] = true,
+	["starknet_getTransactionByHash"] = true,
 	["starknet_getEvents"] = true,
+	["starknet_syncing"] = true,
 }
 
 -- Config key mapping for methods with configurable TTLs
@@ -53,7 +56,11 @@ local METHOD_TTL_CONFIG_KEY: { [string]: string } = {
 	["starknet_specVersion"] = "specVersionTTL",
 	["starknet_blockNumber"] = "blockNumberTTL",
 	["starknet_getBlockWithTxHashes"] = "blockTTL",
+	["starknet_getBlockWithTxs"] = "blockTTL",
+	["starknet_getBlockWithReceipts"] = "blockTTL",
 	["starknet_getClassHashAt"] = "classHashTTL",
+	["starknet_getClass"] = "classTTL",
+	["starknet_getClassAt"] = "classTTL",
 	["starknet_getStorageAt"] = "storageTTL",
 	["starknet_call"] = "callTTL",
 }
@@ -65,6 +72,7 @@ local DEFAULT_TTLS: { [string]: number } = {
 	blockNumberTTL = 10,
 	blockTTL = 10,
 	classHashTTL = 0,
+	classTTL = 0,
 	storageTTL = 30,
 	callTTL = 30,
 }

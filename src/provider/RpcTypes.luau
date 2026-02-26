@@ -26,8 +26,9 @@ export type CacheConfig = {
 	chainIdTTL: number?, -- TTL for chainId in seconds (default 0 = indefinite)
 	specVersionTTL: number?, -- TTL for specVersion in seconds (default 0 = indefinite)
 	blockNumberTTL: number?, -- TTL for blockNumber in seconds (default 10)
-	blockTTL: number?, -- TTL for getBlockWithTxHashes in seconds (default 10)
+	blockTTL: number?, -- TTL for block methods in seconds (default 10)
 	classHashTTL: number?, -- TTL for getClassHashAt in seconds (default 0 = indefinite)
+	classTTL: number?, -- TTL for getClass/getClassAt in seconds (default 0 = indefinite)
 	storageTTL: number?, -- TTL for getStorageAt in seconds (default 30)
 	callTTL: number?, -- TTL for call in seconds (default 30)
 }
@@ -235,6 +236,93 @@ export type Block = {
 	sequencer_address: string?,
 	transactions: { string },
 	l1_gas_price: { price_in_wei: string, price_in_fri: string }?,
+}
+
+--- Full transaction object (returned by getBlockWithTxs, getTransactionByHash)
+export type Transaction = {
+	transaction_hash: string,
+	type: string, -- "INVOKE" | "DECLARE" | "DEPLOY_ACCOUNT" | "L1_HANDLER"
+	version: string,
+	nonce: string?,
+	sender_address: string?,
+	calldata: { string }?,
+	signature: { string }?,
+	max_fee: string?,
+	resource_bounds: ResourceBounds?,
+	tip: string?,
+	paymaster_data: { string }?,
+	nonce_data_availability_mode: string?,
+	fee_data_availability_mode: string?,
+	account_deployment_data: { string }?,
+	-- DECLARE-specific
+	class_hash: string?,
+	compiled_class_hash: string?,
+	contract_address_salt: string?,
+	constructor_calldata: { string }?,
+	-- L1_HANDLER-specific
+	contract_address: string?,
+	entry_point_selector: string?,
+}
+
+--- Block with full transactions
+export type BlockWithTxs = {
+	block_hash: string?,
+	parent_hash: string,
+	block_number: number?,
+	status: string?,
+	new_root: string?,
+	timestamp: number,
+	sequencer_address: string?,
+	transactions: { Transaction },
+	l1_gas_price: { price_in_wei: string, price_in_fri: string }?,
+}
+
+--- Transaction receipt with hash (for getBlockWithReceipts)
+export type TransactionWithReceipt = {
+	transaction: Transaction,
+	receipt: TransactionReceipt,
+}
+
+--- Block with transaction receipts
+export type BlockWithReceipts = {
+	block_hash: string?,
+	parent_hash: string,
+	block_number: number?,
+	status: string?,
+	new_root: string?,
+	timestamp: number,
+	sequencer_address: string?,
+	transactions: { TransactionWithReceipt },
+	l1_gas_price: { price_in_wei: string, price_in_fri: string }?,
+}
+
+--- Contract class definition (Sierra or legacy)
+export type ContractClass = {
+	-- Sierra class fields
+	sierra_program: { string }?,
+	contract_class_version: string?,
+	entry_points_by_type: any?,
+	abi: string?,
+	-- Legacy class fields
+	program: string?,
+}
+
+--- L1→L2 message for estimateMessageFee
+export type MessageFromL1 = {
+	from_address: string, -- L1 Ethereum address
+	to_address: string, -- L2 Starknet contract address
+	entry_point_selector: string,
+	payload: { string },
+}
+
+--- Syncing status
+export type SyncingStatus = {
+	starting_block_hash: string?,
+	starting_block_num: number?,
+	current_block_hash: string?,
+	current_block_num: number?,
+	highest_block_hash: string?,
+	highest_block_num: number?,
 }
 
 --- Options for waitForTransaction

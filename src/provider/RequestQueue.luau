@@ -49,6 +49,7 @@ export type RequestQueue = {
 local METHOD_PRIORITY: { [string]: string } = {
 	["starknet_addInvokeTransaction"] = "high",
 	["starknet_estimateFee"] = "high",
+	["starknet_estimateMessageFee"] = "high",
 	["starknet_getEvents"] = "low",
 }
 
@@ -59,11 +60,17 @@ local BATCHABLE_METHODS: { [string]: boolean } = {
 	["starknet_getNonce"] = true,
 	["starknet_call"] = true,
 	["starknet_getBlockWithTxHashes"] = true,
+	["starknet_getBlockWithTxs"] = true,
+	["starknet_getBlockWithReceipts"] = true,
+	["starknet_getTransactionByHash"] = true,
 	["starknet_getClassHashAt"] = true,
+	["starknet_getClass"] = true,
+	["starknet_getClassAt"] = true,
 	["starknet_getStorageAt"] = true,
 	["starknet_getTransactionReceipt"] = true,
 	["starknet_getTransactionStatus"] = true,
 	["starknet_getEvents"] = true,
+	["starknet_syncing"] = true,
 }
 
 --------------------------------------------------------------------------------

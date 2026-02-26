@@ -106,6 +106,125 @@ local function resetHandlers()
 			},
 		}
 	end
+
+	mockHandlers["starknet_getBlockWithTxs"] = function(_params)
+		return {
+			block_hash = "0xblock1",
+			parent_hash = "0xblock0",
+			block_number = 100,
+			status = "ACCEPTED_ON_L2",
+			timestamp = 1700000000,
+			sequencer_address = "0xseq",
+			transactions = {
+				{
+					transaction_hash = "0xtx1",
+					type = "INVOKE",
+					version = "0x3",
+					sender_address = "0xsender1",
+					calldata = { "0x1", "0x2" },
+					signature = { "0xr", "0xs" },
+					nonce = "0x0",
+				},
+				{
+					transaction_hash = "0xtx2",
+					type = "INVOKE",
+					version = "0x3",
+					sender_address = "0xsender2",
+					calldata = { "0x3" },
+					signature = { "0xr2", "0xs2" },
+					nonce = "0x1",
+				},
+			},
+		}
+	end
+
+	mockHandlers["starknet_getBlockWithReceipts"] = function(_params)
+		return {
+			block_hash = "0xblock1",
+			parent_hash = "0xblock0",
+			block_number = 100,
+			status = "ACCEPTED_ON_L2",
+			timestamp = 1700000000,
+			sequencer_address = "0xseq",
+			transactions = {
+				{
+					transaction = {
+						transaction_hash = "0xtx1",
+						type = "INVOKE",
+						version = "0x3",
+						sender_address = "0xsender1",
+					},
+					receipt = {
+						transaction_hash = "0xtx1",
+						actual_fee = { amount = "0x1234", unit = "WEI" },
+						execution_status = "SUCCEEDED",
+						finality_status = "ACCEPTED_ON_L2",
+						events = {},
+					},
+				},
+			},
+		}
+	end
+
+	mockHandlers["starknet_getTransactionByHash"] = function(_params)
+		return {
+			transaction_hash = "0xtx1",
+			type = "INVOKE",
+			version = "0x3",
+			sender_address = "0xsender1",
+			calldata = { "0x1", "0x2" },
+			signature = { "0xr", "0xs" },
+			nonce = "0x5",
+		}
+	end
+
+	mockHandlers["starknet_getClass"] = function(_params)
+		return {
+			sierra_program = { "0x1", "0x2", "0x3" },
+			contract_class_version = "0.1.0",
+			entry_points_by_type = {
+				EXTERNAL = { { selector = "0xsel1", function_idx = 0 } },
+				L1_HANDLER = {},
+				CONSTRUCTOR = {},
+			},
+			abi = '[{"type":"function","name":"transfer"}]',
+		}
+	end
+
+	mockHandlers["starknet_getClassAt"] = function(_params)
+		return {
+			sierra_program = { "0xa", "0xb" },
+			contract_class_version = "0.1.0",
+			entry_points_by_type = {
+				EXTERNAL = {},
+				L1_HANDLER = {},
+				CONSTRUCTOR = {},
+			},
+			abi = '[{"type":"function","name":"balance_of"}]',
+		}
+	end
+
+	mockHandlers["starknet_estimateMessageFee"] = function(_params)
+		return {
+			gas_consumed = "0x2000",
+			gas_price = "0x200",
+			overall_fee = "0x400000",
+			data_gas_consumed = "0x100",
+			data_gas_price = "0x50",
+			unit = "WEI",
+		}
+	end
+
+	mockHandlers["starknet_syncing"] = function(_params)
+		return {
+			starting_block_hash = "0xstart",
+			starting_block_num = 0,
+			current_block_hash = "0xcurrent",
+			current_block_num = 50000,
+			highest_block_hash = "0xhighest",
+			highest_block_num = 100000,
+		}
+	end
 end
 
 --- Track all requests received
@@ -1699,5 +1818,493 @@ describe("RpcProvider - cache metrics", function()
 		local m = provider:getMetrics()
 		expect(m.cacheEvictions):toBe(1)
 		expect(m.cacheSize):toBe(1)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Tests: Expanded RPC method coverage (Phase 2.10)
+--------------------------------------------------------------------------------
+
+describe("RpcProvider - getBlockWithTxs", function()
+	it("returns block with full transaction objects", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local block = provider:getBlockWithTxs():expect()
+		expect(block.block_hash):toBe("0xblock1")
+		expect(block.block_number):toBe(100)
+		expect(#block.transactions):toBe(2)
+		expect(block.transactions[1].transaction_hash):toBe("0xtx1")
+		expect(block.transactions[1].type):toBe("INVOKE")
+		expect(block.transactions[1].sender_address):toBe("0xsender1")
+		expect(block.transactions[2].transaction_hash):toBe("0xtx2")
+	end)
+
+	it("sends correct JSON-RPC method", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithTxs():expect()
+		expect(requestLog[#requestLog].method):toBe("starknet_getBlockWithTxs")
+	end)
+
+	it("uses latest block by default", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithTxs():expect()
+		expect(requestLog[#requestLog].params[1]):toBe("latest")
+	end)
+
+	it("accepts block hash as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithTxs("0xblockhash"):expect()
+		expect(requestLog[#requestLog].params[1].block_hash):toBe("0xblockhash")
+	end)
+
+	it("accepts block number as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithTxs("42"):expect()
+		expect(requestLog[#requestLog].params[1].block_number):toBe(42)
+	end)
+
+	it("accepts pending as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithTxs("pending"):expect()
+		expect(requestLog[#requestLog].params[1]):toBe("pending")
+	end)
+
+	it("is cached with blockTTL", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getBlockWithTxs():expect()
+		provider:getBlockWithTxs():expect()
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("is invalidated on new block", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getBlockWithTxs():expect()
+		provider:getBlockNumber():expect() -- baseline
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect() -- triggers invalidation
+		provider:getBlockWithTxs():expect()
+		local blockTxsRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getBlockWithTxs" then
+				blockTxsRequests += 1
+			end
+		end
+		expect(blockTxsRequests):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - getBlockWithReceipts", function()
+	it("returns block with transaction receipts", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local block = provider:getBlockWithReceipts():expect()
+		expect(block.block_hash):toBe("0xblock1")
+		expect(block.block_number):toBe(100)
+		expect(#block.transactions):toBe(1)
+		expect(block.transactions[1].transaction.transaction_hash):toBe("0xtx1")
+		expect(block.transactions[1].receipt.execution_status):toBe("SUCCEEDED")
+	end)
+
+	it("sends correct JSON-RPC method", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithReceipts():expect()
+		expect(requestLog[#requestLog].method):toBe("starknet_getBlockWithReceipts")
+	end)
+
+	it("uses latest block by default", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithReceipts():expect()
+		expect(requestLog[#requestLog].params[1]):toBe("latest")
+	end)
+
+	it("accepts block hash as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getBlockWithReceipts("0xblockhash"):expect()
+		expect(requestLog[#requestLog].params[1].block_hash):toBe("0xblockhash")
+	end)
+
+	it("is cached with blockTTL", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getBlockWithReceipts():expect()
+		provider:getBlockWithReceipts():expect()
+		expect(#requestLog):toBe(1)
+	end)
+
+	it("is invalidated on new block", function()
+		resetHandlers()
+		clearRequestLog()
+		local blockNum = 100
+		local currentTime = 0
+		mockHandlers["starknet_blockNumber"] = function(_params)
+			return blockNum
+		end
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getBlockWithReceipts():expect()
+		provider:getBlockNumber():expect()
+		currentTime = 11
+		blockNum = 101
+		provider:getBlockNumber():expect()
+		provider:getBlockWithReceipts():expect()
+		local methodRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getBlockWithReceipts" then
+				methodRequests += 1
+			end
+		end
+		expect(methodRequests):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - getTransactionByHash", function()
+	it("returns full transaction details", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local tx = provider:getTransactionByHash("0xtx1"):expect()
+		expect(tx.transaction_hash):toBe("0xtx1")
+		expect(tx.type):toBe("INVOKE")
+		expect(tx.version):toBe("0x3")
+		expect(tx.sender_address):toBe("0xsender1")
+		expect(tx.nonce):toBe("0x5")
+	end)
+
+	it("sends correct JSON-RPC method and params", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getTransactionByHash("0xmytx"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_getTransactionByHash")
+		expect(lastReq.params[1]):toBe("0xmytx")
+	end)
+
+	it("includes calldata and signature", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local tx = provider:getTransactionByHash("0xtx1"):expect()
+		expect(#tx.calldata):toBe(2)
+		expect(tx.calldata[1]):toBe("0x1")
+		expect(#tx.signature):toBe(2)
+	end)
+
+	it("is not cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getTransactionByHash("0xtx1"):expect()
+		provider:getTransactionByHash("0xtx1"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - getClass", function()
+	it("returns the contract class definition", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local class = provider:getClass("0xclasshash1"):expect()
+		expect(class.contract_class_version):toBe("0.1.0")
+		expect(#class.sierra_program):toBe(3)
+		expect(class.abi):toBeTruthy()
+	end)
+
+	it("sends correct JSON-RPC method and params", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getClass("0xclasshash1"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_getClass")
+		expect(lastReq.params[1]):toBe("latest")
+		expect(lastReq.params[2]):toBe("0xclasshash1")
+	end)
+
+	it("accepts block hash as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getClass("0xclasshash1", "0xblockhash"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.params[1].block_hash):toBe("0xblockhash")
+	end)
+
+	it("accepts block number as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getClass("0xclasshash1", "50"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.params[1].block_number):toBe(50)
+	end)
+
+	it("includes entry_points_by_type", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local class = provider:getClass("0xclasshash1"):expect()
+		expect(class.entry_points_by_type):toBeTruthy()
+		expect(#class.entry_points_by_type.EXTERNAL):toBe(1)
+	end)
+
+	it("is cached indefinitely (classTTL=0)", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getClass("0xclasshash1"):expect()
+		currentTime = 999999
+		provider:getClass("0xclasshash1"):expect()
+		local classRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getClass" then
+				classRequests += 1
+			end
+		end
+		expect(classRequests):toBe(1)
+	end)
+
+	it("different class hashes produce separate cache entries", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getClass("0xhash1"):expect()
+		provider:getClass("0xhash2"):expect()
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - getClassAt", function()
+	it("returns the contract class at an address", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local class = provider:getClassAt("0xcontract1"):expect()
+		expect(class.contract_class_version):toBe("0.1.0")
+		expect(#class.sierra_program):toBe(2)
+	end)
+
+	it("sends correct JSON-RPC method and params", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getClassAt("0xcontract1"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_getClassAt")
+		expect(lastReq.params[1]):toBe("latest")
+		expect(lastReq.params[2]):toBe("0xcontract1")
+	end)
+
+	it("accepts block hash as blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getClassAt("0xcontract1", "0xblockhash"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.params[1].block_hash):toBe("0xblockhash")
+	end)
+
+	it("is cached indefinitely (classTTL=0)", function()
+		resetHandlers()
+		clearRequestLog()
+		local currentTime = 0
+		local provider = createTestProvider({
+			enableCache = true,
+			_clock = function()
+				return currentTime
+			end,
+		})
+		provider:getClassAt("0xcontract1"):expect()
+		currentTime = 999999
+		provider:getClassAt("0xcontract1"):expect()
+		local classAtRequests = 0
+		for _, req in requestLog do
+			if req.method == "starknet_getClassAt" then
+				classAtRequests += 1
+			end
+		end
+		expect(classAtRequests):toBe(1)
+	end)
+end)
+
+describe("RpcProvider - estimateMessageFee", function()
+	it("returns fee estimate for L1->L2 message", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local fee = provider:estimateMessageFee({
+			from_address = "0xL1Sender",
+			to_address = "0xL2Contract",
+			entry_point_selector = "0xselector1",
+			payload = { "0x1", "0x2" },
+		}):expect()
+		expect(fee.gas_consumed):toBe("0x2000")
+		expect(fee.overall_fee):toBe("0x400000")
+		expect(fee.unit):toBe("WEI")
+	end)
+
+	it("sends correct JSON-RPC method and params", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:estimateMessageFee({
+			from_address = "0xL1Sender",
+			to_address = "0xL2Contract",
+			entry_point_selector = "0xselector1",
+			payload = { "0x1" },
+		}):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_estimateMessageFee")
+		expect(lastReq.params[1].from_address):toBe("0xL1Sender")
+		expect(lastReq.params[1].to_address):toBe("0xL2Contract")
+		expect(lastReq.params[1].entry_point_selector):toBe("0xselector1")
+		expect(#lastReq.params[1].payload):toBe(1)
+		expect(lastReq.params[2]):toBe("latest") -- default blockId
+	end)
+
+	it("accepts custom blockId", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:estimateMessageFee({
+			from_address = "0xL1Sender",
+			to_address = "0xL2Contract",
+			entry_point_selector = "0xselector1",
+			payload = {},
+		}, "pending"):expect()
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.params[2]):toBe("pending")
+	end)
+
+	it("is not cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		local msg = {
+			from_address = "0xL1Sender",
+			to_address = "0xL2Contract",
+			entry_point_selector = "0xselector1",
+			payload = { "0x1" },
+		}
+		provider:estimateMessageFee(msg):expect()
+		provider:estimateMessageFee(msg):expect()
+		expect(#requestLog):toBe(2)
+	end)
+
+	it("returns all fee fields", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local fee = provider:estimateMessageFee({
+			from_address = "0xL1Sender",
+			to_address = "0xL2Contract",
+			entry_point_selector = "0xselector1",
+			payload = {},
+		}):expect()
+		expect(fee.gas_consumed):toBeTruthy()
+		expect(fee.gas_price):toBeTruthy()
+		expect(fee.overall_fee):toBeTruthy()
+		expect(fee.data_gas_consumed):toBeTruthy()
+		expect(fee.data_gas_price):toBeTruthy()
+	end)
+end)
+
+describe("RpcProvider - getSyncingStats", function()
+	it("returns syncing status when node is syncing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local status = provider:getSyncingStats():expect()
+		expect(status.starting_block_hash):toBe("0xstart")
+		expect(status.starting_block_num):toBe(0)
+		expect(status.current_block_num):toBe(50000)
+		expect(status.highest_block_num):toBe(100000)
+	end)
+
+	it("sends correct JSON-RPC method", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		provider:getSyncingStats():expect()
+		expect(requestLog[#requestLog].method):toBe("starknet_syncing")
+	end)
+
+	it("returns false when node is not syncing", function()
+		resetHandlers()
+		mockHandlers["starknet_syncing"] = function(_params)
+			return false
+		end
+		local provider = createTestProvider()
+		local status = provider:getSyncingStats():expect()
+		expect(status):toBe(false)
+	end)
+
+	it("is not cached", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({ enableCache = true })
+		provider:getSyncingStats():expect()
+		provider:getSyncingStats():expect()
+		expect(#requestLog):toBe(2)
+	end)
+end)
+
+describe("RpcProvider - new methods work with queue", function()
+	it("all new methods work with queue enabled", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider({
+			enableQueue = true,
+			_defer = function(fn: () -> ())
+				fn()
+			end,
+		})
+		expect(provider:getBlockWithTxs():expect()).toBeTruthy()
+		expect(provider:getBlockWithReceipts():expect()).toBeTruthy()
+		expect(provider:getTransactionByHash("0xtx1"):expect()).toBeTruthy()
+		expect(provider:getClass("0xhash1"):expect()).toBeTruthy()
+		expect(provider:getClassAt("0xaddr1"):expect()).toBeTruthy()
+		expect(provider:estimateMessageFee({
+			from_address = "0xL1",
+			to_address = "0xL2",
+			entry_point_selector = "0xsel",
+			payload = {},
+		}):expect()).toBeTruthy()
+		expect(provider:getSyncingStats():expect()).toBeTruthy()
 	end)
 end)
