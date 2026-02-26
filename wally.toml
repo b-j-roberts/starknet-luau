@@ -6,6 +6,7 @@ realm = "shared"
 description = "Pure Luau SDK for Starknet blockchain interaction from Roblox games"
 license = "MIT"
 authors = ["Brandon Roberts"]
+repository = "https://github.com/b-j-roberts/starknet-luau"
 include = ["default.project.json", "src/**", "LICENSE", "README.md"]
 exclude = ["tests/**", "dev.project.json"]
 
