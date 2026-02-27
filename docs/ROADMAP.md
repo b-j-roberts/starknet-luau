@@ -2,593 +2,9 @@
 
 ---
 
-# Phase 1: MVP
-
-The essential features needed for a working end-to-end Starknet integration from Roblox: create an account from a private key, build and sign transactions, submit them to the network, and read contract state.
-
-### 1.1 BigInt -- Buffer-Based Arbitrary Precision Integers
-
-**Description**: Implement arbitrary-precision integer arithmetic using buffer-backed f64 limb arrays, following rbx-cryptography's proven performance patterns. This is the foundation for all cryptographic operations.
-
-**Requirements**:
-- [ ] Buffer-based limb representation (11 limbs x 24 bits = 264 bits, little-endian, f64 values)
-- [ ] Use `--!native` and `--!optimize 2` pragmas for all crypto modules
-- [ ] Carry propagation via IEEE 754 rounding trick (`x + 3*2^k - 3*2^k`)
-- [ ] Constructors: `fromNumber()`, `fromHex()`, `fromBytes()`, `zero()`, `one()`
-- [ ] Conversions: `toHex()`, `toBytes()`, `toNumber()`
-- [ ] Comparison: `eq()`, `lt()`, `lte()`, `cmp()`, `isZero()`
-- [ ] Basic arithmetic: `add()`, `sub()`, `mul()`, `div()`, `mod()`, `divmod()`
-- [ ] Bitwise: `shl()`, `shr()`, `band()`, `bor()`, `bitLength()`, `getBit()`
-- [ ] Modular arithmetic: `addmod()`, `submod()`, `mulmod()`, `powmod()`, `invmod()`
-- [ ] Barrett reduction: `createBarrettCtx()`, `mulmodB()` for ~30x speedup on repeated modular multiplication
-- [ ] Unit tests for all operations against known values
-- [ ] Edge case tests: zero, one, max field value, overflow, underflow
-
-**Implementation Notes**:
-- Reference rbx-cryptography's `MultiPrecision.luau` and `FieldPrime.luau` for buffer layout and carry patterns
-- Keep intermediates under 2^53 (f64 precision limit) by using 24-bit limbs
-- Barrett reduction is critical for Poseidon performance (91 rounds of field arithmetic)
-- Test against values computed by JavaScript BigInt for correctness
-
----
-
-### 1.2 StarkField -- Field Arithmetic over Stark Prime
-
-**Description**: Implement modular arithmetic over P = 2^251 + 17 * 2^192 + 1, the Stark field prime. This is used by Poseidon, Pedersen, and all curve operations.
-
-**Requirements**:
-- [ ] Dedicated `Felt` type backed by buffer (not generic BigInt wrapper)
-- [ ] Optimized reduction exploiting the sparse structure of P (overflow past bit 251 multiplied by -(17*2^192 + 1))
-- [ ] Pre-computed Barrett context for P
-- [ ] Constructors: `fromHex()`, `fromNumber()`, `zero()`, `one()`
-- [ ] Arithmetic: `add()`, `sub()`, `mul()`, `square()`, `neg()`
-- [ ] Inversion: `inv()` via Fermat's little theorem (a^(P-2) mod P)
-- [ ] Square root: `sqrt()` for point decompression
-- [ ] Conversions: `toHex()`, `toBigInt()`, `eq()`, `isZero()`
-- [ ] Unit tests against starknet.js field arithmetic results
-
-**Implementation Notes**:
-- The Stark prime P = 2^251 + 17*2^192 + 1 has a sparse structure that enables efficient reduction
-- Reference rbx-cryptography's `FieldPrime.luau` for the general approach (adapted from GF(2^255-19))
-- Consider whether to use a specialized 12-limb representation or reuse BigInt with Barrett context
-
----
-
-### 1.3 StarkScalarField -- Scalar Arithmetic over Curve Order
-
-**Description**: Implement modular arithmetic over N (the curve order), needed for ECDSA scalar operations.
-
-**Requirements**:
-- [ ] Same API pattern as StarkField but with modulus N
-- [ ] Pre-computed Barrett context for N
-- [ ] Inversion: `inv()` via Fermat's little theorem (a^(N-2) mod N)
-- [ ] Unit tests for scalar arithmetic
-
-**Implementation Notes**:
-- N = 0x0800000000000010ffffffffffffffffb781126dcae7b2321e66a241adc64d2f
-- Used for computing s = k^(-1) * (hash + r*privKey) mod N in ECDSA
-- Could share implementation with StarkField using parameterized modulus
-
----
-
-### 1.4 StarkCurve -- Elliptic Curve Point Operations
-
-**Description**: Implement point arithmetic on the Stark curve (y^2 = x^3 + x + beta, short Weierstrass form with alpha=1).
-
-**Requirements**:
-- [ ] Point type: affine `{x: Felt, y: Felt}` and Jacobian `{x: Felt, y: Felt, z: Felt}`
-- [ ] Curve constants: P, N, G (generator), alpha (1), beta
-- [ ] Jacobian point addition (avoids field inversions)
-- [ ] Jacobian point doubling
-- [ ] Jacobian-to-affine conversion (single field inversion)
-- [ ] Scalar multiplication via double-and-add
-- [ ] Point validation: `isOnCurve()`, `isInfinity()`
-- [ ] Public key derivation: `getPublicKey(privateKey)` = privateKey * G
-- [ ] Unit tests: known public keys from starknet.js, point addition/doubling against expected values
-
-**Implementation Notes**:
-- Short Weierstrass addition formulas differ from Edwards (which rbx-cryptography uses)
-- Jacobian coordinates: (X, Y, Z) represents affine (X/Z^2, Y/Z^3)
-- Addition: X3 = R^2 - J - 2*V, Y3 = R*(V-X3) - 2*S1*J, Z3 = ((Z1+Z2)^2-Z1Z1-Z2Z2)*H
-- Doubling: uses alpha=1 simplification
-- Consider precomputed table for generator point to speed up pubkey derivation
-
----
-
-### 1.5 Poseidon Hash
-
-**Description**: Implement the Poseidon hash function over the Stark field using the Hades permutation strategy. This is the primary hash function for V3 transactions.
-
-**Requirements**:
-- [ ] Hades permutation: state width=3, rate=2, capacity=1
-- [ ] Round structure: 4 full + 83 partial + 4 full = 91 total rounds
-- [ ] Pre-computed round constants (91 * 3 = 273 field elements)
-- [ ] Pre-computed MDS matrix (3x3)
-- [ ] S-box: x^3 (cube) for Stark field
-- [ ] Core API: `hash(a, b)`, `hashSingle(x)`, `hashMany(values)`
-- [ ] Sponge construction for variable-length input (absorb rate=2 elements at a time)
-- [ ] Unit tests matching starknet.js `hash.computePoseidonHash` and `hash.computePoseidonHashOnElements`
-
-**Implementation Notes**:
-- Performance critical: used for every transaction hash and some address computations
-- Barrett reduction (from BigInt) is essential here -- 91 rounds * multiple field multiplications per round
-- Round constants must be exact -- use values from the Starknet specification
-- Consider inlining the MDS multiplication for the 3x3 case
-
----
-
-### 1.6 Pedersen Hash
-
-**Description**: Implement Pedersen hash using elliptic curve point operations. Used for legacy operations and some address computations.
-
-**Requirements**:
-- [ ] 4 pre-computed constant base points (P0, P1, P2, P3) from Starknet specification
-- [ ] Process inputs in 248-bit + 4-bit chunks
-- [ ] Point addition and scalar multiplication during hashing
-- [ ] API: `hash(a, b)` returning a Felt
-- [ ] Unit tests matching starknet.js `hash.computePedersenHash`
-
-**Implementation Notes**:
-- Slower than Poseidon due to EC operations, but required for compatibility
-- Pre-computed lookup tables for the constant points can significantly speed this up
-- The sn-testing-game implementation can be referenced for the algorithm flow (but rewritten with buffer-based crypto)
-
----
-
-### 1.7 Keccak-256
-
-**Description**: Implement Keccak-256 (Ethereum variant, NOT SHA-3) for function selector computation.
-
-**Requirements**:
-- [ ] Full Keccak-f[1600] permutation (24 rounds)
-- [ ] 64-bit lanes via {hi, lo} 32-bit pairs using `bit32` library
-- [ ] Theta, rho+pi, chi, iota steps
-- [ ] Padding: 0x01 domain byte + MSB 0x80 (NOT SHA-3's 0x06)
-- [ ] `keccak256(data: buffer) -> buffer` -- raw hash
-- [ ] `snKeccak(data: buffer) -> Felt` -- Starknet keccak (250-bit mask)
-- [ ] `getSelectorFromName(name: string) -> Felt` -- function selector from name
-- [ ] Unit tests matching starknet.js `hash.getSelectorFromName`
-
-**Implementation Notes**:
-- 64-bit lane operations are the main complexity -- Luau only has 32-bit `bit32`
-- Must split each 64-bit lane into hi/lo 32-bit words
-- The sn-testing-game has a working implementation that can inform the approach
-- Consider whether rbx-cryptography's SHA3 module can be adapted (it implements Keccak but with SHA-3 padding)
-
----
-
-### 1.8 SHA-256 + HMAC
-
-**Description**: Implement SHA-256 and HMAC-SHA-256 for RFC 6979 deterministic nonce generation used in ECDSA signing.
-
-**Requirements**:
-- [ ] FIPS 180-4 compliant SHA-256
-- [ ] HMAC-SHA-256 (RFC 2104)
-- [ ] API: `SHA256.hash(data: buffer) -> buffer`, `SHA256.hmac(key: buffer, message: buffer) -> buffer`
-- [ ] Unit tests against known SHA-256 test vectors (NIST)
-
-**Implementation Notes**:
-- Could potentially delegate to rbx-cryptography if available as peer dependency
-- Implement our own to avoid hard dependency
-- 64 rounds with precomputed K constants
-
----
-
-### 1.9 ECDSA Signing (RFC 6979)
-
-**Description**: Implement Stark ECDSA signing with deterministic nonce generation for transaction signing.
-
-**Requirements**:
-- [ ] RFC 6979 deterministic K generation using HMAC-SHA-256
-- [ ] Sign: `sign(messageHash, privateKey) -> {r, s}`
-  - r = (k * G).x mod N
-  - s = k^(-1) * (messageHash + r * privateKey) mod N
-- [ ] Verify: `verify(messageHash, publicKey, signature) -> boolean`
-  - w = s^(-1) mod N
-  - R' = (messageHash * w) * G + (r * w) * publicKey
-  - Check R'.x mod N == r
-- [ ] Unit tests: sign known messages, verify signatures, cross-check with starknet.js
-
-**Implementation Notes**:
-- RFC 6979 prevents nonce reuse (which would leak the private key)
-- The deterministic K allows reproducible signatures for testing
-- Must handle edge cases: k = 0, r = 0 (retry with incremented counter)
-
----
-
-### 1.10 StarkSigner
-
-**Description**: Implement the Stark curve signer that wraps ECDSA operations behind the SignerInterface.
-
-**Requirements**:
-- [ ] Constructor: `StarkSigner.new(privateKey: string)` (hex string)
-- [ ] `signer:getPubKey() -> Point` -- derive and cache public key
-- [ ] `signer:signRaw(msgHash: Felt) -> {r, s}` -- ECDSA sign
-- [ ] `signer:signTransaction(txHash: Felt) -> {string}` -- returns signature as felt array `[r_hex, s_hex]`
-- [ ] `signer:getPublicKeyHex() -> string` -- public key x-coordinate as hex
-- [ ] Unit tests for key derivation and signing
-
-**Implementation Notes**:
-- Cache the public key after first derivation (expensive EC scalar mul)
-- Transaction signature format for Starknet: `[r, s]` as hex strings in the signature array
-
----
-
-### 1.11 RPC Provider
-
-**Description**: Implement a JSON-RPC client for Starknet using Roblox HttpService with Promise-based API.
-
-**Requirements**:
-- [ ] Constructor with configurable RPC URL, headers, rate limit, retry settings
-- [ ] JSON-RPC 2.0 request/response handling
-- [ ] Core methods (all returning Promises):
-  - `getChainId()`
-  - `getBlockNumber()`
-  - `getNonce(contractAddress, blockId?)`
-  - `call(request, blockId?)`
-  - `estimateFee(transactions, simulationFlags?)`
-  - `addInvokeTransaction(invokeTx)`
-  - `getTransactionReceipt(txHash)`
-  - `getTransactionStatus(txHash)`
-  - `getEvents(filter)`
-- [ ] `waitForTransaction(txHash, options?)` -- poll until confirmed
-- [ ] `fetch(method, params)` -- raw RPC call for custom methods
-- [ ] Built-in rate limiting (default: 450 req/min, leaving headroom below Roblox's 500)
-- [ ] Retry with exponential backoff on transient failures
-- [ ] Proper error handling: parse JSON-RPC errors, handle HTTP failures, timeout
-- [ ] Type definitions for all request/response types (RpcTypes.luau)
-- [ ] Unit tests with mocked HTTP responses (Lune's `net.serve` for mock server)
-
-**Implementation Notes**:
-- Use HttpService:RequestAsync for full control over method/headers/body
-- Must handle both Roblox Studio (HttpEnabled flag) and published game environments
-- Rate limiter should use a token bucket or sliding window algorithm
-- For Lune tests, mock the HTTP layer using `net.serve` to create a local mock RPC server
-- JSON-RPC request format: `{"jsonrpc": "2.0", "method": "starknet_<method>", "params": {...}, "id": <counter>}`
-
----
-
-### 1.12 Calldata Encoder
-
-**Description**: Encode Luau values into Starknet calldata (flat felt arrays) for transaction building.
-
-**Requirements**:
-- [ ] `encodeFelt(value)` -- single felt encoding
-- [ ] `encodeU256(value)` -- split into low/high 128-bit felts
-- [ ] `encodeBool(value)` -- 0 or 1
-- [ ] `encodeArray(values)` -- length-prefixed array
-- [ ] `encodeStruct(fields, abi?)` -- ordered field concatenation
-- [ ] `encodeMulticall(calls)` -- multicall format for `__execute__`
-  - Format: `[num_calls, to_0, selector_0, calldata_len_0, ...calldata_0, ...]`
-- [ ] Helper: felt-from-string (short string encoding, max 31 ASCII chars)
-- [ ] Unit tests against starknet.js `CallData.compile` results
-
-**Implementation Notes**:
-- Multicall encoding is the primary format since all account transactions go through `__execute__`
-- Selectors are computed via `snKeccak(functionName)` from the Keccak module
-- U256 splitting: low = value & ((1 << 128) - 1), high = value >> 128
-
----
-
-### 1.13 Transaction Hash Computation
-
-**Description**: Compute V3 INVOKE transaction hashes using Poseidon, following the Starknet specification.
-
-**Requirements**:
-- [ ] Resource bounds encoding: `(resource_name << 192) | (max_amount << 128) | max_price_per_unit`
-  - Resource names: L1_GAS, L2_GAS, L1_DATA_GAS as ASCII-encoded felts
-- [ ] Fee field hash: `poseidonHashMany([tip, l1_bound, l2_bound, l1_data_bound])`
-- [ ] DA mode encoding: `(nonce_da_mode << 32) | fee_da_mode`
-- [ ] Full V3 INVOKE hash: `poseidonHashMany([prefix, version, sender, fee_hash, paymaster_hash, chain_id, nonce, da_mode, deploy_data_hash, calldata_hash])`
-- [ ] Unit tests matching starknet.js `hash.calculateInvokeTransactionHash`
-
-**Implementation Notes**:
-- The "invoke" prefix is `0x696e766f6b65` (ASCII encoding of "invoke")
-- Default values: tip=0, paymaster_data=[], nonce_da_mode=0, fee_da_mode=0, account_deployment_data=[]
-- Resource bounds default: l1_data_gas can be {0, 0} if not specified
-
----
-
-### 1.14 Transaction Builder
-
-**Description**: High-level transaction building that orchestrates nonce fetching, fee estimation, hash computation, signing, and submission.
-
-**Requirements**:
-- [ ] Constructor: `TransactionBuilder.new(provider)`
-- [ ] `builder:execute(account, calls, options?)` -- full flow:
-  1. Fetch nonce from provider (or use override)
-  2. Fetch chain ID
-  3. Encode calldata (multicall format)
-  4. Estimate fees (or use override)
-  5. Compute transaction hash (Poseidon)
-  6. Sign hash with account's signer
-  7. Submit via `addInvokeTransaction`
-  8. Return transaction hash
-- [ ] `builder:estimateFee(account, calls)` -- estimate without submitting
-- [ ] `builder:waitForReceipt(txHash, options?)` -- poll for receipt
-- [ ] Unit tests for the build flow (mocked provider)
-
-**Implementation Notes**:
-- Fee estimation adds a buffer (e.g., 50%) to the estimated gas to avoid transaction failure
-- The execute method returns a Promise that resolves with the transaction hash
-- Consider adding a `dryRun` option that builds and signs but doesn't submit
-
----
-
-### 1.15 Account
-
-**Description**: High-level account management combining signer, provider, and address.
-
-**Requirements**:
-- [ ] `Account.new(config)` -- from address + signer + provider
-- [ ] `Account.fromPrivateKey(config)` -- derives address from private key using OZ class hash
-- [ ] `Account.computeAddress(config)` -- static address derivation
-  - Formula: `poseidonHash(["STARKNET_CONTRACT_ADDRESS", deployer, salt, classHash, poseidonHash(constructorCalldata)]) mod 2^251`
-- [ ] Account types: OZ class hash constants
-- [ ] `account:execute(calls, options?)` -- convenience wrapper
-- [ ] `account:getNonce()` -- fetch current nonce
-- [ ] `account:estimateFee(calls)` -- estimate fee for calls
-- [ ] Unit tests for address derivation against starknet.js
-
-**Implementation Notes**:
-- For OZ accounts: constructorCalldata = [publicKey], salt = publicKey
-- Address derivation is pure computation (no network calls)
-- The Account wraps TransactionBuilder internally for execute/estimateFee
-
----
-
-### 1.16 Contract Interface (Basic)
-
-**Description**: ABI-driven contract interaction for reading state and building transaction calls.
-
-**Requirements**:
-- [ ] `Contract.new(config)` -- from ABI + address + provider + optional account
-- [ ] ABI parsing: extract function names, input types, output types, state mutability
-- [ ] `contract:call(method, args?)` -- read-only contract call (view functions)
-- [ ] `contract:invoke(method, args?, options?)` -- write transaction (external functions)
-- [ ] `contract:populate(method, args?)` -- build a Call object for multicall batching
-- [ ] Dynamic method generation via `__index` metamethod:
-  - View functions -> `:call()` automatically
-  - External functions -> `:invoke()` automatically
-- [ ] Basic response parsing: felt arrays -> Luau values based on ABI output types
-- [ ] Unit tests with sample ABI and mocked RPC
-
-**Implementation Notes**:
-- ABI format follows the Cairo ABI JSON specification
-- Dynamic dispatch: `contract.transfer(...)` resolves to invoke or call based on `state_mutability`
-- For MVP, support basic types (felt252, u256, bool, address) -- complex types (structs, enums) in Phase 2
-
----
-
-### 1.17 ERC-20 Preset
-
-**Description**: Pre-built contract interface for ERC-20 token interaction.
-
-**Requirements**:
-- [ ] Built-in ERC-20 ABI (standard OpenZeppelin Cairo implementation)
-- [ ] `ERC20.new(address, provider, account?)` -- constructor
-- [ ] Read methods: `name()`, `symbol()`, `decimals()`, `totalSupply()`, `balanceOf(owner)`, `allowance(owner, spender)`
-- [ ] Write methods: `transfer(recipient, amount)`, `approve(spender, amount)`, `transferFrom(sender, recipient, amount)`
-- [ ] Unit tests with mocked responses
-
----
-
-### 1.18 ERC-721 Preset
-
-**Description**: Pre-built contract interface for ERC-721 NFT interaction.
-
-**Requirements**:
-- [ ] Built-in ERC-721 ABI
-- [ ] `ERC721.new(address, provider, account?)` -- constructor
-- [ ] Read methods: `name()`, `symbol()`, `ownerOf(tokenId)`, `balanceOf(owner)`, `getApproved(tokenId)`, `isApprovedForAll(owner, operator)`
-- [ ] Write methods: `transferFrom(from, to, tokenId)`, `approve(to, tokenId)`, `setApprovalForAll(operator, approved)`
-- [ ] Unit tests with mocked responses
-
----
-
-### 1.19 Main Entry Point + Barrel Exports
-
-**Description**: Create the top-level `init.luau` that exports the full SDK as a single require.
-
-**Requirements**:
-- [ ] `src/init.luau` exports:
-  - `Starknet.crypto` -- all crypto primitives
-  - `Starknet.signer` -- signer types
-  - `Starknet.provider` -- RPC provider
-  - `Starknet.tx` -- transaction building
-  - `Starknet.wallet` -- account management
-  - `Starknet.contract` -- contract interaction
-  - `Starknet.constants` -- network constants, class hashes, token addresses
-- [ ] Each submodule `init.luau` properly exports its contents
-
----
-
-### 1.20 Test Fixtures and Integration Tests ✅
-
-**Description**: Create comprehensive test fixtures from starknet.js and basic integration tests.
-
-**Requirements**:
-- [x] Generate `tests/fixtures/test-vectors.luau` containing:
-  - Known BigInt arithmetic results
-  - Poseidon hash outputs for specific inputs
-  - Pedersen hash outputs for specific inputs
-  - Keccak/selector outputs for known function names
-  - ECDSA signatures for known (message, privKey) pairs
-  - Transaction hashes for known transaction parameters
-  - Account addresses for known (privKey, classHash) pairs
-- [x] Create integration test that performs end-to-end flow against Sepolia (gated by env var)
-- [x] All crypto tests pass with values matching starknet.js output
-
----
-
-### 1.21 Examples
-
-**Description**: Create practical example scripts demonstrating common use cases.
-
-**Requirements**:
-- [ ] `examples/read-contract.luau` -- read ERC-20 balance from Sepolia
-- [ ] `examples/sign-transaction.luau` -- build, sign, and submit a token transfer
-- [ ] `examples/nft-gate.luau` -- check NFT ownership for player gating
-- [ ] `examples/multicall.luau` -- batch multiple contract calls in one transaction
-- [ ] `examples/leaderboard.luau` -- read/write an onchain leaderboard contract
-- [ ] Each example includes comments explaining the flow
-
----
-
 # Phase 2: Nice to Have
 
 Features that enhance the MVP and make it fully production-ready and feature complete.
-
-### 2.1 Advanced ABI Parsing and Encoding
-
-**Description**: Full Cairo ABI support including complex types, structs, enums, options, and results.
-
-**Requirements**:
-- [ ] Struct encoding/decoding -- ordered field serialization with recursive type resolution
-- [ ] Enum encoding/decoding -- variant index + variant data
-- [ ] `Option<T>` support -- `CairoOption` with `Some`/`None` variants
-- [ ] `Result<T, E>` support -- `CairoResult` with `Ok`/`Err` variants
-- [ ] `Array<T>` and `Span<T>` with typed element encoding
-- [ ] `ByteArray` support -- long string encoding (chunks of 31 bytes + pending word)
-- [ ] Tuple support
-- [ ] Nested type resolution (struct containing struct, array of structs, etc.)
-- [ ] ABI-aware response decoding -- parse felt arrays back into Luau tables based on output types
-- [ ] Unit tests for each type against starknet.js `CallData.compile` and `CallData.decodeParameters`
-
-**Implementation Notes**:
-- Cairo ABIs use a flat representation where struct/enum definitions are listed separately
-- Type resolution requires building a type map from the ABI's `type_definitions` section
-- ByteArray encoding: split into chunks of 31 bytes, with a final pending_word and pending_word_len
-
----
-
-### 2.2 Multiple Account Type Support
-
-**Description**: Support Argent X and Braavos account derivation in addition to OpenZeppelin.
-
-**Requirements**:
-- [ ] Argent X account derivation:
-  - Class hash constant
-  - Constructor calldata: `[publicKey, guardian]` (guardian=0 for no guardian)
-  - Guardian key support (optional)
-- [ ] Braavos account derivation:
-  - Class hash constant
-  - Braavos-specific constructor format
-- [ ] Account type detection from class hash
-- [ ] `Account.fromPrivateKey` accepts `accountType` parameter
-- [ ] Unit tests for address derivation for each account type
-
-**Implementation Notes**:
-- Different account types use different constructor calldata formats
-- Argent uses a guardian key for extra security (can be 0 to disable)
-- Braavos has its own deployment proxy pattern
-
----
-
-### 2.3 Event Querying and Polling
-
-**Description**: Robust event querying with pagination and polling capabilities.
-
-**Requirements**:
-- [ ] `provider:getEvents(filter)` with proper continuation token handling
-- [ ] `provider:getAllEvents(filter)` -- auto-paginate through all matching events
-- [ ] Event polling helper: periodically check for new events matching a filter
-- [ ] Event parsing: decode event data using contract ABI
-- [ ] `contract:parseEvents(receipt)` -- extract and decode typed events from a transaction receipt
-- [ ] `contract:queryEvents(filter?)` -- query events filtered to this contract's address
-
-**Implementation Notes**:
-- Roblox lacks WebSockets, so polling is the only option for "real-time" events
-- Consider a configurable polling interval (default: 10 seconds)
-- Rate limiting is critical here to avoid exhausting the 500 req/min budget
-
----
-
-### 2.4 SNIP-12 Typed Data Signing
-
-**Description**: Implement SNIP-12 (Starknet's equivalent of EIP-712) for off-chain message signing.
-
-**Requirements**:
-- [ ] Type hash computation from type definitions
-- [ ] Struct hash computation (recursive encoding of typed data)
-- [ ] Domain separator computation
-- [ ] Message hash: `poseidonHash("StarkNet Message", domainHash, accountAddress, messageHash)`
-- [ ] `account:signMessage(typedData)` -- sign typed data with account's signer
-- [ ] `account:hashMessage(typedData)` -- compute message hash without signing
-- [ ] Unit tests matching starknet.js `typedData.getMessageHash`
-
-**Implementation Notes**:
-- SNIP-12 is important for off-chain signatures used in protocols like gasless approvals
-- The type system is recursive (types can reference other types)
-
----
-
-### 2.5 Improved Error Handling
-
-**Description**: Rich, typed error system with actionable error messages.
-
-**Requirements**:
-- [ ] Error class hierarchy: `StarknetError`, `RpcError`, `SigningError`, `AbiError`, etc.
-- [ ] RPC errors include the original JSON-RPC error code and detailed message
-- [ ] Transaction revert errors include the revert reason and execution trace (if available)
-- [ ] Validation errors with clear messages about what's wrong and how to fix it
-- [ ] `error:is(errorType)` for type checking in catch handlers
-- [ ] Custom error codes for SDK-specific errors (rate limit, timeout, invalid argument)
-
----
-
-### 2.6 Request Rate Limiting and Queuing
-
-**Description**: Sophisticated rate limiting to maximize throughput within Roblox's 500 req/min constraint.
-
-**Requirements**:
-- [ ] Token bucket rate limiter with configurable capacity and refill rate
-- [ ] Request queue with priority levels (transaction submission > reads > events)
-- [ ] Automatic request batching for compatible RPC methods
-- [ ] Backpressure: return meaningful errors when queue is full
-- [ ] Metrics: expose request count, queue depth, and rate limit headroom
-- [ ] Per-provider rate limit tracking (support multiple providers)
-
-**Implementation Notes**:
-- Default budget: 450 req/min per provider (leaving 50 for other game HTTP needs)
-- Priority queue ensures transaction submissions aren't delayed by polling
-- Consider JSON-RPC batch requests to reduce HTTP call count
-
----
-
-### 2.7 Response Caching
-
-**Description**: Cache commonly requested data to reduce RPC calls.
-
-**Requirements**:
-- [ ] Configurable cache for:
-  - Chain ID (cache indefinitely)
-  - Block number (cache for N seconds)
-  - Contract class hashes (cache indefinitely for deployed contracts)
-  - ABI definitions (cache indefinitely)
-  - Storage values (cache with configurable TTL)
-- [ ] Cache invalidation on new block or manual flush
-- [ ] LRU eviction for bounded memory usage
-- [ ] Bypass cache option for fresh data
-
----
-
-### 2.8 Nonce Manager
-
-**Description**: Intelligent nonce management for sequential transaction submission.
-
-**Requirements**:
-- [ ] Local nonce tracking per account address
-- [ ] Automatic increment after successful submission
-- [ ] Invalidation on transaction failure or revert
-- [ ] Parallel transaction support with nonce reservation
-- [ ] Automatic re-sync with on-chain nonce on error
-
-**Implementation Notes**:
-- Critical for games that submit multiple transactions in quick succession
-- Without local nonce tracking, each transaction needs a getNonce RPC call
-
----
 
 ### 2.9 Performance Optimization
 
@@ -602,24 +18,6 @@ Features that enhance the MVP and make it fully production-ready and feature com
 - [ ] Montgomery's trick for batch affine conversions
 - [ ] Pedersen lookup table optimization
 - [ ] Profile and reduce GC pressure (minimize table allocations in hot paths)
-
----
-
-### 2.10 Expanded RPC Method Coverage
-
-**Description**: Implement remaining Starknet JSON-RPC methods beyond the MVP set.
-
-**Requirements**:
-- [ ] `getBlockWithTxs(blockId)` -- full block with transactions
-- [ ] `getBlockWithReceipts(blockId)` -- block with transaction receipts
-- [ ] `getTransactionByHash(txHash)` -- full transaction details
-- [ ] `getStorageAt(address, key, blockId)` -- raw storage reads
-- [ ] `getClass(blockId, classHash)` -- contract class definition
-- [ ] `getClassHashAt(blockId, address)` -- class hash of deployed contract
-- [ ] `getClassAt(blockId, address)` -- class at address
-- [ ] `estimateMessageFee(msg)` -- L1→L2 message fee estimation
-- [ ] `getSpecVersion()` -- RPC spec version
-- [ ] `getSyncingStats()` -- node sync status
 
 ---
 
@@ -645,34 +43,6 @@ Features that enhance the MVP and make it fully production-ready and feature com
 - Main risk is response schema changes, not method renames
 - ZAN public endpoints already run v0.8.1; dRPC Sepolia also runs v0.8.1
 - Consider a `compat` module that maps between versions rather than forking the provider
-
----
-
-### 2.12 Pesde Package Support
-
-**Description**: Add support for the Pesde package manager alongside Wally.
-
-**Requirements**:
-- [ ] Create `pesde.toml` / `pesde.yaml` manifest
-- [ ] Ensure package structure is compatible with both Wally and Pesde
-- [ ] Document installation via both package managers
-- [ ] CI: publish to both registries on release
-
----
-
-### 2.13 Documentation and Guides ✅
-
-**Description**: Comprehensive documentation beyond the code-level API.
-
-**Requirements**:
-- [x] Getting Started guide (installation, basic setup, first transaction)
-- [x] Crypto module deep dive (understanding the primitives)
-- [x] Contract interaction guide (reading state, writing transactions, multicall)
-- [x] Account management guide (key generation, address derivation, nonce handling)
-- [x] Common patterns guide (NFT gating, token rewards, leaderboards)
-- [x] Roblox-specific considerations (rate limits, server-side only, security)
-- [ ] Migration guide from sn-testing-game patterns to starknet-luau (skipped -- no reference codebase)
-- [x] API reference generated from type annotations
 
 ---
 
@@ -713,32 +83,224 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ### 3.3 Paymaster Integration (SNIP-29)
 
-**Description**: Support sponsored transactions where the game developer pays gas on behalf of players.
-
-**Features**:
-- SNIP-29 paymaster protocol support
-- Integration with AVNU paymaster (Sepolia + Mainnet)
-- Integration with Cartridge paymaster
-- Alternative token gas payment (pay in ETH, USDC, etc. instead of STRK)
-- Budget tracking and management
-- Sponsored transaction building flow
+**Description**: Support sponsored transactions where the game developer pays gas on behalf of players. Generic SNIP-29 protocol client with AVNU-specific convenience layer.
 
 **Rationale**: For mainstream Roblox games, players cannot be expected to hold STRK tokens. Paymaster support lets game developers sponsor gas costs, creating a seamless UX.
+
+**Prerequisites**: TypedData (SNIP-12) ✅, ECDSA signing ✅, Account.signMessage() ✅
+
+**Requirements**:
+
+#### 3.3.1 SNIP-9 Outside Execution Support
+- [ ] `OutsideExecution` typed data structures (V1 Pedersen, V2 Poseidon, V3-RC with FeeMode)
+- [ ] `OutsideExecution` domain types: `StarkNetDomain` (V1), `StarknetDomain` (V2/V3-RC)
+- [ ] V3-RC `FeeMode` union type: `NoFee` and `PayFee { tokenAddress, maxAmount, receiver }`
+- [ ] Build `OutsideExecution` message from user calls + time bounds + nonce
+- [ ] Sign `OutsideExecution` via existing `Account.signMessage()` (SNIP-12 typed data signing)
+- [ ] Validate returned calls match user's submitted calls (+ optional appended fee transfer)
+
+**Implementation Notes**:
+- SNIP-9 is the foundation for SNIP-29: the paymaster submits `execute_from_outside` on the user's account
+- V3-RC is preferred (separates fee info from calls), but V1/V2 needed for backward compat
+- Builds on existing TypedData.luau (SNIP-12 revision LEGACY for V1, ACTIVE for V2/V3-RC)
+
+#### 3.3.2 PaymasterRpc Client (SNIP-29 Generic)
+- [ ] `PaymasterRpc.new(config)` — config: `{ nodeUrl, headers?, timeout? }`
+- [ ] `paymaster_getSupportedTokens()` → `{ tokenAddress, decimals, priceInStrk }[]`
+- [ ] `paymaster_buildTypedData(userAddress, calls, gasTokenAddress, options?)` → SNIP-12 typed data
+  - `options.accountClassHash` — for undeployed accounts
+  - `options.deploymentData` — `{ classHash, calldata, salt, unique }` for deploy-via-paymaster
+- [ ] `paymaster_execute(userAddress, typedData, signature)` → `{ transactionHash }`
+- [ ] `isAvailable()` — health check (ping paymaster endpoint)
+- [ ] Error handling: map paymaster JSON-RPC errors to `StarknetError.rpc()`
+- [ ] Promise-based (all methods return Promises)
+
+**Implementation Notes**:
+- Pure JSON-RPC over HttpService, same pattern as `RpcProvider._fetchRpc()`
+- Any SNIP-29-compliant paymaster works (AVNU, Cartridge, self-hosted)
+- Inject `_httpRequest` for testability (same pattern as RpcProvider)
+
+#### 3.3.3 AVNU Paymaster Helpers
+- [ ] Pre-configured URLs: `AVNU_MAINNET = "https://starknet.paymaster.avnu.fi"`, `AVNU_SEPOLIA = "https://sepolia.paymaster.avnu.fi"`
+- [ ] `AvnuPaymaster.new(config)` — extends PaymasterRpc with AVNU defaults
+  - `config.network`: `"mainnet" | "sepolia"` → auto-selects URL
+  - `config.apiKey` → sets `x-paymaster-api-key` header (enables gasfree/sponsored mode)
+- [ ] Known AVNU token addresses (USDC, USDT, ETH, STRK, etc.) per network
+- [ ] `getSupportedTokens()` with cached results (token list rarely changes)
+
+**Implementation Notes**:
+- Thin wrapper over PaymasterRpc, main value is ergonomics
+- Without apiKey: gasless mode (user pays in alt token). With apiKey: gasfree/sponsored mode (game pays)
+
+#### 3.3.4 Account Paymaster Integration
+- [ ] `Account:executePaymaster(calls, paymasterDetails)` — route execution through paymaster
+  - `paymasterDetails.paymaster`: PaymasterRpc instance
+  - `paymasterDetails.feeMode`: `{ mode: "default", gasToken: address }` or `{ mode: "sponsored" }`
+  - `paymasterDetails.timeBounds?`: `{ executeAfter?, executeBefore? }`
+- [ ] Flow: `buildTypedData` → validate calls → `signMessage(typedData)` → `execute(address, typedData, signature)`
+- [ ] `Account:estimatePaymasterFee(calls, paymasterDetails)` — get fee estimate from paymaster
+- [ ] Integration with NonceManager (paymaster uses outside execution nonce, not account nonce)
+
+#### 3.3.5 Paymaster Policy Config
+- [ ] `PaymasterPolicy.new(config)` — define allowed usage rules
+  - `config.allowedContracts`: `{ address }[]` — whitelist of contract addresses (empty = allow all)
+  - `config.allowedMethods`: `{ contract, selector }[]` — whitelist of specific entrypoints
+  - `config.allowedPlayers`: `{ playerId }[]` — whitelist of Roblox player IDs (empty = allow all)
+  - `config.maxFeePerTx`: max fee amount per transaction (in gas token units)
+  - `config.maxTxPerPlayer`: max transactions per player per time window
+  - `config.timeWindow`: rolling window duration (seconds) for rate limits
+- [ ] `policy:validate(playerId, calls)` — check if calls are allowed, returns `{ allowed, reason? }`
+- [ ] `policy:validateFee(playerId, feeAmount)` — check fee against limits
+
+**Implementation Notes**:
+- Pure validation module, no persistence — composable with PaymasterBudget
+- Game developer configures policy on server startup
+- Designed to prevent abuse: only approved contracts/methods can use sponsored gas
+
+#### 3.3.6 Paymaster Budget & Token Management
+- [ ] `PaymasterBudget.new(config)` — per-player usage tracking via DataStoreService
+  - `config.dataStoreName`: DataStore name for persistence (default: `"StarknetPaymaster"`)
+  - `config.defaultTokenBalance`: initial "paymaster tokens" per new player (default: 0)
+  - `config.costPerTransaction`: tokens consumed per sponsored transaction (default: 1)
+  - `config.costPerGasUnit?`: optional variable cost based on actual gas used
+- [ ] `budget:getBalance(playerId)` → current paymaster token balance
+- [ ] `budget:grantTokens(playerId, amount)` — add tokens (game rewards, purchases, etc.)
+- [ ] `budget:revokeTokens(playerId, amount)` — remove tokens
+- [ ] `budget:consumeTransaction(playerId, txCost?)` — deduct tokens for a sponsored tx
+- [ ] `budget:canAfford(playerId, txCost?)` → boolean check before submitting
+- [ ] `budget:getUsageStats(playerId)` → `{ totalTxCount, totalTokensSpent, balance, lastTxTime }`
+- [ ] Atomic deduction: deduct tokens before submitting to paymaster, refund on failure
+- [ ] In-memory cache with periodic DataStore flush (avoid DataStore rate limits)
+
+**Implementation Notes**:
+- "Paymaster tokens" are NOT on-chain — purely game-managed via Roblox DataStoreService
+- Game devs grant tokens as rewards, purchases, or sign-up bonuses
+- Integrates with PaymasterPolicy: `policy:validate()` → `budget:canAfford()` → `account:executePaymaster()`
+- DataStoreService has rate limits (60 req/min per key); use in-memory cache with periodic writes
+- Budget module is optional — game devs can use paymaster without it
+
+#### 3.3.7 Sponsored Transaction Flow (End-to-End)
+- [ ] High-level `SponsoredExecutor` that chains: Policy check → Budget check → Paymaster build → Sign → Execute → Budget deduct
+- [ ] Error handling: refund tokens on paymaster rejection, revert, or network failure
+- [ ] Event callbacks: `onTransactionSubmitted`, `onTransactionConfirmed`, `onTransactionFailed`
+- [ ] Retry with backoff on transient paymaster errors (502/503/504)
+- [ ] Logging/metrics: track paymaster usage per player, per contract, per method
+
+**Implementation Notes**:
+- This is the "batteries included" module that ties 3.3.2–3.3.6 together
+- Each sub-module is independently usable for advanced users
 
 ---
 
 ### 3.4 Account Deployment
 
-**Description**: Full account deployment flow for creating new Starknet accounts from within Roblox.
-
-**Features**:
-- Deploy account transactions (V3)
-- Counterfactual address computation
-- Pre-funding flow (fund address before deployment)
-- Multi-account-type deployment (OZ, Argent, Braavos)
-- Batch deploy for game player onboarding
+**Description**: Full account deployment flow for creating new Starknet accounts from within Roblox. Supports OZ and Argent account types with prefunded deployment.
 
 **Rationale**: Enables games to automatically create Starknet accounts for players as part of the onboarding flow.
+
+**Prerequisites**: Poseidon ✅, Pedersen ✅, Account.computeAddress() ✅, ECDSA ✅, Constants.DEPLOY_ACCOUNT_TX_V3 ✅
+
+**Requirements**:
+
+#### 3.4.1 DEPLOY_ACCOUNT V3 Transaction Hash
+- [ ] Poseidon-based hash computation for DEPLOY_ACCOUNT V3:
+  ```
+  poseidon("deploy_account", version, contract_address,
+           poseidon(tip, l1_gas_bounds, l2_gas_bounds, l1_data_gas_bounds),
+           poseidon(paymaster_data), chain_id, nonce,
+           data_availability_modes, poseidon(constructor_calldata),
+           class_hash, contract_address_salt)
+  ```
+- [ ] Encode resource bounds in same format as INVOKE V3 (`ResourceBounds` → felt encoding)
+- [ ] `"deploy_account"` prefix constant (felt encoding of ASCII string)
+- [ ] Nonce is always 0 for deployment transactions
+- [ ] Test vectors cross-referenced against starknet.js `calculateDeployAccountTransactionHash`
+
+**Implementation Notes**:
+- Similar to `TransactionBuilder._computeTransactionHash()` but different prefix and fields
+- Includes `class_hash` and `contract_address_salt` instead of sender calldata
+- Add to `TransactionBuilder.luau` as `_computeDeployAccountHash()`
+
+#### 3.4.2 Deploy Account Transaction Builder
+- [ ] `TransactionBuilder:buildDeployAccountTransaction(params)` — builds the DEPLOY_ACCOUNT V3 tx
+  - `params.classHash`: account implementation class hash
+  - `params.constructorCalldata`: compiled constructor args
+  - `params.addressSalt`: salt for address computation (typically public key)
+  - `params.contractAddress`: pre-computed counterfactual address
+  - `params.resourceBounds?`: explicit resource bounds (or estimated)
+- [ ] Fee estimation for deploy: use `estimateFee` with `DEPLOY_ACCOUNT` transaction type
+- [ ] Sign the deploy account transaction hash with the signer
+- [ ] Format for RPC submission: `starknet_addDeployAccountTransaction`
+
+#### 3.4.3 RPC: addDeployAccountTransaction
+- [ ] Add `addDeployAccountTransaction(tx)` method to `RpcProvider.luau`
+- [ ] Request format: `{ type: "DEPLOY_ACCOUNT", version: "0x3", ... }` per JSON-RPC spec
+- [ ] Response: `{ transaction_hash, contract_address }`
+- [ ] Add `estimateFee` support for `DEPLOY_ACCOUNT` transaction type (dummy sig + SKIP_VALIDATE)
+
+#### 3.4.4 Account.deployAccount() Method
+- [ ] `Account:deployAccount(options?)` — full orchestration:
+  1. Compute counterfactual address (use existing `Account.computeAddress()`)
+  2. Check if already deployed (call `getNonce` — if it returns, account exists)
+  3. Estimate deployment fee
+  4. Build DEPLOY_ACCOUNT V3 transaction
+  5. Sign transaction hash
+  6. Submit via `addDeployAccountTransaction`
+  7. Wait for confirmation (optional, via `waitForReceipt`)
+- [ ] Return `{ transactionHash, contractAddress }`
+- [ ] Idempotent: if account already deployed, return early without error
+- [ ] `options.maxFee?`: override estimated fee
+- [ ] `options.feeMultiplier?`: multiplier on estimated fee (default 1.5x, same as execute)
+- [ ] `options.waitForConfirmation?`: boolean, default true
+
+#### 3.4.5 Multi-Account-Type Support (OZ + Argent)
+- [ ] Account class hash constants:
+  - OZ (v0.8.1): `0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f`
+  - Argent (v0.3.0): `0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003`
+- [ ] Constructor calldata builders:
+  - `AccountType.OZ(publicKey)` → `[publicKey]`
+  - `AccountType.Argent(ownerKey, guardianKey?)` → `[ownerKey, guardianKey or 0x0]`
+- [ ] `AccountFactory.new(provider, accountType, signer)` — factory for creating deployable accounts
+- [ ] `factory:createAccount(options?)` → `{ account, address, deployTx }` (pre-deployment Account instance)
+- [ ] Document class hash versioning: these hashes correspond to specific contract versions
+
+**Implementation Notes**:
+- Class hashes change with new contract versions — make them configurable, not just constants
+- Argent guardian defaults to `0x0` (no guardian) for simplicity
+- Braavos support deferred to future task (proxy pattern + custom deploy signatures)
+
+#### 3.4.6 Prefunding Helper
+- [ ] `Account.checkDeploymentBalance(address, provider)` → `{ hasSufficientBalance, balance, estimatedFee }`
+  - Calls `starknet_call` on ETH/STRK contract `balanceOf(address)` and compares to estimated deploy fee
+- [ ] `Account.getDeploymentFeeEstimate(classHash, constructorCalldata, salt, provider)` → estimated fee
+- [ ] Guide/helper for funding: return the counterfactual address so the game backend can send funds
+- [ ] Support checking both STRK and ETH balances (V3 txs use STRK for gas)
+
+#### 3.4.7 Batch Deploy for Game Onboarding
+- [ ] `AccountFactory:batchCreate(count, options?)` → `{ account, address }[]` (generate multiple accounts)
+- [ ] `AccountFactory:batchDeploy(accounts, options?)` — deploy multiple accounts sequentially
+  - Respects rate limits (integrates with RequestQueue)
+  - Progress callback: `onDeployProgress(index, total, result)`
+  - Continues on individual failure (collect errors, don't abort batch)
+- [ ] Configurable concurrency: sequential (default) or parallel with max concurrency
+- [ ] Summary report: `{ deployed, failed, skipped (already deployed) }`
+
+**Implementation Notes**:
+- Batch deploy is primarily a game-server operation during player onboarding
+- Each deploy is an independent transaction (no multicall for DEPLOY_ACCOUNT)
+- Consider integrating with NonceManager for the funding account (if game server funds from one account)
+
+#### 3.4.8 Bridge: Paymaster-Sponsored Deployment
+*(Depends on 3.3 Paymaster Integration — implement after both 3.3 and 3.4 are complete)*
+- [ ] `Account:deployWithPaymaster(paymasterDetails)` — deploy via paymaster (zero prefunding needed)
+- [ ] Pass `deploymentData` to `paymaster_buildTypedData` (SNIP-29 supports this)
+- [ ] Combined deploy + first execute in single paymaster call (like PoW pattern)
+- [ ] Flow: compute address → build deploymentData → paymaster buildTypedData → sign → paymaster execute
+
+**Implementation Notes**:
+- This is the ideal UX: player gets an account + executes first action with zero tokens
+- Bridges 3.3 (PaymasterRpc) and 3.4 (Account deployment)
+- The paymaster's relayer handles the DEPLOY_ACCOUNT tx and pays the fee
 
 ---
 
