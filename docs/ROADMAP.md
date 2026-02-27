@@ -46,52 +46,19 @@ Features that enhance the MVP and make it fully production-ready and feature com
 
 ---
 
-# Phase 3: Future
+# Phase 3: Paymaster Integration (SNIP-29)
 
-Features, improvements, and explorations to take the project to the next level. These are not needed for feature completion but would expand the SDK's capabilities significantly.
-
-### 3.1 Relay Server Mode
-
-**Description**: Support delegating transaction signing and submission to an external relay server.
-
-**Features**:
-- Relay provider that sends unsigned intents to a relay endpoint
-- Relay server reference implementation (TypeScript/Node.js)
-- Support for server-side session keys held by the relay
-- API key / game secret authentication for relay requests
-- Automatic failover between pure Luau and relay modes
-
-**Rationale**: Many production games will want to keep private keys off the Roblox game server entirely. A relay server pattern (like the sn-testing-game uses) provides better key isolation and can handle paymaster integration server-side.
-
----
-
-### 3.2 Session Keys
-
-**Description**: Implement session key support for gasless, popup-free game transactions.
-
-**Features**:
-- Session key generation (ephemeral key pair per game session)
-- Policy definition (which contracts/methods are auto-approved)
-- Session key registration on the account contract
-- Auto-signing within policy constraints
-- Session expiration and renewal
-- Integration with Cartridge Controller's session key standard
-
-**Rationale**: Session keys are essential for gaming UX. Players shouldn't need to approve every game action. Cartridge Controller has proven this model works well for Starknet games.
-
----
-
-### 3.3 Paymaster Integration (SNIP-29)
-
-**Description**: Support sponsored transactions where the game developer pays gas on behalf of players. Generic SNIP-29 protocol client with AVNU-specific convenience layer.
+Support sponsored transactions where the game developer pays gas on behalf of players. Generic SNIP-29 protocol client with AVNU-specific convenience layer.
 
 **Rationale**: For mainstream Roblox games, players cannot be expected to hold STRK tokens. Paymaster support lets game developers sponsor gas costs, creating a seamless UX.
 
 **Prerequisites**: TypedData (SNIP-12) ✅, ECDSA signing ✅, Account.signMessage() ✅
 
-**Requirements**:
+### 3.3.1 SNIP-9 Outside Execution Support
 
-#### 3.3.1 SNIP-9 Outside Execution Support
+**Description**: Implement SNIP-9 Outside Execution typed data structures and signing for V1, V2, and V3-RC variants. This is the foundation for SNIP-29 paymaster integration, enabling `execute_from_outside` on user accounts.
+
+**Requirements**:
 - [ ] `OutsideExecution` typed data structures (V1 Pedersen, V2 Poseidon, V3-RC with FeeMode)
 - [ ] `OutsideExecution` domain types: `StarkNetDomain` (V1), `StarknetDomain` (V2/V3-RC)
 - [ ] V3-RC `FeeMode` union type: `NoFee` and `PayFee { tokenAddress, maxAmount, receiver }`
@@ -104,7 +71,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - V3-RC is preferred (separates fee info from calls), but V1/V2 needed for backward compat
 - Builds on existing TypedData.luau (SNIP-12 revision LEGACY for V1, ACTIVE for V2/V3-RC)
 
-#### 3.3.2 PaymasterRpc Client (SNIP-29 Generic)
+---
+
+### 3.3.2 PaymasterRpc Client (SNIP-29 Generic)
+
+**Description**: Generic JSON-RPC client for any SNIP-29-compliant paymaster service. Provides the core protocol methods for building typed data, executing sponsored transactions, and querying supported tokens.
+
+**Requirements**:
 - [ ] `PaymasterRpc.new(config)` — config: `{ nodeUrl, headers?, timeout? }`
 - [ ] `paymaster_getSupportedTokens()` → `{ tokenAddress, decimals, priceInStrk }[]`
 - [ ] `paymaster_buildTypedData(userAddress, calls, gasTokenAddress, options?)` → SNIP-12 typed data
@@ -120,7 +93,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - Any SNIP-29-compliant paymaster works (AVNU, Cartridge, self-hosted)
 - Inject `_httpRequest` for testability (same pattern as RpcProvider)
 
-#### 3.3.3 AVNU Paymaster Helpers
+---
+
+### 3.3.3 AVNU Paymaster Helpers
+
+**Description**: Pre-configured convenience layer on top of PaymasterRpc for AVNU's paymaster service, with auto-selected endpoints and known token addresses per network.
+
+**Requirements**:
 - [ ] Pre-configured URLs: `AVNU_MAINNET = "https://starknet.paymaster.avnu.fi"`, `AVNU_SEPOLIA = "https://sepolia.paymaster.avnu.fi"`
 - [ ] `AvnuPaymaster.new(config)` — extends PaymasterRpc with AVNU defaults
   - `config.network`: `"mainnet" | "sepolia"` → auto-selects URL
@@ -132,7 +111,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - Thin wrapper over PaymasterRpc, main value is ergonomics
 - Without apiKey: gasless mode (user pays in alt token). With apiKey: gasfree/sponsored mode (game pays)
 
-#### 3.3.4 Account Paymaster Integration
+---
+
+### 3.3.4 Account Paymaster Integration
+
+**Description**: Extend the Account class with paymaster-routed execution methods, enabling sponsored transactions through any SNIP-29 paymaster.
+
+**Requirements**:
 - [ ] `Account:executePaymaster(calls, paymasterDetails)` — route execution through paymaster
   - `paymasterDetails.paymaster`: PaymasterRpc instance
   - `paymasterDetails.feeMode`: `{ mode: "default", gasToken: address }` or `{ mode: "sponsored" }`
@@ -141,7 +126,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - [ ] `Account:estimatePaymasterFee(calls, paymasterDetails)` — get fee estimate from paymaster
 - [ ] Integration with NonceManager (paymaster uses outside execution nonce, not account nonce)
 
-#### 3.3.5 Paymaster Policy Config
+---
+
+### 3.3.5 Paymaster Policy Config
+
+**Description**: Pure validation module for defining allowed paymaster usage rules, preventing abuse by restricting which contracts, methods, and players can use sponsored gas.
+
+**Requirements**:
 - [ ] `PaymasterPolicy.new(config)` — define allowed usage rules
   - `config.allowedContracts`: `{ address }[]` — whitelist of contract addresses (empty = allow all)
   - `config.allowedMethods`: `{ contract, selector }[]` — whitelist of specific entrypoints
@@ -157,7 +148,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - Game developer configures policy on server startup
 - Designed to prevent abuse: only approved contracts/methods can use sponsored gas
 
-#### 3.3.6 Paymaster Budget & Token Management
+---
+
+### 3.3.6 Paymaster Budget & Token Management
+
+**Description**: Per-player usage tracking via DataStoreService, managing virtual "paymaster tokens" that game developers grant as rewards or purchases to control sponsored transaction budgets.
+
+**Requirements**:
 - [ ] `PaymasterBudget.new(config)` — per-player usage tracking via DataStoreService
   - `config.dataStoreName`: DataStore name for persistence (default: `"StarknetPaymaster"`)
   - `config.defaultTokenBalance`: initial "paymaster tokens" per new player (default: 0)
@@ -179,7 +176,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - DataStoreService has rate limits (60 req/min per key); use in-memory cache with periodic writes
 - Budget module is optional — game devs can use paymaster without it
 
-#### 3.3.7 Sponsored Transaction Flow (End-to-End)
+---
+
+### 3.3.7 Sponsored Transaction Flow (End-to-End)
+
+**Description**: High-level orchestrator that chains the full sponsored transaction lifecycle: policy check, budget check, paymaster build, sign, execute, and budget deduction with error handling and retry logic.
+
+**Requirements**:
 - [ ] High-level `SponsoredExecutor` that chains: Policy check → Budget check → Paymaster build → Sign → Execute → Budget deduct
 - [ ] Error handling: refund tokens on paymaster rejection, revert, or network failure
 - [ ] Event callbacks: `onTransactionSubmitted`, `onTransactionConfirmed`, `onTransactionFailed`
@@ -187,22 +190,24 @@ Features, improvements, and explorations to take the project to the next level. 
 - [ ] Logging/metrics: track paymaster usage per player, per contract, per method
 
 **Implementation Notes**:
-- This is the "batteries included" module that ties 3.3.2–3.3.6 together
+- This is the "batteries included" module that ties 3.3.2-3.3.6 together
 - Each sub-module is independently usable for advanced users
 
 ---
 
-### 3.4 Account Deployment
+# Phase 4: Account Deployment
 
-**Description**: Full account deployment flow for creating new Starknet accounts from within Roblox. Supports OZ and Argent account types with prefunded deployment.
+Full account deployment flow for creating new Starknet accounts from within Roblox. Supports OZ and Argent account types with prefunded deployment.
 
 **Rationale**: Enables games to automatically create Starknet accounts for players as part of the onboarding flow.
 
 **Prerequisites**: Poseidon ✅, Pedersen ✅, Account.computeAddress() ✅, ECDSA ✅, Constants.DEPLOY_ACCOUNT_TX_V3 ✅
 
-**Requirements**:
+### 3.4.1 DEPLOY_ACCOUNT V3 Transaction Hash
 
-#### 3.4.1 DEPLOY_ACCOUNT V3 Transaction Hash
+**Description**: Poseidon-based hash computation for DEPLOY_ACCOUNT V3 transactions, following the same pattern as INVOKE V3 but with deployment-specific fields.
+
+**Requirements**:
 - [ ] Poseidon-based hash computation for DEPLOY_ACCOUNT V3:
   ```
   poseidon("deploy_account", version, contract_address,
@@ -221,7 +226,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - Includes `class_hash` and `contract_address_salt` instead of sender calldata
 - Add to `TransactionBuilder.luau` as `_computeDeployAccountHash()`
 
-#### 3.4.2 Deploy Account Transaction Builder
+---
+
+### 3.4.2 Deploy Account Transaction Builder
+
+**Description**: Build, estimate fees for, sign, and format DEPLOY_ACCOUNT V3 transactions for RPC submission.
+
+**Requirements**:
 - [ ] `TransactionBuilder:buildDeployAccountTransaction(params)` — builds the DEPLOY_ACCOUNT V3 tx
   - `params.classHash`: account implementation class hash
   - `params.constructorCalldata`: compiled constructor args
@@ -232,13 +243,25 @@ Features, improvements, and explorations to take the project to the next level. 
 - [ ] Sign the deploy account transaction hash with the signer
 - [ ] Format for RPC submission: `starknet_addDeployAccountTransaction`
 
-#### 3.4.3 RPC: addDeployAccountTransaction
+---
+
+### 3.4.3 RPC: addDeployAccountTransaction
+
+**Description**: Add the `addDeployAccountTransaction` RPC method to the provider for submitting deployment transactions and estimating their fees.
+
+**Requirements**:
 - [ ] Add `addDeployAccountTransaction(tx)` method to `RpcProvider.luau`
 - [ ] Request format: `{ type: "DEPLOY_ACCOUNT", version: "0x3", ... }` per JSON-RPC spec
 - [ ] Response: `{ transaction_hash, contract_address }`
 - [ ] Add `estimateFee` support for `DEPLOY_ACCOUNT` transaction type (dummy sig + SKIP_VALIDATE)
 
-#### 3.4.4 Account.deployAccount() Method
+---
+
+### 3.4.4 Account.deployAccount() Method
+
+**Description**: Full orchestration method on the Account class that handles the complete deployment lifecycle: address computation, existence check, fee estimation, transaction building, signing, submission, and confirmation.
+
+**Requirements**:
 - [ ] `Account:deployAccount(options?)` — full orchestration:
   1. Compute counterfactual address (use existing `Account.computeAddress()`)
   2. Check if already deployed (call `getNonce` — if it returns, account exists)
@@ -253,7 +276,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - [ ] `options.feeMultiplier?`: multiplier on estimated fee (default 1.5x, same as execute)
 - [ ] `options.waitForConfirmation?`: boolean, default true
 
-#### 3.4.5 Multi-Account-Type Support (OZ + Argent)
+---
+
+### 3.4.5 Multi-Account-Type Support (OZ + Argent)
+
+**Description**: Account factory with support for multiple account contract types, providing constructor calldata builders and configurable class hashes for OZ and Argent accounts.
+
+**Requirements**:
 - [ ] Account class hash constants:
   - OZ (v0.8.1): `0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f`
   - Argent (v0.3.0): `0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003`
@@ -269,14 +298,26 @@ Features, improvements, and explorations to take the project to the next level. 
 - Argent guardian defaults to `0x0` (no guardian) for simplicity
 - Braavos support deferred to future task (proxy pattern + custom deploy signatures)
 
-#### 3.4.6 Prefunding Helper
+---
+
+### 3.4.6 Prefunding Helper
+
+**Description**: Utilities for checking whether a counterfactual address has sufficient balance for deployment and estimating the required funding amount.
+
+**Requirements**:
 - [ ] `Account.checkDeploymentBalance(address, provider)` → `{ hasSufficientBalance, balance, estimatedFee }`
   - Calls `starknet_call` on ETH/STRK contract `balanceOf(address)` and compares to estimated deploy fee
 - [ ] `Account.getDeploymentFeeEstimate(classHash, constructorCalldata, salt, provider)` → estimated fee
 - [ ] Guide/helper for funding: return the counterfactual address so the game backend can send funds
 - [ ] Support checking both STRK and ETH balances (V3 txs use STRK for gas)
 
-#### 3.4.7 Batch Deploy for Game Onboarding
+---
+
+### 3.4.7 Batch Deploy for Game Onboarding
+
+**Description**: Batch account creation and deployment for game onboarding flows, with rate limit integration, progress callbacks, and error tolerance.
+
+**Requirements**:
 - [ ] `AccountFactory:batchCreate(count, options?)` → `{ account, address }[]` (generate multiple accounts)
 - [ ] `AccountFactory:batchDeploy(accounts, options?)` — deploy multiple accounts sequentially
   - Respects rate limits (integrates with RequestQueue)
@@ -290,8 +331,13 @@ Features, improvements, and explorations to take the project to the next level. 
 - Each deploy is an independent transaction (no multicall for DEPLOY_ACCOUNT)
 - Consider integrating with NonceManager for the funding account (if game server funds from one account)
 
-#### 3.4.8 Bridge: Paymaster-Sponsored Deployment
-*(Depends on 3.3 Paymaster Integration — implement after both 3.3 and 3.4 are complete)*
+---
+
+### 3.4.8 Bridge: Paymaster-Sponsored Deployment
+
+**Description**: Deploy accounts via paymaster with zero prefunding, combining account deployment and first execution in a single paymaster call. *(Depends on Phase 3 Paymaster Integration — implement after both phases are complete.)*
+
+**Requirements**:
 - [ ] `Account:deployWithPaymaster(paymasterDetails)` — deploy via paymaster (zero prefunding needed)
 - [ ] Pass `deploymentData` to `paymaster_buildTypedData` (SNIP-29 supports this)
 - [ ] Combined deploy + first execute in single paymaster call (like PoW pattern)
@@ -299,12 +345,47 @@ Features, improvements, and explorations to take the project to the next level. 
 
 **Implementation Notes**:
 - This is the ideal UX: player gets an account + executes first action with zero tokens
-- Bridges 3.3 (PaymasterRpc) and 3.4 (Account deployment)
+- Bridges Phase 3 (PaymasterRpc) and Phase 4 (Account deployment)
 - The paymaster's relayer handles the DEPLOY_ACCOUNT tx and pays the fee
 
 ---
 
-### 3.5 Contract Declaration
+# Phase 5: Future
+
+Features, improvements, and explorations to take the project to the next level. These are not needed for feature completion but would expand the SDK's capabilities significantly.
+
+### 5.1 Relay Server Mode
+
+**Description**: Support delegating transaction signing and submission to an external relay server.
+
+**Features**:
+- Relay provider that sends unsigned intents to a relay endpoint
+- Relay server reference implementation (TypeScript/Node.js)
+- Support for server-side session keys held by the relay
+- API key / game secret authentication for relay requests
+- Automatic failover between pure Luau and relay modes
+
+**Rationale**: Many production games will want to keep private keys off the Roblox game server entirely. A relay server pattern (like the sn-testing-game uses) provides better key isolation and can handle paymaster integration server-side.
+
+---
+
+### 5.2 Session Keys
+
+**Description**: Implement session key support for gasless, popup-free game transactions.
+
+**Features**:
+- Session key generation (ephemeral key pair per game session)
+- Policy definition (which contracts/methods are auto-approved)
+- Session key registration on the account contract
+- Auto-signing within policy constraints
+- Session expiration and renewal
+- Integration with Cartridge Controller's session key standard
+
+**Rationale**: Session keys are essential for gaming UX. Players shouldn't need to approve every game action. Cartridge Controller has proven this model works well for Starknet games.
+
+---
+
+### 5.3 Contract Declaration
 
 **Description**: Declare new contract classes on Starknet from within the SDK.
 
@@ -319,7 +400,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.6 Streaming / SSE Support
+### 5.4 Streaming / SSE Support
 
 **Description**: Real-time event streaming using Roblox's `CreateWebStreamClient` for Server-Sent Events.
 
@@ -334,7 +415,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.7 Multi-Signer Support
+### 5.5 Multi-Signer Support
 
 **Description**: Support additional signer types beyond Stark ECDSA.
 
@@ -348,7 +429,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.8 Wallet Linking Patterns
+### 5.6 Wallet Linking Patterns
 
 **Description**: Pre-built patterns for linking external Starknet wallets to Roblox player accounts.
 
@@ -363,7 +444,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.9 Onchain Game Primitives
+### 5.7 Onchain Game Primitives
 
 **Description**: Higher-order utilities for common onchain game patterns.
 
@@ -379,7 +460,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.10 Starknet ID Integration
+### 5.8 Starknet ID Integration
 
 **Description**: Resolve `.stark` domain names to addresses and vice versa.
 
@@ -392,7 +473,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.11 Testing Framework Enhancements
+### 5.9 Testing Framework Enhancements
 
 **Description**: Advanced testing utilities for SDK consumers.
 
@@ -407,7 +488,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.12 Roblox Plugin
+### 5.10 Roblox Plugin
 
 **Description**: A Roblox Studio plugin for configuring and managing starknet-luau.
 
@@ -422,7 +503,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.13 TypeScript SDK Bridge
+### 5.11 TypeScript SDK Bridge
 
 **Description**: A TypeScript companion package that mirrors the Luau SDK's API for relay server development.
 
@@ -436,7 +517,7 @@ Features, improvements, and explorations to take the project to the next level. 
 
 ---
 
-### 3.14 Performance Benchmarking Suite
+### 5.12 Performance Benchmarking Suite
 
 **Description**: Comprehensive benchmarks for crypto operations and network throughput.
 
@@ -448,3 +529,33 @@ Features, improvements, and explorations to take the project to the next level. 
 - CI-integrated performance regression detection
 
 **Rationale**: Performance is critical for game servers. Regression detection prevents unintentional slowdowns.
+
+---
+
+### 5.13 Marketplace Bridge (Robux ↔ On-Chain)
+
+**Description**: Bridge between Roblox's `MarketplaceService` (Robux purchases) and Starknet on-chain actions. Allows game developers to trigger arbitrary contract calls, mint tokens/NFTs, or top up paymaster budgets in response to Robux transactions — while remaining testable in pure Luau/Lune via dependency injection.
+
+**Features**:
+- `MarketplaceBridge.new(config)` — core bridge with injected `_marketplaceService` (real in Roblox, mock in Lune)
+- Arbitrary contract call mapping: product ID → `{ contractAddress, entrypoint, calldataBuilder }`
+- ERC-20 preset: product ID → `erc20:transfer` or `erc20:mint` with configurable amount
+- ERC-721 preset: product ID → `erc721:mint` with metadata/tokenId generation
+- Paymaster token top-up: product ID → `PaymasterBudget:grantTokens()` (see 3.3.6)
+- Idempotent receipt processing: track `receiptId → transactionHash` to prevent double-grants
+- `ProcessReceipt` handler that orchestrates: validate receipt → resolve action → execute on-chain tx → confirm → grant
+- Receipt persistence via DataStoreService (injected, mockable) for crash recovery
+- Event callbacks: `onPurchaseStarted`, `onChainTxSubmitted`, `onChainTxConfirmed`, `onPurchaseFailed`
+- Refund / compensation logic when on-chain tx fails after Robux is spent
+
+**Presets**:
+- `MarketplaceBridge.erc20Purchase(productId, tokenAddress, amount)` — one-liner for token grants
+- `MarketplaceBridge.erc721Purchase(productId, contractAddress, tokenIdFn)` — one-liner for NFT mints
+- `MarketplaceBridge.paymasterTopUp(productId, tokenAmount)` — one-liner for paymaster budget credit
+
+**Neutrality (Lune/Test Compatibility)**:
+- All Roblox services injected: `_marketplaceService`, `_dataStoreService`, `_players`
+- Core logic (receipt → action resolution → tx building) is pure Luau with zero Roblox API calls
+- Full test suite runnable via `lune run` with mock services
+
+**Rationale**: The most natural monetization path for Roblox games using Starknet. Players buy with Robux (familiar), game triggers on-chain actions (transparent ownership). Presets for ERC-20/ERC-721/paymaster top-up cover 90% of use cases out of the box. Dependency injection preserves the SDK's test-anywhere philosophy.

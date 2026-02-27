@@ -396,3 +396,378 @@ describe("TransactionHash - version sensitivity", function()
 		expect(v3Hash ~= f3Hash):toBe(true)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 1: Minimal
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (minimal)", function()
+	it("matches expected hash for minimal deploy", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(hash):toBe("0x62211985366cf450239fdec126d1b5729a6f140e20b757ebcb04651deab7a85")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 2: OZ account on Sepolia
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (OZ Sepolia)", function()
+	it("matches expected hash for OZ account deployment", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+			constructorCalldata = { "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c" },
+			contractAddress = "0x2fab82e4aef1d8664874e1f194951856d48463c3e6bf9a8c68e234a629a6f50",
+			salt = "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x186a0", maxPricePerUnit = "0x5af3107a4000" },
+				l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		})
+		expect(hash):toBe("0x544e9d636e1a8e663064a77da86a377d05aad6c1776477ea10353de01ed9e1d")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 3: Multi-arg constructor
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (multi-arg constructor)", function()
+	it("matches expected hash for multi-arg constructor calldata", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x65bcf29c898ff912fa2bdd4c6cd94b9142da0399127601ef35dfc9babc7a691",
+			constructorCalldata = { "0x21b", "0x151" },
+			contractAddress = "0x219bea54dc352c0d6853de34019644758620fa6298c4608829228c3f5f8db33",
+			salt = "0x12fd537",
+			chainId = "0x32",
+			nonce = "0x0",
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x7c9", maxPricePerUnit = "0x1" },
+				l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		})
+		expect(hash):toBe("0x3aa44d769a27ab568d71e8f25a7b0f7fe004d35da589175528c066a631b12c4")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 4: Paymaster data
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (paymaster data)", function()
+	it("matches expected hash with paymaster data on mainnet", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+			constructorCalldata = { "0x33434ad846cdd5f23eb73ff09fe6fddd568284a0fb7d1be20ee482f044dabe2" },
+			contractAddress = "0x6b86e40118f29ebe393a75469b4d926c7a44c2e2681b6d319520b7c1156d114",
+			salt = "0x33434ad846cdd5f23eb73ff09fe6fddd568284a0fb7d1be20ee482f044dabe2",
+			chainId = "0x534e5f4d41494e",
+			nonce = "0x0",
+			paymasterData = { "0xdead", "0xbeef" },
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x2710", maxPricePerUnit = "0x174876e800" },
+				l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		})
+		expect(hash):toBe("0x2dd5cec3d2c0d4f433eb77d90e01709d8185abe223b735b226f14d6749ae493")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 5: Tip + L2 gas
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (tip + L2 gas)", function()
+	it("matches expected hash with non-zero tip and L2 gas bounds", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0xdeadbeefdeadbeefdeadbeefdeadbeef",
+			constructorCalldata = {},
+			contractAddress = "0x1234567890abcdef1234567890abcdef12345678",
+			salt = "0xabc",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x1",
+			tip = "0x5",
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x100", maxPricePerUnit = "0x3e8" },
+				l2Gas = { maxAmount = "0x200", maxPricePerUnit = "0x1f4" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		})
+		expect(hash):toBe("0x3f4a88286d111ecf280334aed5c794faebac755d13321d80fb1f4a1cdb5fe41")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Test Vector 6: L2 DA mode
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash (L2 DA mode)", function()
+	it("matches expected hash with L2 data availability", function()
+		local hash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = { "0x1" },
+			contractAddress = "0x12fd538",
+			salt = "0x1",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(hash):toBe("0x3648c77dc2d3134fa2562f3fa0b2505a0bb7cb541c71fc8dd84693c0eaa165a")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Determinism
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash determinism", function()
+	it("produces the same hash for the same inputs", function()
+		local params = {
+			classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+			constructorCalldata = { "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c" },
+			contractAddress = "0x2fab82e4aef1d8664874e1f194951856d48463c3e6bf9a8c68e234a629a6f50",
+			salt = "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x186a0", maxPricePerUnit = "0x5af3107a4000" },
+				l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		}
+		local hash1 = TransactionHash.calculateDeployAccountTransactionHash(params)
+		local hash2 = TransactionHash.calculateDeployAccountTransactionHash(params)
+		expect(hash1):toBe(hash2)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Field sensitivity
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash field sensitivity", function()
+	local baseParams = {
+		classHash = "0x1",
+		constructorCalldata = { "0x1" },
+		contractAddress = "0x1",
+		salt = "0x1",
+		chainId = "0x534e5f5345504f4c4941",
+		nonce = "0x0",
+		resourceBounds = ZERO_BOUNDS,
+	}
+
+	local function withOverride(overrides: { [string]: any }): string
+		local params: any = {}
+		for k, v in baseParams :: any do
+			params[k] = v
+		end
+		for k, v in overrides do
+			params[k] = v
+		end
+		return TransactionHash.calculateDeployAccountTransactionHash(params)
+	end
+
+	local baseHash = ""
+
+	it("computes base hash", function()
+		baseHash = withOverride({})
+		expect(baseHash):toBeTruthy()
+	end)
+
+	it("different classHash produces different hash", function()
+		local h = withOverride({ classHash = "0x2" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different constructorCalldata produces different hash", function()
+		local h = withOverride({ constructorCalldata = { "0x2" } })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different contractAddress produces different hash", function()
+		local h = withOverride({ contractAddress = "0x2" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different salt produces different hash", function()
+		local h = withOverride({ salt = "0x2" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different chainId produces different hash", function()
+		local h = withOverride({ chainId = "0x534e5f4d41494e" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different nonce produces different hash", function()
+		local h = withOverride({ nonce = "0x1" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("non-zero tip produces different hash", function()
+		local h = withOverride({ tip = "0x1" })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("paymaster data produces different hash", function()
+		local h = withOverride({ paymasterData = { "0xdead" } })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("L2 DA mode produces different hash", function()
+		local h = withOverride({ nonceDataAvailabilityMode = 1 })
+		expect(h ~= baseHash):toBe(true)
+	end)
+
+	it("different resource bounds produces different hash", function()
+		local h = withOverride({
+			resourceBounds = {
+				l1Gas = { maxAmount = "0x100", maxPricePerUnit = "0x200" },
+				l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			},
+		})
+		expect(h ~= baseHash):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- calculateDeployAccountTransactionHash - Default parameter handling
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - V3 DEPLOY_ACCOUNT hash defaults", function()
+	it("uses version 0x3 by default", function()
+		local base = {
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		}
+		local explicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			version = "0x3",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		local implicit = TransactionHash.calculateDeployAccountTransactionHash(base)
+		expect(explicit):toBe(implicit)
+	end)
+
+	it("uses tip 0x0 by default", function()
+		local explicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			tip = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		local implicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(explicit):toBe(implicit)
+	end)
+
+	it("uses L1 DA mode by default", function()
+		local explicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			nonceDataAvailabilityMode = 0,
+			feeDataAvailabilityMode = 0,
+			resourceBounds = ZERO_BOUNDS,
+		})
+		local implicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(explicit):toBe(implicit)
+	end)
+
+	it("uses empty paymaster data by default", function()
+		local explicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			paymasterData = {},
+			resourceBounds = ZERO_BOUNDS,
+		})
+		local implicit = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x1",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(explicit):toBe(implicit)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- DEPLOY_ACCOUNT vs INVOKE produce different hashes (prefix difference)
+--------------------------------------------------------------------------------
+
+describe("TransactionHash - DEPLOY_ACCOUNT vs INVOKE hash prefix", function()
+	it("deploy and invoke produce different hashes for same address/nonce/chain/bounds", function()
+		local invokeHash = TransactionHash.calculateInvokeTransactionHash({
+			senderAddress = "0x1",
+			compiledCalldata = {},
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		local deployHash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = "0x0",
+			constructorCalldata = {},
+			contractAddress = "0x1",
+			salt = "0x0",
+			chainId = "0x534e5f5345504f4c4941",
+			nonce = "0x0",
+			resourceBounds = ZERO_BOUNDS,
+		})
+		expect(invokeHash ~= deployHash):toBe(true)
+	end)
+end)
