@@ -173,6 +173,9 @@ function Account.new(config: {
 	address: string,
 	signer: any,
 	provider: any,
+	accountType: string?,
+	classHash: string?,
+	constructorCalldata: { string }?,
 }): any
 	if not config.address then
 		error(StarknetError.validation("Account: address is required", ErrorCodes.REQUIRED_FIELD.code))
@@ -189,6 +192,9 @@ function Account.new(config: {
 		signer = config.signer,
 		_provider = config.provider,
 		_builder = TransactionBuilder.new(config.provider),
+		_accountType = config.accountType,
+		_classHash = config.classHash,
+		_constructorCalldata = config.constructorCalldata,
 	}, Account)
 
 	return self
@@ -245,6 +251,9 @@ function Account.fromPrivateKey(config: {
 		address = address,
 		signer = signer,
 		provider = config.provider,
+		accountType = accountType,
+		classHash = classHash,
+		constructorCalldata = constructorCalldata,
 	})
 end
 
@@ -306,6 +315,91 @@ function Account:execute(calls: { TransactionBuilder.Call }, options: Transactio
 		address = self.address,
 		signer = self.signer,
 	}, calls, options)
+end
+
+--- Deploy this account on-chain.
+--- The account must be pre-funded at its counterfactual address before calling this.
+--- Returns a Promise resolving to { transactionHash: string }.
+function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?): any
+	local accountType = self._accountType or "oz"
+	local publicKeyHex = self.signer:getPublicKeyHex()
+	local classHash = self._classHash or getDefaultClassHash(accountType)
+	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
+
+	local params: TransactionBuilder.DeployAccountParams = {
+		classHash = classHash,
+		constructorCalldata = constructorCalldata,
+		addressSalt = publicKeyHex,
+		contractAddress = self.address,
+	}
+
+	local nm = self._provider._nonceManager
+	local hasExplicitNonce = options and options.nonce
+
+	-- If NonceManager is available and no explicit nonce override, use managed nonces
+	if nm and not hasExplicitNonce then
+		local Promise = self._provider:_getPromise()
+		return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+			local reserveOk, reservedNonce = pcall(function()
+				return nm:reserve(self.address):expect()
+			end)
+			if not reserveOk then
+				reject(reservedNonce)
+				return
+			end
+
+			local opts: TransactionBuilder.DeployAccountOptions
+			if options then
+				opts = table.clone(options) :: TransactionBuilder.DeployAccountOptions
+			else
+				opts = {} :: TransactionBuilder.DeployAccountOptions
+			end
+			opts.nonce = reservedNonce
+
+			local execOk, execResult = pcall(function()
+				return self._builder
+					:deployAccount({
+						address = self.address,
+						signer = self.signer,
+					}, params, opts)
+					:expect()
+			end)
+
+			if execOk then
+				nm:confirm(self.address, reservedNonce)
+				resolve(execResult)
+			else
+				nm:reject(self.address, reservedNonce)
+				reject(execResult)
+			end
+		end)
+	end
+
+	return self._builder:deployAccount({
+		address = self.address,
+		signer = self.signer,
+	}, params, options)
+end
+
+--- Estimate the fee for deploying this account.
+--- Returns a Promise resolving to the fee estimate.
+function Account:estimateDeployAccountFee(): any
+	local accountType = self._accountType or "oz"
+	local publicKeyHex = self.signer:getPublicKeyHex()
+	local classHash = self._classHash or getDefaultClassHash(accountType)
+	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
+
+	local params: TransactionBuilder.DeployAccountParams = {
+		classHash = classHash,
+		constructorCalldata = constructorCalldata,
+		addressSalt = publicKeyHex,
+		contractAddress = self.address,
+	}
+
+	return self._builder:estimateDeployAccountFee({
+		address = self.address,
+		signer = self.signer,
+	}, params)
 end
 
 --- Fetch the current nonce from the provider.

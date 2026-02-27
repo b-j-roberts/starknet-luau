@@ -30,6 +30,10 @@ export type RpcProvider = {
 		simulationFlags: { string }?
 	) -> Promise<{ RpcTypes.FeeEstimate }>,
 	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> Promise<string>,
+	addDeployAccountTransaction: (
+		self: RpcProvider,
+		deployTx: RpcTypes.DeployAccountTransactionV3
+	) -> Promise<string>,
 	getTransactionReceipt: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionReceipt>,
 	getTransactionStatus: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionStatus>,
 	getBlockWithTxHashes: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.Block>,
@@ -807,6 +811,32 @@ function RpcProviderClass:addInvokeTransaction(invokeTx: RpcTypes.InvokeTransact
 			nonce_data_availability_mode = invokeTx.nonce_data_availability_mode,
 			fee_data_availability_mode = invokeTx.fee_data_availability_mode,
 			account_deployment_data = invokeTx.account_deployment_data,
+		},
+	}):andThen(function(result: any)
+		if type(result) == "table" and result.transaction_hash then
+			return result.transaction_hash
+		end
+		return result
+	end)
+end
+
+--- Submit a signed deploy account transaction.
+--- Returns a Promise resolving to the transaction hash.
+function RpcProviderClass:addDeployAccountTransaction(deployTx: RpcTypes.DeployAccountTransactionV3): any
+	return self:fetch("starknet_addDeployAccountTransaction", {
+		{
+			type = deployTx.type,
+			version = deployTx.version,
+			class_hash = deployTx.class_hash,
+			constructor_calldata = deployTx.constructor_calldata,
+			contract_address_salt = deployTx.contract_address_salt,
+			signature = deployTx.signature,
+			nonce = deployTx.nonce,
+			resource_bounds = deployTx.resource_bounds,
+			tip = deployTx.tip,
+			paymaster_data = deployTx.paymaster_data,
+			nonce_data_availability_mode = deployTx.nonce_data_availability_mode,
+			fee_data_availability_mode = deployTx.fee_data_availability_mode,
 		},
 	}):andThen(function(result: any)
 		if type(result) == "table" and result.transaction_hash then

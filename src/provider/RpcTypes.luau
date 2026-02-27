@@ -225,6 +225,22 @@ export type InvokeTransactionV3 = {
 	account_deployment_data: { string },
 }
 
+--- Deploy account transaction V3 (for addDeployAccountTransaction)
+export type DeployAccountTransactionV3 = {
+	type: string,
+	version: string,
+	class_hash: string,
+	constructor_calldata: { string },
+	contract_address_salt: string,
+	signature: { string },
+	nonce: string,
+	resource_bounds: ResourceBounds,
+	tip: string,
+	paymaster_data: { string },
+	nonce_data_availability_mode: string,
+	fee_data_availability_mode: string,
+}
+
 --- Block with transaction hashes
 export type Block = {
 	block_hash: string?,

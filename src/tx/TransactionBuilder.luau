@@ -36,6 +36,25 @@ export type ExecuteOptions = {
 	skipValidate: boolean?, -- Use SKIP_VALIDATE flag for fee estimation
 }
 
+export type DeployAccountParams = {
+	classHash: string, -- Account implementation class hash
+	constructorCalldata: { string }, -- Compiled constructor args
+	addressSalt: string, -- Salt for address computation (typically public key)
+	contractAddress: string, -- Pre-computed counterfactual address
+}
+
+export type DeployAccountOptions = {
+	nonce: string?, -- Override automatic nonce fetching (default "0x0" for new accounts)
+	resourceBounds: TransactionHash.ResourceBounds?, -- Override computed resource bounds
+	feeMultiplier: number?, -- Fee buffer multiplier (default 1.5)
+	tip: string?, -- Tip for priority (default "0x0")
+	paymasterData: { string }?, -- Paymaster data
+	nonceDataAvailabilityMode: number?, -- DA mode for nonce (default 0)
+	feeDataAvailabilityMode: number?, -- DA mode for fee (default 0)
+	dryRun: boolean?, -- Build and sign but don't submit
+	skipValidate: boolean?, -- Use SKIP_VALIDATE flag for fee estimation
+}
+
 export type WaitOptions = {
 	retryInterval: number?, -- Seconds between polls (default 5)
 	maxAttempts: number?, -- Max poll attempts (default 30)
@@ -147,6 +166,35 @@ local function buildInvokeTransaction(params: {
 		nonce_data_availability_mode = "0x0",
 		fee_data_availability_mode = "0x0",
 		account_deployment_data = params.accountDeploymentData or {},
+	}
+end
+
+--- Build an unsigned DeployAccountTransactionV3 object for RPC submission or fee estimation.
+local function buildDeployAccountTransaction(params: {
+	classHash: string,
+	constructorCalldata: { string },
+	contractAddressSalt: string,
+	nonce: string,
+	resourceBounds: TransactionHash.ResourceBounds,
+	signature: { string },
+	tip: string?,
+	paymasterData: { string }?,
+	nonceDataAvailabilityMode: number?,
+	feeDataAvailabilityMode: number?,
+}): any
+	return {
+		type = "DEPLOY_ACCOUNT",
+		version = "0x3",
+		class_hash = params.classHash,
+		constructor_calldata = params.constructorCalldata,
+		contract_address_salt = params.contractAddressSalt,
+		signature = params.signature,
+		nonce = params.nonce,
+		resource_bounds = toRpcResourceBounds(params.resourceBounds),
+		tip = params.tip or "0x0",
+		paymaster_data = params.paymasterData or {},
+		nonce_data_availability_mode = "0x0",
+		fee_data_availability_mode = "0x0",
 	}
 end
 
@@ -341,6 +389,167 @@ function TransactionBuilder:execute(account: Account, calls: { Call }, options: 
 		-- Step 8: Submit the transaction
 		local submitOk, submitResult = pcall(function()
 			return provider:addInvokeTransaction(signedTx):expect()
+		end)
+		if not submitOk then
+			reject(submitResult)
+			return
+		end
+
+		resolve({
+			transactionHash = submitResult,
+		})
+	end)
+end
+
+--- Estimate the fee for a deploy account transaction without submitting.
+--- Returns a Promise resolving to the fee estimate.
+function TransactionBuilder:estimateDeployAccountFee(_account: Account, params: DeployAccountParams): any
+	local provider = self._provider
+	local Promise = provider:_getPromise()
+
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Build unsigned transaction with zero resource bounds and dummy signature
+		local unsignedTx = buildDeployAccountTransaction({
+			classHash = params.classHash,
+			constructorCalldata = params.constructorCalldata,
+			contractAddressSalt = params.addressSalt,
+			nonce = "0x0",
+			resourceBounds = {
+				l1Gas = ZERO_RESOURCE_BOUND,
+				l2Gas = ZERO_RESOURCE_BOUND,
+				l1DataGas = ZERO_RESOURCE_BOUND,
+			},
+			signature = { "0x0", "0x0" }, -- Dummy signature for estimation
+		})
+
+		-- Call estimateFee with SKIP_VALIDATE
+		local feeOk, feeResult = pcall(function()
+			return provider:estimateFee({ unsignedTx }, { "SKIP_VALIDATE" }):expect()
+		end)
+		if not feeOk then
+			reject(feeResult)
+			return
+		end
+
+		-- Return the first estimate (single transaction)
+		if type(feeResult) == "table" and #feeResult > 0 then
+			resolve(feeResult[1])
+		else
+			resolve(feeResult)
+		end
+	end)
+end
+
+--- Execute a full deploy account transaction flow: fetch chain ID, estimate fees, hash, sign, submit.
+--- Returns a Promise resolving to the transaction hash (or DryRunResult if dryRun=true).
+function TransactionBuilder:deployAccount(
+	account: Account,
+	params: DeployAccountParams,
+	options: DeployAccountOptions?
+): any
+	local provider = self._provider
+	local Promise = provider:_getPromise()
+	local opts = options or {} :: DeployAccountOptions
+
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Step 1: Nonce (default "0x0" for new account deployments)
+		local nonce: string = opts.nonce or "0x0"
+
+		-- Step 2: Fetch chain ID
+		local chainIdOk, chainId = pcall(function()
+			return provider:getChainId():expect()
+		end)
+		if not chainIdOk then
+			reject(chainId)
+			return
+		end
+
+		-- Step 3: Determine resource bounds (estimate or use override)
+		local resourceBounds: TransactionHash.ResourceBounds
+		if opts.resourceBounds then
+			resourceBounds = opts.resourceBounds
+		else
+			local multiplier = opts.feeMultiplier or DEFAULT_FEE_MULTIPLIER
+
+			-- Build unsigned tx for fee estimation
+			local unsignedTx = buildDeployAccountTransaction({
+				classHash = params.classHash,
+				constructorCalldata = params.constructorCalldata,
+				contractAddressSalt = params.addressSalt,
+				nonce = nonce,
+				resourceBounds = {
+					l1Gas = ZERO_RESOURCE_BOUND,
+					l2Gas = ZERO_RESOURCE_BOUND,
+					l1DataGas = ZERO_RESOURCE_BOUND,
+				},
+				signature = { "0x0", "0x0" },
+			})
+
+			local simFlags = if opts.skipValidate ~= false then { "SKIP_VALIDATE" } else {}
+
+			local feeOk, feeResult = pcall(function()
+				return provider:estimateFee({ unsignedTx }, simFlags):expect()
+			end)
+			if not feeOk then
+				reject(feeResult)
+				return
+			end
+
+			local estimate = if type(feeResult) == "table" and #feeResult > 0 then feeResult[1] else feeResult
+			resourceBounds = resourceBoundsFromEstimate(estimate, multiplier)
+		end
+
+		-- Step 4: Compute deploy account transaction hash (Poseidon)
+		local tip = opts.tip or "0x0"
+		local paymasterData = opts.paymasterData or {}
+		local nonceDAMode = opts.nonceDataAvailabilityMode or 0
+		local feeDAMode = opts.feeDataAvailabilityMode or 0
+
+		local txHash = TransactionHash.calculateDeployAccountTransactionHash({
+			classHash = params.classHash,
+			constructorCalldata = params.constructorCalldata,
+			contractAddress = params.contractAddress,
+			salt = params.addressSalt,
+			chainId = chainId,
+			nonce = nonce,
+			resourceBounds = resourceBounds,
+			tip = tip,
+			paymasterData = paymasterData,
+			nonceDataAvailabilityMode = nonceDAMode,
+			feeDataAvailabilityMode = feeDAMode,
+		})
+
+		-- Step 5: Sign the transaction hash
+		local txHashBuf = BigInt.fromHex(txHash)
+		local signature = account.signer:signTransaction(txHashBuf)
+
+		-- Step 6: Build the final signed transaction
+		local signedTx = buildDeployAccountTransaction({
+			classHash = params.classHash,
+			constructorCalldata = params.constructorCalldata,
+			contractAddressSalt = params.addressSalt,
+			nonce = nonce,
+			resourceBounds = resourceBounds,
+			signature = signature,
+			tip = tip,
+			paymasterData = paymasterData,
+			nonceDataAvailabilityMode = nonceDAMode,
+			feeDataAvailabilityMode = feeDAMode,
+		})
+
+		-- Step 6b: If dryRun, return without submitting
+		if opts.dryRun then
+			resolve({
+				transactionHash = txHash,
+				transaction = signedTx,
+				signature = signature,
+			})
+			return
+		end
+
+		-- Step 7: Submit the deploy account transaction
+		local submitOk, submitResult = pcall(function()
+			return provider:addDeployAccountTransaction(signedTx):expect()
 		end)
 		if not submitOk then
 			reject(submitResult)
