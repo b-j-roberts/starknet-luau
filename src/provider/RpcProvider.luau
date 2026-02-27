@@ -33,7 +33,7 @@ export type RpcProvider = {
 	addDeployAccountTransaction: (
 		self: RpcProvider,
 		deployTx: RpcTypes.DeployAccountTransactionV3
-	) -> Promise<string>,
+	) -> Promise<RpcTypes.DeployAccountResult>,
 	getTransactionReceipt: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionReceipt>,
 	getTransactionStatus: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionStatus>,
 	getBlockWithTxHashes: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.Block>,
@@ -821,7 +821,7 @@ function RpcProviderClass:addInvokeTransaction(invokeTx: RpcTypes.InvokeTransact
 end
 
 --- Submit a signed deploy account transaction.
---- Returns a Promise resolving to the transaction hash.
+--- Returns a Promise resolving to { transaction_hash, contract_address }.
 function RpcProviderClass:addDeployAccountTransaction(deployTx: RpcTypes.DeployAccountTransactionV3): any
 	return self:fetch("starknet_addDeployAccountTransaction", {
 		{
@@ -840,7 +840,10 @@ function RpcProviderClass:addDeployAccountTransaction(deployTx: RpcTypes.DeployA
 		},
 	}):andThen(function(result: any)
 		if type(result) == "table" and result.transaction_hash then
-			return result.transaction_hash
+			return {
+				transaction_hash = result.transaction_hash,
+				contract_address = result.contract_address or "",
+			}
 		end
 		return result
 	end)

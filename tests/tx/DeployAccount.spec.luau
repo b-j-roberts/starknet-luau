@@ -62,7 +62,7 @@ local function resetHandlers()
 	end
 
 	mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
-		return { transaction_hash = "0xdeploy123" }
+		return { transaction_hash = "0xdeploy123", contract_address = TEST_DEPLOY_ADDRESS }
 	end
 
 	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
@@ -201,6 +201,18 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 		local result = builder:deployAccount(account, params):expect()
 		expect(result.transactionHash):toBe("0xdeploy123")
+	end)
+
+	it("returns contract address on successful deployment", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = createTestDeployParams()
+
+		local result = builder:deployAccount(account, params):expect()
+		expect(result.contractAddress):toBe(TEST_DEPLOY_ADDRESS)
 	end)
 
 	it("fetches chain ID from provider", function()
@@ -1032,7 +1044,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("RpcProvider - addDeployAccountTransaction", function()
-	it("submits deploy account tx and returns transaction hash", function()
+	it("submits deploy account tx and returns transaction hash and contract address", function()
 		resetHandlers()
 		clearRequestLog()
 		local provider = createTestProvider()
@@ -1056,7 +1068,8 @@ describe("RpcProvider - addDeployAccountTransaction", function()
 		}
 
 		local result = provider:addDeployAccountTransaction(deployTx):expect()
-		expect(result):toBe("0xdeploy123")
+		expect(result.transaction_hash):toBe("0xdeploy123")
+		expect(result.contract_address):toBe(TEST_DEPLOY_ADDRESS)
 	end)
 
 	it("sends correct RPC method", function()

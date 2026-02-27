@@ -241,6 +241,12 @@ export type DeployAccountTransactionV3 = {
 	fee_data_availability_mode: string,
 }
 
+--- Result from addDeployAccountTransaction
+export type DeployAccountResult = {
+	transaction_hash: string,
+	contract_address: string,
+}
+
 --- Block with transaction hashes
 export type Block = {
 	block_hash: string?,

@@ -557,7 +557,8 @@ function TransactionBuilder:deployAccount(
 		end
 
 		resolve({
-			transactionHash = submitResult,
+			transactionHash = submitResult.transaction_hash,
+			contractAddress = submitResult.contract_address,
 		})
 	end)
 end
