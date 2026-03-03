@@ -283,15 +283,15 @@ Full account deployment flow for creating new Starknet accounts from within Robl
 **Description**: Account factory with support for multiple account contract types, providing constructor calldata builders and configurable class hashes for OZ and Argent accounts.
 
 **Requirements**:
-- [ ] Account class hash constants:
+- [x] Account class hash constants:
   - OZ (v0.8.1): `0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f`
-  - Argent (v0.3.0): `0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003`
-- [ ] Constructor calldata builders:
+  - Argent (v0.4.0): `0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f`
+- [x] Constructor calldata builders:
   - `AccountType.OZ(publicKey)` → `[publicKey]`
-  - `AccountType.Argent(ownerKey, guardianKey?)` → `[ownerKey, guardianKey or 0x0]`
-- [ ] `AccountFactory.new(provider, accountType, signer)` — factory for creating deployable accounts
-- [ ] `factory:createAccount(options?)` → `{ account, address, deployTx }` (pre-deployment Account instance)
-- [ ] Document class hash versioning: these hashes correspond to specific contract versions
+  - `AccountType.Argent(ownerKey, guardianKey?)` → `[owx0, ownerKey, 0x0]` / `[0x0, ownerKey, 0x1, 0x0, guardianKey]`
+- [x] `AccountFactory.new(provider, accountType, signer)` — factory for creating deployable accounts
+- [x] `factory:createAccount(options?)` → `{ account, address, deployTx }` (pre-deployment Account instance)
+- [x] Document class hash versioning: these hashes correspond to specific contract versions
 
 **Implementation Notes**:
 - Class hashes change with new contract versions — make them configurable, not just constants
