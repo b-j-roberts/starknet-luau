@@ -305,11 +305,11 @@ Full account deployment flow for creating new Starknet accounts from within Robl
 **Description**: Utilities for checking whether a counterfactual address has sufficient balance for deployment and estimating the required funding amount.
 
 **Requirements**:
-- [ ] `Account.checkDeploymentBalance(address, provider)` → `{ hasSufficientBalance, balance, estimatedFee }`
+- [x] `Account.checkDeploymentBalance(address, provider)` → `{ hasSufficientBalance, balance, estimatedFee }`
   - Calls `starknet_call` on ETH/STRK contract `balanceOf(address)` and compares to estimated deploy fee
-- [ ] `Account.getDeploymentFeeEstimate(classHash, constructorCalldata, salt, provider)` → estimated fee
-- [ ] Guide/helper for funding: return the counterfactual address so the game backend can send funds
-- [ ] Support checking both STRK and ETH balances (V3 txs use STRK for gas)
+- [x] `Account.getDeploymentFeeEstimate(classHash, constructorCalldata, salt, provider)` → estimated fee
+- [x] Guide/helper for funding: return the counterfactual address so the game backend can send funds
+- [x] Support checking both STRK and ETH balances (V3 txs use STRK for gas)
 
 ---
 

@@ -42,5 +42,6 @@ ErrorCodes.ARGUMENT_COUNT = { code = 4006, name = "ARGUMENT_COUNT" }
 -- 5000-5099: Transaction errors
 ErrorCodes.TRANSACTION_ERROR = { code = 5000, name = "TRANSACTION_ERROR" }
 ErrorCodes.FEE_ESTIMATION_FAILED = { code = 5001, name = "FEE_ESTIMATION_FAILED" }
+ErrorCodes.INSUFFICIENT_BALANCE = { code = 5002, name = "INSUFFICIENT_BALANCE" }
 
 return ErrorCodes

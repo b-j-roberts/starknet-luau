@@ -10,6 +10,8 @@ local Pedersen = require("../crypto/Pedersen")
 local StarkSigner = require("../signer/StarkSigner")
 local TransactionBuilder = require("../tx/TransactionBuilder")
 local TypedData = require("./TypedData")
+local ERC20 = require("../contract/ERC20")
+local Constants = require("../constants")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -98,6 +100,18 @@ local function buildConstructorCalldata(accountType: string, publicKey: string, 
 	return { publicKey }
 end
 
+--- Convert a u256 value {low: string, high: string} from ERC-20 balance_of to a single BigInt.
+--- Formula: high * 2^128 + low
+local function u256ToBigInt(u256: { low: string, high: string }): buffer
+	local low = BigInt.fromHex(u256.low)
+	local high = BigInt.fromHex(u256.high)
+	if BigInt.isZero(high) then
+		return low
+	end
+	local TWO_128 = BigInt.shl(BigInt.one(), 128)
+	return BigInt.add(BigInt.mul(high, TWO_128), low)
+end
+
 --- Get the default class hash for an account type.
 --- Braavos uses the base class hash for address computation.
 local function getDefaultClassHash(accountType: string): string
@@ -166,6 +180,246 @@ end
 --- Build constructor calldata for an account type (exposed for advanced use).
 function Account.getConstructorCalldata(accountType: string, publicKey: string, guardian: string?): { string }
 	return buildConstructorCalldata(accountType, publicKey, guardian)
+end
+
+--- Estimate the fee required to deploy a new account.
+--- This is a static method (no signer needed) — uses a dummy signer internally.
+--- Returns a Promise resolving to { estimatedFee, gasConsumed, gasPrice, rawEstimate }.
+function Account.getDeploymentFeeEstimate(config: {
+	classHash: string,
+	constructorCalldata: { string },
+	salt: string,
+	contractAddress: string,
+	provider: any,
+	feeMultiplier: number?,
+}): any
+	if not config.provider then
+		error(
+			StarknetError.validation("getDeploymentFeeEstimate: provider is required", ErrorCodes.REQUIRED_FIELD.code)
+		)
+	end
+	if not config.classHash then
+		error(
+			StarknetError.validation("getDeploymentFeeEstimate: classHash is required", ErrorCodes.REQUIRED_FIELD.code)
+		)
+	end
+	if not config.contractAddress then
+		error(
+			StarknetError.validation(
+				"getDeploymentFeeEstimate: contractAddress is required",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+
+	local builder = TransactionBuilder.new(config.provider)
+	local params: TransactionBuilder.DeployAccountParams = {
+		classHash = config.classHash,
+		constructorCalldata = config.constructorCalldata or {},
+		addressSalt = config.salt or "0x0",
+		contractAddress = config.contractAddress,
+	}
+
+	local Promise = config.provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Use dummy account (estimateDeployAccountFee doesn't need a real signer)
+		local dummyAccount = {
+			address = config.contractAddress,
+			signer = {
+				signTransaction = function(_self: any, _hash: buffer): { string }
+					return { "0x0", "0x0" }
+				end,
+			},
+		}
+
+		local ok, estimate = pcall(function()
+			return builder:estimateDeployAccountFee(dummyAccount, params):expect()
+		end)
+		if not ok then
+			reject(estimate)
+			return
+		end
+
+		-- Apply fee multiplier to overall_fee
+		local multiplier = config.feeMultiplier or 1.5
+		local overallFee = estimate.overall_fee or "0x0"
+		local feeBig = BigInt.fromHex(overallFee)
+		local scale = 100
+		local numerator = math.floor(multiplier * scale + 0.5)
+		local estimated = BigInt.div(BigInt.mul(feeBig, BigInt.fromNumber(numerator)), BigInt.fromNumber(scale))
+
+		resolve({
+			estimatedFee = BigInt.toHex(estimated),
+			gasConsumed = estimate.gas_consumed or "0x0",
+			gasPrice = estimate.gas_price or "0x0",
+			rawEstimate = estimate,
+		})
+	end)
+end
+
+--- Check whether a counterfactual address has sufficient balance for deployment.
+--- Returns a Promise resolving to { hasSufficientBalance, balance, estimatedFee, token, deficit? }.
+function Account.checkDeploymentBalance(config: {
+	address: string,
+	classHash: string,
+	constructorCalldata: { string },
+	salt: string,
+	provider: any,
+	feeMultiplier: number?,
+	token: string?,
+}): any
+	if not config.provider then
+		error(StarknetError.validation("checkDeploymentBalance: provider is required", ErrorCodes.REQUIRED_FIELD.code))
+	end
+	if not config.address then
+		error(StarknetError.validation("checkDeploymentBalance: address is required", ErrorCodes.REQUIRED_FIELD.code))
+	end
+	if not config.classHash then
+		error(StarknetError.validation("checkDeploymentBalance: classHash is required", ErrorCodes.REQUIRED_FIELD.code))
+	end
+
+	local token = config.token or "STRK"
+	local tokenAddress: string
+	if token == "STRK" then
+		tokenAddress = Constants.STRK_TOKEN_ADDRESS
+	elseif token == "ETH" then
+		tokenAddress = Constants.ETH_TOKEN_ADDRESS
+	else
+		error(
+			StarknetError.validation(
+				`checkDeploymentBalance: unsupported token "{token}", expected "STRK" or "ETH"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	local Promise = config.provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Fetch balance via ERC20
+		local erc20 = ERC20.new(tokenAddress, config.provider)
+		local balOk, balResult = pcall(function()
+			return erc20:balance_of(config.address):expect()
+		end)
+		if not balOk then
+			reject(balResult)
+			return
+		end
+
+		-- Convert u256 balance to BigInt
+		local balanceBigInt: buffer
+		if type(balResult) == "table" and balResult.low ~= nil then
+			balanceBigInt = u256ToBigInt(balResult)
+		else
+			-- Fallback: single felt result
+			balanceBigInt = BigInt.fromHex(tostring(balResult))
+		end
+
+		-- Estimate deployment fee
+		local feeOk, feeResult = pcall(function()
+			return Account.getDeploymentFeeEstimate({
+				classHash = config.classHash,
+				constructorCalldata = config.constructorCalldata or {},
+				salt = config.salt or "0x0",
+				contractAddress = config.address,
+				provider = config.provider,
+				feeMultiplier = config.feeMultiplier,
+			}):expect()
+		end)
+		if not feeOk then
+			reject(feeResult)
+			return
+		end
+
+		local estimatedFeeBigInt = BigInt.fromHex(feeResult.estimatedFee)
+		local hasSufficient = BigInt.cmp(balanceBigInt, estimatedFeeBigInt) >= 0
+
+		local result: { [string]: any } = {
+			hasSufficientBalance = hasSufficient,
+			balance = BigInt.toHex(balanceBigInt),
+			estimatedFee = feeResult.estimatedFee,
+			token = token,
+		}
+
+		if not hasSufficient then
+			local deficit = BigInt.sub(estimatedFeeBigInt, balanceBigInt)
+			result.deficit = BigInt.toHex(deficit)
+		end
+
+		resolve(result)
+	end)
+end
+
+--- Get all deployment funding info for a new account (the "give this to your backend" method).
+--- Computes the counterfactual address, estimates deployment cost, and returns all info needed to fund.
+--- Returns a Promise resolving to { address, estimatedFee, token, tokenAddress, classHash, constructorCalldata, salt }.
+function Account.getDeploymentFundingInfo(config: {
+	publicKey: string,
+	provider: any,
+	classHash: string?,
+	accountType: string?,
+	guardian: string?,
+	salt: string?,
+	feeMultiplier: number?,
+}): any
+	if not config.provider then
+		error(
+			StarknetError.validation("getDeploymentFundingInfo: provider is required", ErrorCodes.REQUIRED_FIELD.code)
+		)
+	end
+	if not config.publicKey then
+		error(
+			StarknetError.validation("getDeploymentFundingInfo: publicKey is required", ErrorCodes.REQUIRED_FIELD.code)
+		)
+	end
+
+	local accountType = config.accountType or "oz"
+	if accountType ~= "oz" and accountType ~= "argent" and accountType ~= "braavos" then
+		error(
+			StarknetError.validation(
+				`getDeploymentFundingInfo: unsupported accountType "{accountType}", expected "oz", "argent", or "braavos"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	local classHash = config.classHash or getDefaultClassHash(accountType)
+	local constructorCalldata = buildConstructorCalldata(accountType, config.publicKey, config.guardian)
+	local salt = config.salt or config.publicKey
+
+	local address = Account.computeAddress({
+		classHash = classHash,
+		publicKey = config.publicKey,
+		constructorCalldata = constructorCalldata,
+		salt = salt,
+	})
+
+	local Promise = config.provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		local feeOk, feeResult = pcall(function()
+			return Account.getDeploymentFeeEstimate({
+				classHash = classHash,
+				constructorCalldata = constructorCalldata,
+				salt = salt,
+				contractAddress = address,
+				provider = config.provider,
+				feeMultiplier = config.feeMultiplier,
+			}):expect()
+		end)
+		if not feeOk then
+			reject(feeResult)
+			return
+		end
+
+		resolve({
+			address = address,
+			estimatedFee = feeResult.estimatedFee,
+			token = "STRK",
+			tokenAddress = Constants.STRK_TOKEN_ADDRESS,
+			classHash = classHash,
+			constructorCalldata = constructorCalldata,
+			salt = salt,
+		})
+	end)
 end
 
 --- Create an Account from an explicit address, signer, and provider.

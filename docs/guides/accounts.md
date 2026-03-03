@@ -346,6 +346,124 @@ account:getPublicKeyHex()    -- Public key as hex string
 account:getNonce()           -- Promise<string> (hex nonce from chain)
 ```
 
+## Account Deployment & Prefunding
+
+Before deploying a new account, the counterfactual address must be pre-funded with STRK tokens (V3 transactions use STRK for gas). The SDK provides three static utility methods to streamline this process.
+
+### Step 1: Get Funding Info
+
+Use `getDeploymentFundingInfo` to compute the counterfactual address and estimate the deployment cost. Pass this info to your game backend so it can send funds.
+
+```luau
+local info = Account.getDeploymentFundingInfo({
+    publicKey = "0xYOUR_PUBLIC_KEY",
+    provider = provider,
+    -- Optional: accountType = "argent", classHash = "0x...", salt = "0x..."
+}):expect()
+
+print("Send STRK to:", info.address)
+print("Estimated fee:", info.estimatedFee)
+print("Token:", info.token)               -- "STRK"
+print("Token address:", info.tokenAddress) -- STRK contract address
+print("Class hash:", info.classHash)
+print("Salt:", info.salt)
+```
+
+### Step 2: Check Balance
+
+After your backend sends funds, verify the address has enough balance:
+
+```luau
+local check = Account.checkDeploymentBalance({
+    address = info.address,
+    classHash = info.classHash,
+    constructorCalldata = info.constructorCalldata,
+    salt = info.salt,
+    provider = provider,
+    -- Optional: token = "ETH", feeMultiplier = 2.0
+}):expect()
+
+if check.hasSufficientBalance then
+    print("Ready to deploy! Balance:", check.balance)
+else
+    print("Need more funds. Deficit:", check.deficit)
+end
+```
+
+### Step 3: Estimate Fee (Advanced)
+
+For fee estimation without a balance check:
+
+```luau
+local estimate = Account.getDeploymentFeeEstimate({
+    classHash = Constants.OZ_ACCOUNT_CLASS_HASH,
+    constructorCalldata = { publicKey },
+    salt = publicKey,
+    contractAddress = computedAddress,
+    provider = provider,
+    feeMultiplier = 1.5,  -- default, 1.5x buffer on top of estimated fee
+}):expect()
+
+print("Estimated fee:", estimate.estimatedFee)
+print("Gas consumed:", estimate.gasConsumed)
+print("Gas price:", estimate.gasPrice)
+```
+
+### Full End-to-End Deployment Example
+
+```luau
+local Starknet = require(ReplicatedStorage.StarknetLuau)
+local Account = Starknet.wallet.Account
+local StarkSigner = Starknet.signer.StarkSigner
+local RpcProvider = Starknet.provider.RpcProvider
+
+-- 1. Setup provider
+local provider = RpcProvider.new({
+    nodeUrl = "https://api.zan.top/public/starknet-sepolia",
+})
+
+-- 2. Generate or load a private key
+local privateKey = "0xYOUR_PRIVATE_KEY"
+local signer = StarkSigner.new(privateKey)
+local publicKey = signer:getPublicKeyHex()
+
+-- 3. Get funding info (send this to your backend)
+local info = Account.getDeploymentFundingInfo({
+    publicKey = publicKey,
+    provider = provider,
+}):expect()
+
+-- 4. (Backend sends STRK to info.address)
+
+-- 5. Check balance
+local check = Account.checkDeploymentBalance({
+    address = info.address,
+    classHash = info.classHash,
+    constructorCalldata = info.constructorCalldata,
+    salt = info.salt,
+    provider = provider,
+}):expect()
+
+if not check.hasSufficientBalance then
+    warn("Insufficient balance, deficit:", check.deficit)
+    return
+end
+
+-- 6. Deploy the account
+local account = Account.fromPrivateKey({
+    privateKey = privateKey,
+    provider = provider,
+})
+
+account:deployAccount():andThen(function(result)
+    if result.alreadyDeployed then
+        print("Account already deployed at:", result.contractAddress)
+    else
+        print("Deployed! Tx:", result.transactionHash)
+    end
+end)
+```
+
 ## Next Steps
 
 - [Contract Interaction](contracts.md) -- Using accounts with contracts
