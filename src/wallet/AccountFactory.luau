@@ -12,10 +12,17 @@
 -- For Argent accounts with a guardian:
 --   local factory = AccountFactory.new(provider, AccountType.Argent, signer)
 --   local result = factory:createAccount({ guardian = "0xguardianPubKey" })
+--
+-- Batch operations for game onboarding:
+--   local accounts = factory:batchCreate(10, { keyGenerator = myKeyGen })
+--   local report = factory:batchDeploy(accounts, { onDeployProgress = callback }):expect()
 
 local Account = require("./Account")
+local StarkSigner = require("../signer/StarkSigner")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
+
+local MAX_BATCH_SIZE = 100
 
 local AccountFactory = {}
 AccountFactory.__index = AccountFactory
@@ -50,6 +57,59 @@ function AccountFactory.new(provider: any, accountType: any, signer: any): any
 	}, AccountFactory)
 end
 
+--- Internal: create an account entry from a signer instance.
+--- Reuses the factory's account type and provider but with the given signer.
+function AccountFactory:_createAccountFromSigner(
+	signer: any,
+	options: {
+		classHash: string?,
+		salt: string?,
+		guardian: string?,
+	}?
+): {
+	account: any,
+	address: string,
+	signer: any,
+	deployTx: (any?) -> any,
+}
+	local opts = options or {}
+	local publicKey = signer:getPublicKeyHex()
+	local classHash = opts.classHash or self._accountType.classHash
+	local salt = opts.salt or publicKey
+
+	local calldata: { string }
+	if self._accountType.type == "argent" then
+		calldata = self._accountType(publicKey, opts.guardian)
+	else
+		calldata = self._accountType(publicKey)
+	end
+
+	local address = Account.computeAddress({
+		classHash = classHash,
+		publicKey = publicKey,
+		salt = salt,
+		constructorCalldata = calldata,
+	})
+
+	local account = Account.new({
+		address = address,
+		signer = signer,
+		provider = self._provider,
+		accountType = self._accountType.type,
+		classHash = classHash,
+		constructorCalldata = calldata,
+	})
+
+	return {
+		account = account,
+		address = address,
+		signer = signer,
+		deployTx = function(deployOptions: any?): any
+			return account:deployAccount(deployOptions)
+		end,
+	}
+end
+
 --- Create a pre-deployment Account instance with its counterfactual address.
 --- Returns { account, address, deployTx } where:
 ---   account: Account instance (not yet deployed on-chain)
@@ -69,44 +129,300 @@ function AccountFactory:createAccount(options: {
 	address: string,
 	deployTx: (any?) -> any,
 }
-	local opts = options or {}
-	local publicKey = self._signer:getPublicKeyHex()
-	local classHash = opts.classHash or self._accountType.classHash
-	local salt = opts.salt or publicKey
+	local result = self:_createAccountFromSigner(self._signer, options)
+	return {
+		account = result.account,
+		address = result.address,
+		deployTx = result.deployTx,
+	}
+end
 
-	-- Build constructor calldata via the account type's __call
-	local calldata: { string }
-	if self._accountType.type == "argent" then
-		calldata = self._accountType(publicKey, opts.guardian)
-	else
-		calldata = self._accountType(publicKey)
+--- Create multiple pre-deployment Account instances, each with a unique key pair.
+--- Returns an array of { account, address, signer, deployTx } entries.
+---
+--- Options:
+---   privateKeys: {string}? — Explicit hex private keys (must match count)
+---   keyGenerator: (() -> string)? — Callable that returns a hex private key (called count times)
+---   classHash: string? — Override the default class hash from the account type
+---   guardian: string? — Guardian public key for Argent accounts
+---
+--- One of privateKeys or keyGenerator must be provided.
+function AccountFactory:batchCreate(
+	count: number,
+	options: {
+		privateKeys: { string }?,
+		keyGenerator: (() -> string)?,
+		classHash: string?,
+		guardian: string?,
+	}?
+): {
+	{
+		account: any,
+		address: string,
+		signer: any,
+		deployTx: (any?) -> any,
+	}
+}
+	local opts = options or {}
+
+	-- Validate count
+	if type(count) ~= "number" or count < 1 then
+		error(
+			StarknetError.validation("batchCreate: count must be a positive integer", ErrorCodes.INVALID_ARGUMENT.code)
+		)
+	end
+	if count ~= math.floor(count) then
+		error(
+			StarknetError.validation("batchCreate: count must be a positive integer", ErrorCodes.INVALID_ARGUMENT.code)
+		)
+	end
+	if count > MAX_BATCH_SIZE then
+		error(
+			StarknetError.validation(
+				`batchCreate: count ({count}) exceeds maximum batch size ({MAX_BATCH_SIZE})`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
 	end
 
-	-- Compute counterfactual address
-	local address = Account.computeAddress({
-		classHash = classHash,
-		publicKey = publicKey,
-		salt = salt,
-		constructorCalldata = calldata,
-	})
+	-- Validate key source
+	local privateKeys = opts.privateKeys
+	local keyGenerator = opts.keyGenerator
 
-	-- Create pre-deployment Account instance
-	local account = Account.new({
-		address = address,
-		signer = self._signer,
-		provider = self._provider,
-		accountType = self._accountType.type,
-		classHash = classHash,
-		constructorCalldata = calldata,
-	})
+	if not privateKeys and not keyGenerator then
+		error(
+			StarknetError.validation(
+				"batchCreate: one of privateKeys or keyGenerator must be provided",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
 
-	return {
-		account = account,
-		address = address,
-		deployTx = function(deployOptions: any?): any
-			return account:deployAccount(deployOptions)
-		end,
+	if privateKeys and keyGenerator then
+		error(
+			StarknetError.validation(
+				"batchCreate: provide either privateKeys or keyGenerator, not both",
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	if privateKeys then
+		if #privateKeys ~= count then
+			error(
+				StarknetError.validation(
+					`batchCreate: privateKeys length ({#privateKeys}) must match count ({count})`,
+					ErrorCodes.INVALID_ARGUMENT.code
+				)
+			)
+		end
+	end
+
+	-- Create accounts
+	local results = {}
+	for i = 1, count do
+		local key: string
+		if privateKeys then
+			key = privateKeys[i]
+		else
+			key = (keyGenerator :: () -> string)()
+		end
+
+		local signer = StarkSigner.new(key)
+		local entry = self:_createAccountFromSigner(signer, {
+			classHash = opts.classHash,
+			guardian = opts.guardian,
+		})
+		table.insert(results, entry)
+	end
+
+	return results
+end
+
+--- Deploy multiple accounts with rate limit integration, progress callbacks, and error tolerance.
+--- Returns a Promise resolving to a summary report.
+---
+--- Options:
+---   maxConcurrency: number? — Max parallel deploys (default 1 = sequential)
+---   onDeployProgress: ((index, total, result) -> ())? — Called after each deploy attempt
+---   waitForConfirmation: boolean? — Wait for on-chain confirmation (default true)
+---   dryRun: boolean? — Build + sign without submitting (default false)
+---   maxFee: string? — Maximum fee cap per deployment
+---   feeMultiplier: number? — Fee estimation multiplier
+function AccountFactory:batchDeploy(
+	accounts: {
+		{
+			account: any,
+			address: string,
+		}
+	},
+	options: {
+		maxConcurrency: number?,
+		onDeployProgress: ((index: number, total: number, result: any) -> ())?,
+		waitForConfirmation: boolean?,
+		dryRun: boolean?,
+		maxFee: string?,
+		feeMultiplier: number?,
+	}?
+): any
+	local opts = options or {}
+	local maxConcurrency = opts.maxConcurrency or 1
+
+	-- Validate inputs
+	if not accounts or #accounts == 0 then
+		error(StarknetError.validation("batchDeploy: accounts array must not be empty", ErrorCodes.REQUIRED_FIELD.code))
+	end
+
+	if type(maxConcurrency) ~= "number" or maxConcurrency < 1 then
+		error(
+			StarknetError.validation(
+				"batchDeploy: maxConcurrency must be a positive integer",
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+	maxConcurrency = math.floor(maxConcurrency)
+
+	-- Get Promise module from provider
+	local Promise = self._provider._PromiseModule
+	if not Promise then
+		error(
+			StarknetError.transaction(
+				"batchDeploy: provider does not have a Promise module available",
+				ErrorCodes.BATCH_DEPLOY_ERROR.code
+			)
+		)
+	end
+
+	local total = #accounts
+	local progressCallback = opts.onDeployProgress
+	local deployOpts = {
+		waitForConfirmation = if opts.waitForConfirmation ~= nil then opts.waitForConfirmation else true,
+		dryRun = opts.dryRun,
+		maxFee = opts.maxFee,
+		feeMultiplier = opts.feeMultiplier,
 	}
+
+	return Promise.new(function(resolve, _reject)
+		local summary = {
+			deployed = 0,
+			failed = 0,
+			skipped = 0,
+			results = {} :: { any },
+		}
+
+		--- Deploy a single account and return its result entry.
+		local function deployOne(index: number): any
+			local entry = accounts[index]
+			local resultEntry: any
+
+			local ok, deployResult = pcall(function()
+				return entry.account:deployAccount(deployOpts):expect()
+			end)
+
+			if ok then
+				if deployResult.alreadyDeployed then
+					summary.skipped += 1
+					resultEntry = {
+						index = index,
+						address = entry.address,
+						transactionHash = "0x0",
+						status = "skipped",
+					}
+				else
+					summary.deployed += 1
+					resultEntry = {
+						index = index,
+						address = entry.address,
+						transactionHash = deployResult.transactionHash,
+						status = "deployed",
+					}
+				end
+			else
+				summary.failed += 1
+				resultEntry = {
+					index = index,
+					address = entry.address,
+					error = deployResult,
+					status = "failed",
+				}
+			end
+
+			table.insert(summary.results, resultEntry)
+
+			if progressCallback then
+				progressCallback(index, total, resultEntry)
+			end
+
+			return resultEntry
+		end
+
+		if maxConcurrency <= 1 then
+			-- Sequential: deploy one at a time
+			for i = 1, total do
+				deployOne(i)
+			end
+		else
+			-- Parallel: process in batches of maxConcurrency
+			for batchStart = 1, total, maxConcurrency do
+				local batchEnd = math.min(batchStart + maxConcurrency - 1, total)
+				local batchPromises = {}
+
+				for i = batchStart, batchEnd do
+					local entryRef = accounts[i]
+					local idx = i
+					local p = entryRef.account
+						:deployAccount(deployOpts)
+						:andThen(function(depResult: any)
+							local resultEntry: any
+							if depResult.alreadyDeployed then
+								summary.skipped += 1
+								resultEntry = {
+									index = idx,
+									address = entryRef.address,
+									transactionHash = "0x0",
+									status = "skipped",
+								}
+							else
+								summary.deployed += 1
+								resultEntry = {
+									index = idx,
+									address = entryRef.address,
+									transactionHash = depResult.transactionHash,
+									status = "deployed",
+								}
+							end
+							table.insert(summary.results, resultEntry)
+							if progressCallback then
+								progressCallback(idx, total, resultEntry)
+							end
+							return resultEntry
+						end)
+						:catch(function(err: any)
+							summary.failed += 1
+							local resultEntry = {
+								index = idx,
+								address = entryRef.address,
+								error = err,
+								status = "failed",
+							}
+							table.insert(summary.results, resultEntry)
+							if progressCallback then
+								progressCallback(idx, total, resultEntry)
+							end
+							-- Resolve (not reject) so Promise.all doesn't abort the batch
+							return resultEntry
+						end)
+					table.insert(batchPromises, p)
+				end
+
+				-- Wait for this batch to complete before starting the next
+				Promise.all(batchPromises):expect()
+			end
+		end
+
+		resolve(summary)
+	end)
 end
 
 return AccountFactory

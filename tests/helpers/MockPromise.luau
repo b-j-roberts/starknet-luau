@@ -108,4 +108,24 @@ function MockPromise:getStatus(): Status
 	return self._status
 end
 
+--- Wait for all promises to resolve. Returns a promise resolving to an array of results.
+--- If any promise rejects, the returned promise rejects with that error.
+function MockPromise.all(promises: { MockPromise }): MockPromise
+	return MockPromise.new(function(resolve, reject)
+		local results = {}
+		for i, p in promises do
+			if p._status == "Rejected" then
+				reject(p._value)
+				return
+			elseif p._status == "Resolved" then
+				results[i] = p._value
+			else
+				reject("Promise.all: promise is still pending")
+				return
+			end
+		end
+		resolve(results)
+	end)
+end
+
 return MockPromise
