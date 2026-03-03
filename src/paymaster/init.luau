@@ -5,10 +5,12 @@ local PaymasterRpc = require(script.PaymasterRpc)
 local AvnuPaymaster = require(script.AvnuPaymaster)
 local PaymasterPolicy = require(script.PaymasterPolicy)
 local PaymasterBudget = require(script.PaymasterBudget)
+local SponsoredExecutor = require(script.SponsoredExecutor)
 
 return {
 	PaymasterRpc = PaymasterRpc,
 	AvnuPaymaster = AvnuPaymaster,
 	PaymasterPolicy = PaymasterPolicy,
 	PaymasterBudget = PaymasterBudget,
+	SponsoredExecutor = SponsoredExecutor,
 }

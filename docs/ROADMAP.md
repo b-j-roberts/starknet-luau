@@ -183,11 +183,11 @@ Support sponsored transactions where the game developer pays gas on behalf of pl
 **Description**: High-level orchestrator that chains the full sponsored transaction lifecycle: policy check, budget check, paymaster build, sign, execute, and budget deduction with error handling and retry logic.
 
 **Requirements**:
-- [ ] High-level `SponsoredExecutor` that chains: Policy check → Budget check → Paymaster build → Sign → Execute → Budget deduct
-- [ ] Error handling: refund tokens on paymaster rejection, revert, or network failure
-- [ ] Event callbacks: `onTransactionSubmitted`, `onTransactionConfirmed`, `onTransactionFailed`
-- [ ] Retry with backoff on transient paymaster errors (502/503/504)
-- [ ] Logging/metrics: track paymaster usage per player, per contract, per method
+- [x] High-level `SponsoredExecutor` that chains: Policy check → Budget check → Paymaster build → Sign → Execute → Budget deduct
+- [x] Error handling: refund tokens on paymaster rejection, revert, or network failure
+- [x] Event callbacks: `onTransactionSubmitted`, `onTransactionConfirmed`, `onTransactionFailed`
+- [x] Retry with backoff on transient paymaster errors (502/503/504)
+- [x] Logging/metrics: track paymaster usage per player, per contract, per method
 
 **Implementation Notes**:
 - This is the "batteries included" module that ties 3.3.2-3.3.6 together

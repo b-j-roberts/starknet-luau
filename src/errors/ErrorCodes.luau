@@ -68,5 +68,6 @@ ErrorCodes.BUDGET_ERROR = { code = 7011, name = "BUDGET_ERROR" }
 ErrorCodes.INSUFFICIENT_BUDGET = { code = 7012, name = "INSUFFICIENT_BUDGET" }
 ErrorCodes.DATASTORE_ERROR = { code = 7013, name = "DATASTORE_ERROR" }
 ErrorCodes.INVALID_AMOUNT = { code = 7014, name = "INVALID_AMOUNT" }
+ErrorCodes.SPONSORED_EXECUTION_FAILED = { code = 7020, name = "SPONSORED_EXECUTION_FAILED" }
 
 return ErrorCodes
