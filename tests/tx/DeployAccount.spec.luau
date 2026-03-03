@@ -45,7 +45,8 @@ local function resetHandlers()
 	end
 
 	mockHandlers["starknet_getNonce"] = function(_params)
-		return "0x0"
+		-- Simulate CONTRACT_NOT_FOUND for non-deployed accounts
+		error("Contract not found")
 	end
 
 	mockHandlers["starknet_estimateFee"] = function(_params)
@@ -1108,5 +1109,442 @@ describe("RpcProvider - addDeployAccountTransaction", function()
 			end
 		end
 		expect(found):toBeTruthy()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account.deployAccount - idempotency check
+--------------------------------------------------------------------------------
+
+describe("Account.deployAccount - idempotency check", function()
+	it("returns early with alreadyDeployed=true when account is already deployed", function()
+		resetHandlers()
+		clearRequestLog()
+		-- Override getNonce to succeed (simulating an already-deployed account)
+		mockHandlers["starknet_getNonce"] = function(_params)
+			return "0x5"
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.alreadyDeployed):toBe(true)
+		expect(result.contractAddress):toBe(account.address)
+		expect(result.transactionHash):toBe("0x0")
+	end)
+
+	it("does not call estimateFee or addDeployAccountTransaction when already deployed", function()
+		resetHandlers()
+		clearRequestLog()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			return "0x0"
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		account:deployAccount():expect()
+
+		local calledEstimate = false
+		local calledAddDeploy = false
+		for _, req in requestLog do
+			if req.method == "starknet_estimateFee" then
+				calledEstimate = true
+			end
+			if req.method == "starknet_addDeployAccountTransaction" then
+				calledAddDeploy = true
+			end
+		end
+		expect(calledEstimate):toBeFalsy()
+		expect(calledAddDeploy):toBeFalsy()
+	end)
+
+	it("proceeds with deployment when getNonce errors (contract not found)", function()
+		resetHandlers()
+		clearRequestLog()
+		-- Default mock: getNonce errors → contract not deployed
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.alreadyDeployed):toBe(nil)
+		expect(result.transactionHash):toBe("0xdeploy123")
+		expect(result.contractAddress):toBe(account.address)
+	end)
+
+	it("idempotency check works with nonce 0x0 (freshly deployed)", function()
+		resetHandlers()
+		clearRequestLog()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			return "0x0"
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.alreadyDeployed):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account.deployAccount - waitForConfirmation
+--------------------------------------------------------------------------------
+
+describe("Account.deployAccount - waitForConfirmation", function()
+	it("waits for transaction confirmation by default", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		account:deployAccount():expect()
+
+		local calledGetStatus = false
+		for _, req in requestLog do
+			if req.method == "starknet_getTransactionStatus" then
+				calledGetStatus = true
+				break
+			end
+		end
+		expect(calledGetStatus):toBeTruthy()
+	end)
+
+	it("calls getTransactionReceipt after confirmation", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		account:deployAccount():expect()
+
+		local calledGetReceipt = false
+		for _, req in requestLog do
+			if req.method == "starknet_getTransactionReceipt" then
+				calledGetReceipt = true
+				break
+			end
+		end
+		expect(calledGetReceipt):toBeTruthy()
+	end)
+
+	it("does not wait when waitForConfirmation=false", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		account:deployAccount({ waitForConfirmation = false }):expect()
+
+		local calledGetStatus = false
+		for _, req in requestLog do
+			if req.method == "starknet_getTransactionStatus" then
+				calledGetStatus = true
+				break
+			end
+		end
+		expect(calledGetStatus):toBeFalsy()
+	end)
+
+	it("does not wait when dryRun=true even with waitForConfirmation=true", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		account:deployAccount({ dryRun = true, waitForConfirmation = true }):expect()
+
+		local calledGetStatus = false
+		for _, req in requestLog do
+			if req.method == "starknet_getTransactionStatus" then
+				calledGetStatus = true
+				break
+			end
+		end
+		expect(calledGetStatus):toBeFalsy()
+	end)
+
+	it("rejects when transaction is rejected during confirmation", function()
+		resetHandlers()
+		mockHandlers["starknet_getTransactionStatus"] = function(_params)
+			return {
+				finality_status = "REJECTED",
+				execution_status = "REJECTED",
+			}
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local promise = account:deployAccount()
+		expect(promise:getStatus()):toBe("Rejected")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account.deployAccount - maxFee option
+--------------------------------------------------------------------------------
+
+describe("Account.deployAccount - maxFee option", function()
+	it("caps resource bounds when maxFee is below estimated fee", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		-- Default estimate: gas_consumed=0x1000 * 1.5x = 0x1800, gas_price=0x100 * 1.5x = 0x180
+		-- Total = 0x1800 * 0x180 = 0x240000
+		-- Set maxFee = 0x100000 (below estimated total)
+		-- Expected capped maxAmount = 0x100000 / 0x180 = 0xaaa (approx)
+		account:deployAccount({ maxFee = "0x100000", waitForConfirmation = false }):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				-- maxAmount should be less than 0x1800 (uncapped estimated amount)
+				local BigIntLib = require("../../src/crypto/BigInt")
+				local maxAmount = BigIntLib.fromHex(tx.resource_bounds.l1_gas.max_amount)
+				local uncappedAmount = BigIntLib.fromHex("0x1800")
+				expect(BigIntLib.cmp(maxAmount, uncappedAmount) < 0):toBeTruthy()
+				-- maxPricePerUnit should remain 0x180 (from estimate * multiplier)
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+				break
+			end
+		end
+	end)
+
+	it("does not cap when maxFee is above estimated fee", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		-- Total estimated fee = 0x1800 * 0x180 = 0x240000
+		-- Set maxFee = 0xffffff (well above estimated total)
+		account:deployAccount({ maxFee = "0xffffff", waitForConfirmation = false }):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				-- Should use normal estimated bounds (not capped)
+				expect(tx.resource_bounds.l1_gas.max_amount):toBe("0x1800")
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+				break
+			end
+		end
+	end)
+
+	it("maxFee is ignored when resourceBounds is explicitly provided", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local customBounds = {
+			l1Gas = { maxAmount = "0x9999", maxPricePerUnit = "0x8888" },
+			l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+		}
+
+		account:deployAccount({
+			maxFee = "0x1",
+			resourceBounds = customBounds,
+			waitForConfirmation = false,
+		}):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				-- resourceBounds takes precedence over maxFee
+				expect(tx.resource_bounds.l1_gas.max_amount):toBe("0x9999")
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x8888")
+				break
+			end
+		end
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account.deployAccount - full orchestration flow
+--------------------------------------------------------------------------------
+
+describe("Account.deployAccount - full orchestration flow", function()
+	it("executes complete flow: getNonce check, estimate, sign, submit, confirm", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.transactionHash):toBe("0xdeploy123")
+		expect(result.contractAddress):toBe(account.address)
+
+		-- Verify the full call sequence
+		local methods: { string } = {}
+		for _, req in requestLog do
+			table.insert(methods, req.method)
+		end
+
+		-- Expected sequence: getNonce (fails), chainId, estimateFee, addDeployAccount, getStatus, getReceipt
+		local getNonceIdx, chainIdx, feeIdx, submitIdx, statusIdx = 0, 0, 0, 0, 0
+		for i, m in methods do
+			if m == "starknet_getNonce" and getNonceIdx == 0 then
+				getNonceIdx = i
+			end
+			if m == "starknet_chainId" and chainIdx == 0 then
+				chainIdx = i
+			end
+			if m == "starknet_estimateFee" and feeIdx == 0 then
+				feeIdx = i
+			end
+			if m == "starknet_addDeployAccountTransaction" and submitIdx == 0 then
+				submitIdx = i
+			end
+			if m == "starknet_getTransactionStatus" and statusIdx == 0 then
+				statusIdx = i
+			end
+		end
+
+		expect(getNonceIdx > 0):toBeTruthy()
+		expect(chainIdx > getNonceIdx):toBeTruthy()
+		expect(feeIdx > chainIdx):toBeTruthy()
+		expect(submitIdx > feeIdx):toBeTruthy()
+		expect(statusIdx > submitIdx):toBeTruthy()
+	end)
+
+	it("returns contractAddress in result", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.contractAddress):toBe(TEST_DEPLOY_ADDRESS)
+	end)
+
+	it("preserves dryRun result shape with contractAddress", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		local result = account:deployAccount({ dryRun = true }):expect()
+		expect(result.transactionHash):toBeTruthy()
+		expect(result.transaction):toBeTruthy()
+		expect(result.signature):toBeTruthy()
+		expect(result.contractAddress):toBe(TEST_DEPLOY_ADDRESS)
+	end)
+
+	it("works with Argent account type end-to-end", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+			accountType = "argent",
+		})
+
+		local result = account:deployAccount({ waitForConfirmation = false }):expect()
+		expect(result.transactionHash):toBe("0xdeploy123")
+		expect(result.contractAddress):toBeTruthy()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				-- Argent has 3-element constructor calldata: [0, pubkey, 0]
+				expect(#tx.constructor_calldata):toBe(3)
+				expect(tx.constructor_calldata[1]):toBe("0x0")
+				break
+			end
+		end
+	end)
+
+	it("works with Braavos account type end-to-end", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+			accountType = "braavos",
+		})
+
+		local result = account:deployAccount({ waitForConfirmation = false }):expect()
+		expect(result.transactionHash):toBe("0xdeploy123")
+		expect(result.contractAddress):toBeTruthy()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				-- Braavos has 1-element constructor calldata: [publicKey]
+				expect(#tx.constructor_calldata):toBe(1)
+				break
+			end
+		end
+	end)
+
+	it("supports feeMultiplier option", function()
+		resetHandlers()
+		clearRequestLog()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = TEST_PRIVATE_KEY,
+			provider = provider,
+		})
+
+		-- 2x: gas_consumed = 0x1000 * 2 = 0x2000, gas_price = 0x100 * 2 = 0x200
+		account:deployAccount({ feeMultiplier = 2.0, waitForConfirmation = false }):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				expect(tx.resource_bounds.l1_gas.max_amount):toBe("0x2000")
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x200")
+				break
+			end
+		end
 	end)
 end)

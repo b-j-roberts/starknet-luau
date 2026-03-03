@@ -319,27 +319,48 @@ end
 
 --- Deploy this account on-chain.
 --- The account must be pre-funded at its counterfactual address before calling this.
---- Returns a Promise resolving to { transactionHash: string }.
+--- Full orchestration: idempotency check, fee estimation, signing, submission, and optional confirmation.
+--- Returns a Promise resolving to { transactionHash: string, contractAddress: string }.
+--- If the account is already deployed, returns early with alreadyDeployed = true.
 function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?): any
-	local accountType = self._accountType or "oz"
-	local publicKeyHex = self.signer:getPublicKeyHex()
-	local classHash = self._classHash or getDefaultClassHash(accountType)
-	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
+	local opts = options or {} :: TransactionBuilder.DeployAccountOptions
+	local Promise = self._provider:_getPromise()
 
-	local params: TransactionBuilder.DeployAccountParams = {
-		classHash = classHash,
-		constructorCalldata = constructorCalldata,
-		addressSalt = publicKeyHex,
-		contractAddress = self.address,
-	}
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Step 1: Idempotency check — if getNonce succeeds, account is already deployed
+		local nonceOk, _ = pcall(function()
+			return self._provider:getNonce(self.address):expect()
+		end)
 
-	local nm = self._provider._nonceManager
-	local hasExplicitNonce = options and options.nonce
+		if nonceOk then
+			resolve({
+				transactionHash = "0x0",
+				contractAddress = self.address,
+				alreadyDeployed = true,
+			})
+			return
+		end
 
-	-- If NonceManager is available and no explicit nonce override, use managed nonces
-	if nm and not hasExplicitNonce then
-		local Promise = self._provider:_getPromise()
-		return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Step 2: Build deploy params from stored account config
+		local accountType = self._accountType or "oz"
+		local publicKeyHex = self.signer:getPublicKeyHex()
+		local classHash = self._classHash or getDefaultClassHash(accountType)
+		local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
+
+		local params: TransactionBuilder.DeployAccountParams = {
+			classHash = classHash,
+			constructorCalldata = constructorCalldata,
+			addressSalt = publicKeyHex,
+			contractAddress = self.address,
+		}
+
+		-- Step 3: Execute deploy via builder (with NonceManager if available)
+		local nm = self._provider._nonceManager
+		local hasExplicitNonce = opts.nonce ~= nil
+
+		local deployResult: any
+		if nm and not hasExplicitNonce then
+			-- NonceManager path: reserve → deploy → confirm/reject
 			local reserveOk, reservedNonce = pcall(function()
 				return nm:reserve(self.address):expect()
 			end)
@@ -348,14 +369,29 @@ function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?
 				return
 			end
 
-			local opts: TransactionBuilder.DeployAccountOptions
-			if options then
-				opts = table.clone(options) :: TransactionBuilder.DeployAccountOptions
-			else
-				opts = {} :: TransactionBuilder.DeployAccountOptions
-			end
-			opts.nonce = reservedNonce
+			local builderOpts: TransactionBuilder.DeployAccountOptions =
+				table.clone(opts) :: TransactionBuilder.DeployAccountOptions
+			builderOpts.nonce = reservedNonce
 
+			local execOk, execResult = pcall(function()
+				return self._builder
+					:deployAccount({
+						address = self.address,
+						signer = self.signer,
+					}, params, builderOpts)
+					:expect()
+			end)
+
+			if execOk then
+				nm:confirm(self.address, reservedNonce)
+				deployResult = execResult
+			else
+				nm:reject(self.address, reservedNonce)
+				reject(execResult)
+				return
+			end
+		else
+			-- Direct path (no NonceManager)
 			local execOk, execResult = pcall(function()
 				return self._builder
 					:deployAccount({
@@ -364,21 +400,29 @@ function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?
 					}, params, opts)
 					:expect()
 			end)
-
-			if execOk then
-				nm:confirm(self.address, reservedNonce)
-				resolve(execResult)
-			else
-				nm:reject(self.address, reservedNonce)
+			if not execOk then
 				reject(execResult)
+				return
 			end
-		end)
-	end
+			deployResult = execResult
+		end
 
-	return self._builder:deployAccount({
-		address = self.address,
-		signer = self.signer,
-	}, params, options)
+		-- Step 4: Wait for confirmation (default true, skip for dryRun)
+		local waitForConfirmation = if opts.waitForConfirmation ~= nil then opts.waitForConfirmation else true
+		if waitForConfirmation and not opts.dryRun and deployResult.transactionHash then
+			local waitOk, waitResult = pcall(function()
+				return self._provider:waitForTransaction(deployResult.transactionHash):expect()
+			end)
+			if not waitOk then
+				reject(waitResult)
+				return
+			end
+		end
+
+		-- Step 5: Return result (preserve all fields from builder, ensure contractAddress)
+		deployResult.contractAddress = deployResult.contractAddress or self.address
+		resolve(deployResult)
+	end)
 end
 
 --- Estimate the fee for deploying this account.

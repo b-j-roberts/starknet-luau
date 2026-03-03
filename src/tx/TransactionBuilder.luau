@@ -45,7 +45,8 @@ export type DeployAccountParams = {
 
 export type DeployAccountOptions = {
 	nonce: string?, -- Override automatic nonce fetching (default "0x0" for new accounts)
-	resourceBounds: TransactionHash.ResourceBounds?, -- Override computed resource bounds
+	maxFee: string?, -- Cap overall fee (reduces l1Gas.maxAmount so maxAmount * maxPricePerUnit <= maxFee)
+	resourceBounds: TransactionHash.ResourceBounds?, -- Override computed resource bounds (takes precedence over maxFee)
 	feeMultiplier: number?, -- Fee buffer multiplier (default 1.5)
 	tip: string?, -- Tip for priority (default "0x0")
 	paymasterData: { string }?, -- Paymaster data
@@ -53,6 +54,7 @@ export type DeployAccountOptions = {
 	feeDataAvailabilityMode: number?, -- DA mode for fee (default 0)
 	dryRun: boolean?, -- Build and sign but don't submit
 	skipValidate: boolean?, -- Use SKIP_VALIDATE flag for fee estimation
+	waitForConfirmation: boolean?, -- Account-level: wait for receipt after submission (default true)
 }
 
 export type WaitOptions = {
@@ -497,6 +499,26 @@ function TransactionBuilder:deployAccount(
 
 			local estimate = if type(feeResult) == "table" and #feeResult > 0 then feeResult[1] else feeResult
 			resourceBounds = resourceBoundsFromEstimate(estimate, multiplier)
+
+			-- Apply maxFee cap: reduce l1Gas.maxAmount so maxAmount * maxPricePerUnit <= maxFee
+			if opts.maxFee then
+				local maxFeeBig = BigInt.fromHex(opts.maxFee)
+				local priceBig = BigInt.fromHex(resourceBounds.l1Gas.maxPricePerUnit)
+				if not BigInt.isZero(priceBig) then
+					local cappedMaxAmount = BigInt.div(maxFeeBig, priceBig)
+					local currentMaxAmount = BigInt.fromHex(resourceBounds.l1Gas.maxAmount)
+					if BigInt.cmp(currentMaxAmount, cappedMaxAmount) > 0 then
+						resourceBounds = {
+							l1Gas = {
+								maxAmount = BigInt.toHex(cappedMaxAmount),
+								maxPricePerUnit = resourceBounds.l1Gas.maxPricePerUnit,
+							},
+							l2Gas = resourceBounds.l2Gas,
+							l1DataGas = resourceBounds.l1DataGas,
+						}
+					end
+				end
+			end
 		end
 
 		-- Step 4: Compute deploy account transaction hash (Poseidon)
