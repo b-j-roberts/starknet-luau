@@ -78,15 +78,15 @@ Support sponsored transactions where the game developer pays gas on behalf of pl
 **Description**: Generic JSON-RPC client for any SNIP-29-compliant paymaster service. Provides the core protocol methods for building typed data, executing sponsored transactions, and querying supported tokens.
 
 **Requirements**:
-- [ ] `PaymasterRpc.new(config)` — config: `{ nodeUrl, headers?, timeout? }`
-- [ ] `paymaster_getSupportedTokens()` → `{ tokenAddress, decimals, priceInStrk }[]`
-- [ ] `paymaster_buildTypedData(userAddress, calls, gasTokenAddress, options?)` → SNIP-12 typed data
+- [x] `PaymasterRpc.new(config)` — config: `{ nodeUrl, headers?, timeout? }`
+- [x] `paymaster_getSupportedTokens()` → `{ tokenAddress, decimals, priceInStrk }[]`
+- [x] `paymaster_buildTypedData(userAddress, calls, gasTokenAddress, options?)` → SNIP-12 typed data
   - `options.accountClassHash` — for undeployed accounts
   - `options.deploymentData` — `{ classHash, calldata, salt, unique }` for deploy-via-paymaster
-- [ ] `paymaster_execute(userAddress, typedData, signature)` → `{ transactionHash }`
-- [ ] `isAvailable()` — health check (ping paymaster endpoint)
-- [ ] Error handling: map paymaster JSON-RPC errors to `StarknetError.rpc()`
-- [ ] Promise-based (all methods return Promises)
+- [x] `paymaster_execute(userAddress, typedData, signature)` → `{ transactionHash }`
+- [x] `isAvailable()` — health check (ping paymaster endpoint)
+- [x] Error handling: map paymaster JSON-RPC errors to `StarknetError.rpc()`
+- [x] Promise-based (all methods return Promises)
 
 **Implementation Notes**:
 - Pure JSON-RPC over HttpService, same pattern as `RpcProvider._fetchRpc()`
