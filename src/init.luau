@@ -9,6 +9,7 @@ local wallet = require(script.wallet)
 local contract = require(script.contract)
 local constants = require(script.constants)
 local errors = require(script.errors)
+local paymaster = require(script.paymaster)
 
 return {
 	crypto = crypto,
@@ -19,4 +20,5 @@ return {
 	contract = contract,
 	constants = constants,
 	errors = errors,
+	paymaster = paymaster,
 }
