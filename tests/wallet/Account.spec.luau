@@ -1948,3 +1948,657 @@ describe("Account:executePaymaster - multiple calls", function()
 		expect(#paymaster._buildCalls[1].calls):toBe(2)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Account:getDeploymentData
+--------------------------------------------------------------------------------
+
+describe("Account:getDeploymentData", function()
+	it("returns correct deployment data for OZ account", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		local dd = account:getDeploymentData()
+		expect(dd.classHash):toBe(OZ_CLASS_HASH)
+		expect(dd.salt):toBe(PUBKEY_1)
+		expect(dd.calldata[1]):toBe(PUBKEY_1)
+		expect(#dd.calldata):toBe(1)
+		expect(dd.unique):toBe(false)
+		expect(dd.version):toBe(1)
+	end)
+
+	it("returns correct deployment data for Argent account", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			accountType = "argent",
+		})
+
+		local dd = account:getDeploymentData()
+		expect(dd.classHash):toBe(Account.ARGENT_CLASS_HASH)
+		expect(dd.salt):toBe(PUBKEY_1)
+		-- Argent calldata: [0, publicKey, 0] (no guardian)
+		expect(#dd.calldata):toBe(3)
+		expect(dd.calldata[1]):toBe("0x0")
+		expect(dd.calldata[2]):toBe(PUBKEY_1)
+		expect(dd.calldata[3]):toBe("0x0")
+	end)
+
+	it("returns correct deployment data for Argent account with guardian", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			accountType = "argent",
+			guardian = "0xguardian123",
+		})
+
+		local dd = account:getDeploymentData()
+		-- Argent calldata with guardian: [0, publicKey, 1, 0, guardianKey]
+		expect(#dd.calldata):toBe(5)
+		expect(dd.calldata[1]):toBe("0x0")
+		expect(dd.calldata[2]):toBe(PUBKEY_1)
+		expect(dd.calldata[3]):toBe("0x1")
+		expect(dd.calldata[4]):toBe("0x0")
+		expect(dd.calldata[5]):toBe("0xguardian123")
+	end)
+
+	it("returns correct deployment data for Braavos account", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			accountType = "braavos",
+		})
+
+		local dd = account:getDeploymentData()
+		expect(dd.classHash):toBe(Account.BRAAVOS_BASE_CLASS_HASH)
+		expect(dd.salt):toBe(PUBKEY_1)
+		expect(dd.calldata[1]):toBe(PUBKEY_1)
+		expect(#dd.calldata):toBe(1)
+	end)
+
+	it("uses custom classHash when provided", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local customClassHash = "0xcustom_class_hash_abc123"
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			classHash = customClassHash,
+		})
+
+		local dd = account:getDeploymentData()
+		expect(dd.classHash):toBe(customClassHash)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - validation
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - validation", function()
+	it("rejects when paymaster is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		expect(function()
+			account:deployWithPaymaster({
+				feeMode = { mode = "sponsored" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:deployWithPaymaster({
+				paymaster = paymaster,
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode.mode is invalid", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "invalid" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when default mode is missing gasToken", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "default" },
+			})
+		end):toThrow()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - idempotency
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - idempotency", function()
+	it("returns alreadyDeployed when getNonce succeeds", function()
+		resetHandlers()
+		-- Default mock returns nonce successfully (account exists)
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.alreadyDeployed):toBe(true)
+		expect(result.transactionHash):toBe("0x0")
+		expect(result.contractAddress):toBe(account.address)
+		-- Paymaster should NOT have been called
+		expect(#paymaster._buildCalls):toBe(0)
+		expect(#paymaster._executeCalls):toBe(0)
+	end)
+
+	it("proceeds with deployment when getNonce fails (undeployed account)", function()
+		resetHandlers()
+		-- Override getNonce to fail (account not deployed)
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.alreadyDeployed):toBe(nil)
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+		expect(result.contractAddress):toBe(account.address)
+		expect(result.trackingId):toBe("track-12345")
+		-- Paymaster should have been called
+		expect(#paymaster._buildCalls):toBe(1)
+		expect(#paymaster._executeCalls):toBe(1)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - sponsored mode (no calls)
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - sponsored mode (deploy only)", function()
+	it("deploys with correct deploymentData and zero gas token", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		-- Verify buildTypedData was called with correct params
+		local buildCall = paymaster._buildCalls[1]
+		expect(buildCall.userAddress):toBe(account.address)
+		expect(buildCall.gasTokenAddress):toBe("0x0") -- sponsored mode
+		expect(#buildCall.calls):toBe(0) -- no user calls
+
+		-- Verify deploymentData was passed
+		local dd = buildCall.options.deploymentData
+		expect(dd):toBeTruthy()
+		expect(dd.classHash):toBe(OZ_CLASS_HASH)
+		expect(dd.salt):toBe(PUBKEY_1)
+		expect(dd.calldata[1]):toBe(PUBKEY_1)
+		expect(dd.unique):toBe(false)
+		expect(dd.version):toBe(1)
+
+		-- Verify executeTransaction also received deploymentData
+		local execCall = paymaster._executeCalls[1]
+		expect(execCall.options.deploymentData):toBeTruthy()
+		expect(execCall.options.deploymentData.classHash):toBe(OZ_CLASS_HASH)
+
+		-- Verify result
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+		expect(result.contractAddress):toBe(account.address)
+		expect(result.trackingId):toBe("track-12345")
+	end)
+
+	it("signs the typed data from the paymaster", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		-- Verify signature was passed to executeTransaction
+		local execCall = paymaster._executeCalls[1]
+		expect(execCall.signature):toBeTruthy()
+		expect(#execCall.signature):toBe(2) -- [r, s]
+		expect(type(execCall.signature[1])):toBe("string")
+		expect(type(execCall.signature[2])):toBe("string")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - default/gasToken mode
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - default mode", function()
+	it("deploys with specified gas token", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local gasToken = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "default", gasToken = gasToken },
+			})
+			:expect()
+
+		local buildCall = paymaster._buildCalls[1]
+		expect(buildCall.gasTokenAddress):toBe(gasToken)
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - combined deploy + initial calls
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - combined deploy + calls", function()
+	it("bundles initial calls with deployment in a single atomic call", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local calls = createTestCalls()
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			}, {
+				calls = calls,
+			})
+			:expect()
+
+		-- Verify calls were passed to buildTypedData
+		local buildCall = paymaster._buildCalls[1]
+		expect(#buildCall.calls):toBe(1)
+		expect(buildCall.calls[1].entrypoint):toBe("transfer")
+
+		-- Verify deploymentData was also passed
+		expect(buildCall.options.deploymentData):toBeTruthy()
+
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+	end)
+
+	it("validates returned calls match submitted calls", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- Create paymaster that returns mismatched calls
+		local paymaster = createMockPaymaster({
+			returnedCalls = {
+				{
+					To = "0xmalicious_contract",
+					Selector = TRANSFER_SELECTOR,
+					Calldata = { "0xattacker", "0x999999", "0x0" },
+				},
+			},
+		})
+
+		local calls = createTestCalls()
+		local ok, err = pcall(function()
+			return account
+				:deployWithPaymaster({
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				}, {
+					calls = calls,
+				})
+				:expect()
+		end)
+
+		expect(ok):toBe(false)
+		-- Should contain validation failure message
+		expect(string.find(tostring(err), "do not match", 1, true) ~= nil):toBe(true)
+	end)
+
+	it("skips call validation when no calls are provided", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- Even with returnedCalls set, deploy-only should succeed (no validation)
+		local paymaster = createMockPaymaster({
+			returnedCalls = {
+				{
+					To = "0xsome_contract",
+					Selector = TRANSFER_SELECTOR,
+					Calldata = {},
+				},
+			},
+		})
+
+		-- No calls → no validation needed
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+	end)
+
+	it("handles multiple initial calls", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local calls = {
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient1", "0x100", "0x0" },
+			},
+			{
+				contractAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient2", "0x200", "0x0" },
+			},
+		}
+
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			}, {
+				calls = calls,
+			})
+			:expect()
+
+		expect(#paymaster._buildCalls[1].calls):toBe(2)
+		expect(result.transactionHash):toBeTruthy()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - waitForConfirmation
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - waitForConfirmation", function()
+	it("waits for confirmation when requested", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+
+		local waitCalled = false
+		local originalHandler = mockHandlers["starknet_getTransactionStatus"]
+		mockHandlers["starknet_getTransactionStatus"] = function(params)
+			waitCalled = true
+			return originalHandler(params)
+		end
+
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			}, {
+				waitForConfirmation = true,
+			})
+			:expect()
+
+		expect(result.transactionHash):toBeTruthy()
+		expect(waitCalled):toBe(true)
+	end)
+
+	it("does not wait for confirmation by default", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+
+		local waitCalled = false
+		local originalHandler = mockHandlers["starknet_getTransactionStatus"]
+		mockHandlers["starknet_getTransactionStatus"] = function(params)
+			waitCalled = true
+			return originalHandler(params)
+		end
+
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(waitCalled):toBe(false)
+	end)
+
+	it("rejects when waitForTransaction fails", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		mockHandlers["starknet_getTransactionStatus"] = function(_params)
+			return {
+				finality_status = "REJECTED",
+				execution_status = "REVERTED",
+			}
+		end
+
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local ok, _err = pcall(function()
+			return account
+				:deployWithPaymaster({
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				}, {
+					waitForConfirmation = true,
+				})
+				:expect()
+		end)
+
+		expect(ok):toBe(false)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - error propagation
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - error propagation", function()
+	it("propagates buildTypedData errors", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster({ buildError = "paymaster build failed" })
+
+		local ok, err = pcall(function()
+			return account
+				:deployWithPaymaster({
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "paymaster build failed", 1, true) ~= nil):toBe(true)
+	end)
+
+	it("propagates executeTransaction errors", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster({ executeError = "paymaster execute failed" })
+
+		local ok, err = pcall(function()
+			return account
+				:deployWithPaymaster({
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "paymaster execute failed", 1, true) ~= nil):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - Argent account type
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - Argent account", function()
+	it("passes correct Argent deploymentData", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			accountType = "argent",
+		})
+		local paymaster = createMockPaymaster()
+
+		account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		local dd = paymaster._buildCalls[1].options.deploymentData
+		expect(dd.classHash):toBe(Account.ARGENT_CLASS_HASH)
+		expect(#dd.calldata):toBe(3)
+		expect(dd.calldata[1]):toBe("0x0")
+		expect(dd.calldata[2]):toBe(PUBKEY_1)
+		expect(dd.calldata[3]):toBe("0x0")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployWithPaymaster - integration with SponsoredExecutor
+--------------------------------------------------------------------------------
+
+describe("Account:deployWithPaymaster - getDeploymentData integration", function()
+	it("getDeploymentData output matches what deployWithPaymaster sends", function()
+		resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("Contract not found")
+		end
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		-- Get deployment data directly
+		local dd = account:getDeploymentData()
+
+		-- Deploy via paymaster
+		account
+			:deployWithPaymaster({
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		-- Verify they match
+		local sentDd = paymaster._buildCalls[1].options.deploymentData
+		expect(sentDd.classHash):toBe(dd.classHash)
+		expect(sentDd.salt):toBe(dd.salt)
+		expect(sentDd.unique):toBe(dd.unique)
+		expect(sentDd.version):toBe(dd.version)
+		expect(#sentDd.calldata):toBe(#dd.calldata)
+		for i, v in dd.calldata do
+			expect(sentDd.calldata[i]):toBe(v)
+		end
+	end)
+end)
