@@ -155,19 +155,19 @@ Support sponsored transactions where the game developer pays gas on behalf of pl
 **Description**: Per-player usage tracking via DataStoreService, managing virtual "paymaster tokens" that game developers grant as rewards or purchases to control sponsored transaction budgets.
 
 **Requirements**:
-- [ ] `PaymasterBudget.new(config)` — per-player usage tracking via DataStoreService
+- [x] `PaymasterBudget.new(config)` — per-player usage tracking via DataStoreService
   - `config.dataStoreName`: DataStore name for persistence (default: `"StarknetPaymaster"`)
   - `config.defaultTokenBalance`: initial "paymaster tokens" per new player (default: 0)
   - `config.costPerTransaction`: tokens consumed per sponsored transaction (default: 1)
   - `config.costPerGasUnit?`: optional variable cost based on actual gas used
-- [ ] `budget:getBalance(playerId)` → current paymaster token balance
-- [ ] `budget:grantTokens(playerId, amount)` — add tokens (game rewards, purchases, etc.)
-- [ ] `budget:revokeTokens(playerId, amount)` — remove tokens
-- [ ] `budget:consumeTransaction(playerId, txCost?)` — deduct tokens for a sponsored tx
-- [ ] `budget:canAfford(playerId, txCost?)` → boolean check before submitting
-- [ ] `budget:getUsageStats(playerId)` → `{ totalTxCount, totalTokensSpent, balance, lastTxTime }`
-- [ ] Atomic deduction: deduct tokens before submitting to paymaster, refund on failure
-- [ ] In-memory cache with periodic DataStore flush (avoid DataStore rate limits)
+- [x] `budget:getBalance(playerId)` → current paymaster token balance
+- [x] `budget:grantTokens(playerId, amount)` — add tokens (game rewards, purchases, etc.)
+- [x] `budget:revokeTokens(playerId, amount)` — remove tokens
+- [x] `budget:consumeTransaction(playerId, txCost?)` — deduct tokens for a sponsored tx
+- [x] `budget:canAfford(playerId, txCost?)` → boolean check before submitting
+- [x] `budget:getUsageStats(playerId)` → `{ totalTxCount, totalTokensSpent, balance, lastTxTime }`
+- [x] Atomic deduction: deduct tokens before submitting to paymaster, refund on failure
+- [x] In-memory cache with periodic DataStore flush (avoid DataStore rate limits)
 
 **Implementation Notes**:
 - "Paymaster tokens" are NOT on-chain — purely game-managed via Roblox DataStoreService
