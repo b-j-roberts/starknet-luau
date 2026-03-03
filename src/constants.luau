@@ -59,4 +59,11 @@ Constants.DEPLOY_ACCOUNT_TX_V3 = "0x3"
 -- V3 DECLARE transaction version
 Constants.DECLARE_TX_V3 = "0x3"
 
+--------------------------------------------------------------------------------
+-- Outside Execution (SNIP-9)
+--------------------------------------------------------------------------------
+
+-- ANY_CALLER: short string encoding of "ANY_CALLER" — allows any address to submit
+Constants.ANY_CALLER = "0x414e595f43414c4c4552"
+
 return Constants

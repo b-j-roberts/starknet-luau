@@ -45,4 +45,11 @@ ErrorCodes.FEE_ESTIMATION_FAILED = { code = 5001, name = "FEE_ESTIMATION_FAILED"
 ErrorCodes.INSUFFICIENT_BALANCE = { code = 5002, name = "INSUFFICIENT_BALANCE" }
 ErrorCodes.BATCH_DEPLOY_ERROR = { code = 5003, name = "BATCH_DEPLOY_ERROR" }
 
+-- 6000-6099: Outside Execution (SNIP-9) errors
+ErrorCodes.OUTSIDE_EXECUTION_ERROR = { code = 6000, name = "OUTSIDE_EXECUTION_ERROR" }
+ErrorCodes.INVALID_VERSION = { code = 6001, name = "INVALID_VERSION" }
+ErrorCodes.CALL_VALIDATION_FAILED = { code = 6002, name = "CALL_VALIDATION_FAILED" }
+ErrorCodes.MISSING_FEE_MODE = { code = 6003, name = "MISSING_FEE_MODE" }
+ErrorCodes.INVALID_TIME_BOUNDS = { code = 6004, name = "INVALID_TIME_BOUNDS" }
+
 return ErrorCodes
