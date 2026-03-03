@@ -1148,3 +1148,803 @@ describe("Account.new - explicit address", function()
 		end
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Paymaster helpers
+--------------------------------------------------------------------------------
+
+-- Transfer selector: starknet_keccak("transfer")
+local TRANSFER_SELECTOR = "0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e"
+
+-- Default paymaster typed data for testing (V2 style)
+local function makePaymasterTypedData(outsideCalls: { { [string]: any } }?): { [string]: any }
+	return {
+		types = {
+			StarknetDomain = {
+				{ name = "name", type = "shortstring" },
+				{ name = "version", type = "shortstring" },
+				{ name = "chainId", type = "shortstring" },
+				{ name = "revision", type = "shortstring" },
+			},
+			OutsideExecution = {
+				{ name = "Caller", type = "ContractAddress" },
+				{ name = "Nonce", type = "felt" },
+				{ name = "Execute After", type = "u128" },
+				{ name = "Execute Before", type = "u128" },
+				{ name = "Calls", type = "Call*" },
+			},
+			Call = {
+				{ name = "To", type = "ContractAddress" },
+				{ name = "Selector", type = "selector" },
+				{ name = "Calldata", type = "felt*" },
+			},
+		},
+		primaryType = "OutsideExecution",
+		domain = {
+			name = "Account.execute_from_outside",
+			version = "2",
+			chainId = "SN_SEPOLIA",
+			revision = "1",
+		},
+		message = {
+			Caller = "0x414e595f43414c4c4552",
+			Nonce = "0x1",
+			["Execute After"] = "0x0",
+			["Execute Before"] = "0xffffffffffffffff",
+			Calls = outsideCalls or {},
+		},
+	}
+end
+
+-- Create a mock paymaster with configurable behavior
+local function createMockPaymaster(overrides: { [string]: any }?): any
+	local opts = overrides or {}
+	local buildCalls: { { userAddress: string, calls: any, gasTokenAddress: string, options: any } } = {}
+	local executeCalls: { { userAddress: string, typedData: any, signature: any, options: any } } = {}
+
+	local paymaster = {}
+
+	paymaster._buildCalls = buildCalls
+	paymaster._executeCalls = executeCalls
+
+	function paymaster:buildTypedData(
+		userAddress: string,
+		calls: { any },
+		gasTokenAddress: string,
+		options: any?
+	): any
+		table.insert(buildCalls, {
+			userAddress = userAddress,
+			calls = calls,
+			gasTokenAddress = gasTokenAddress,
+			options = options or {},
+		})
+
+		if opts.buildError then
+			return MockPromise.reject(opts.buildError)
+		end
+
+		-- Convert submitted calls to outside call format (matching what a real paymaster returns)
+		local outsideCalls: { { [string]: any } } = {}
+		for _, call in calls do
+			table.insert(outsideCalls, {
+				To = call.contractAddress,
+				Selector = TRANSFER_SELECTOR,
+				Calldata = call.calldata or {},
+			})
+		end
+
+		-- Allow overriding the returned calls (for validation tests)
+		local returnedCalls = opts.returnedCalls or outsideCalls
+
+		local typedData = opts.typedData or makePaymasterTypedData(returnedCalls)
+		local feeEstimate = opts.feeEstimate or {
+			gasTokenPrice = "0x3e8",
+			estimatedFeeInStrk = "0x2710",
+			estimatedFeeInGasToken = "0x9c40",
+			suggestedMaxFeeInStrk = "0x3a98",
+			suggestedMaxFeeInGasToken = "0xea60",
+		}
+
+		return MockPromise.resolve({
+			typedData = typedData,
+			feeEstimate = feeEstimate,
+			deploymentData = nil,
+		})
+	end
+
+	function paymaster:executeTransaction(userAddress: string, typedData: any, signature: { string }, options: any?): any
+		table.insert(executeCalls, {
+			userAddress = userAddress,
+			typedData = typedData,
+			signature = signature,
+			options = options or {},
+		})
+
+		if opts.executeError then
+			return MockPromise.reject(opts.executeError)
+		end
+
+		local result = opts.executeResult or {
+			transactionHash = "0xpaymaster_tx_hash_abc",
+			trackingId = "track-12345",
+		}
+		return MockPromise.resolve(result)
+	end
+
+	return paymaster
+end
+
+--------------------------------------------------------------------------------
+-- Account:estimatePaymasterFee - validation
+--------------------------------------------------------------------------------
+
+describe("Account:estimatePaymasterFee - validation", function()
+	it("rejects when paymaster is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		expect(function()
+			account:estimatePaymasterFee(createTestCalls(), {
+				feeMode = { mode = "sponsored" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "default" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode.mode is invalid", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "invalid" },
+			})
+		end):toThrow()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:estimatePaymasterFee - sponsored mode
+--------------------------------------------------------------------------------
+
+describe("Account:estimatePaymasterFee - sponsored mode", function()
+	it("returns fee estimate for sponsored mode", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.feeEstimate):toBeTruthy()
+		expect(result.feeEstimate.estimatedFeeInStrk):toBe("0x2710")
+	end)
+
+	it("returns typed data alongside fee estimate", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.typedData):toBeTruthy()
+		expect(result.typedData.primaryType):toBe("OutsideExecution")
+	end)
+
+	it("passes '0x0' as gasTokenAddress for sponsored mode", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(#paymaster._buildCalls):toBe(1)
+		expect(paymaster._buildCalls[1].gasTokenAddress):toBe("0x0")
+	end)
+
+	it("passes correct user address to paymaster", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].userAddress):toBe(EXPECTED_ADDR_1_OZ)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:estimatePaymasterFee - default/gasToken mode
+--------------------------------------------------------------------------------
+
+describe("Account:estimatePaymasterFee - gasToken mode", function()
+	it("returns fee estimate for default/gasToken mode", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local tokenAddr = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+		local result = account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "default", gasToken = tokenAddr },
+			})
+			:expect()
+
+		expect(result.feeEstimate):toBeTruthy()
+		expect(result.feeEstimate.estimatedFeeInGasToken):toBe("0x9c40")
+	end)
+
+	it("passes gasToken address to paymaster", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local tokenAddr = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+		account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "default", gasToken = tokenAddr },
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].gasTokenAddress):toBe(tokenAddr)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:estimatePaymasterFee - deployment data
+--------------------------------------------------------------------------------
+
+describe("Account:estimatePaymasterFee - deploymentData", function()
+	it("passes deployment data when provided", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local deployData = {
+			classHash = "0xclass123",
+			calldata = { "0xpk" },
+			salt = "0xsalt123",
+		}
+		account
+			:estimatePaymasterFee(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+				deploymentData = deployData,
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].options.deploymentData):toBeTruthy()
+		expect(paymaster._buildCalls[1].options.deploymentData.classHash):toBe("0xclass123")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:estimatePaymasterFee - error propagation
+--------------------------------------------------------------------------------
+
+describe("Account:estimatePaymasterFee - error propagation", function()
+	it("propagates buildTypedData errors", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster({
+			buildError = "paymaster unavailable",
+		})
+
+		local ok, err = pcall(function()
+			account
+				:estimatePaymasterFee(createTestCalls(), {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "paymaster unavailable", 1, true) ~= nil):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - validation
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - validation", function()
+	it("rejects when paymaster is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		expect(function()
+			account:executePaymaster(createTestCalls(), {
+				feeMode = { mode = "sponsored" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when calls is empty", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:executePaymaster({}, {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "default" },
+			})
+		end):toThrow()
+	end)
+
+	it("rejects when feeMode.mode is invalid", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		expect(function()
+			account:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "bogus" },
+			})
+		end):toThrow()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - full flow (sponsored)
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - sponsored mode", function()
+	it("full flow: buildTypedData -> validate -> sign -> execute", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+		expect(result.trackingId):toBe("track-12345")
+	end)
+
+	it("passes '0x0' as gasTokenAddress for sponsored mode", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].gasTokenAddress):toBe("0x0")
+	end)
+
+	it("passes correct user address to paymaster", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].userAddress):toBe(EXPECTED_ADDR_1_OZ)
+		expect(paymaster._executeCalls[1].userAddress):toBe(EXPECTED_ADDR_1_OZ)
+	end)
+
+	it("signs typed data with account signer", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		-- Verify signature was passed to executeTransaction
+		local sig = paymaster._executeCalls[1].signature
+		expect(sig):toBeTruthy()
+		expect(#sig):toBe(2)
+		expect(string.sub(sig[1], 1, 2)):toBe("0x")
+		expect(string.sub(sig[2], 1, 2)):toBe("0x")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - gasToken mode
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - gasToken mode", function()
+	it("full flow with gasToken mode", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local tokenAddr = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+		local result = account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "default", gasToken = tokenAddr },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBe("0xpaymaster_tx_hash_abc")
+		expect(paymaster._buildCalls[1].gasTokenAddress):toBe(tokenAddr)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - deployment data
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - deploymentData", function()
+	it("passes deployment data for deploy-via-paymaster", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local deployData = {
+			classHash = "0xclass456",
+			calldata = { "0xpubkey" },
+			salt = "0xsalt456",
+		}
+		account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+				deploymentData = deployData,
+			})
+			:expect()
+
+		expect(paymaster._buildCalls[1].options.deploymentData.classHash):toBe("0xclass456")
+		expect(paymaster._executeCalls[1].options.deploymentData.classHash):toBe("0xclass456")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - call validation
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - call validation", function()
+	it("succeeds when returned calls match submitted calls", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		-- Default mock returns matching calls
+		local paymaster = createMockPaymaster()
+
+		local result = account
+			:executePaymaster(createTestCalls(), {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("succeeds when returned calls = submitted + 1 appended fee transfer", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- The paymaster returns the submitted call + an extra fee transfer call
+		local calls = createTestCalls()
+		local returnedCalls = {
+			{
+				To = calls[1].contractAddress,
+				Selector = TRANSFER_SELECTOR,
+				Calldata = calls[1].calldata,
+			},
+			{
+				To = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				Selector = TRANSFER_SELECTOR,
+				Calldata = { "0xfee_receiver", "0x100", "0x0" },
+			},
+		}
+
+		local paymaster = createMockPaymaster({ returnedCalls = returnedCalls })
+
+		local result = account
+			:executePaymaster(calls, {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("rejects when returned calls don't match submitted calls", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- Paymaster returns a completely different call
+		local returnedCalls = {
+			{
+				To = "0xmalicious_contract",
+				Selector = "0xmalicious_selector",
+				Calldata = { "0xsteal_funds" },
+			},
+		}
+
+		local paymaster = createMockPaymaster({ returnedCalls = returnedCalls })
+
+		local ok, err = pcall(function()
+			account
+				:executePaymaster(createTestCalls(), {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "do not match submitted calls", 1, true) ~= nil):toBe(true)
+	end)
+
+	it("rejects when returned calls have modified calldata", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		local calls = createTestCalls()
+		-- Same To/Selector but different calldata
+		local returnedCalls = {
+			{
+				To = calls[1].contractAddress,
+				Selector = TRANSFER_SELECTOR,
+				Calldata = { "0xdifferent_recipient", "0x999999", "0x0" },
+			},
+		}
+
+		local paymaster = createMockPaymaster({ returnedCalls = returnedCalls })
+
+		local ok, err = pcall(function()
+			account
+				:executePaymaster(calls, {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "do not match submitted calls", 1, true) ~= nil):toBe(true)
+	end)
+
+	it("rejects when paymaster drops a submitted call", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- Paymaster returns empty calls
+		local paymaster = createMockPaymaster({ returnedCalls = {} })
+
+		local ok, _ = pcall(function()
+			account
+				:executePaymaster(createTestCalls(), {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - error propagation
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - error propagation", function()
+	it("propagates buildTypedData errors", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster({
+			buildError = "paymaster service unavailable",
+		})
+
+		local ok, err = pcall(function()
+			account
+				:executePaymaster(createTestCalls(), {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "paymaster service unavailable", 1, true) ~= nil):toBe(true)
+	end)
+
+	it("propagates executeTransaction errors", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster({
+			executeError = "execution failed on paymaster",
+		})
+
+		local ok, err = pcall(function()
+			account
+				:executePaymaster(createTestCalls(), {
+					paymaster = paymaster,
+					feeMode = { mode = "sponsored" },
+				})
+				:expect()
+		end)
+		expect(ok):toBe(false)
+		expect(string.find(tostring(err), "execution failed on paymaster", 1, true) ~= nil):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - integration with AvnuPaymaster interface
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - interface compatibility", function()
+	it("works with any paymaster implementing buildTypedData + executeTransaction", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+
+		-- Another mock that mimics AvnuPaymaster (same interface)
+		local avnuLikePaymaster = createMockPaymaster({
+			executeResult = {
+				transactionHash = "0xavnu_hash_123",
+				trackingId = "avnu-track-001",
+			},
+		})
+
+		local result = account
+			:executePaymaster(createTestCalls(), {
+				paymaster = avnuLikePaymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBe("0xavnu_hash_123")
+		expect(result.trackingId):toBe("avnu-track-001")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:executePaymaster - multiple calls
+--------------------------------------------------------------------------------
+
+describe("Account:executePaymaster - multiple calls", function()
+	it("handles multiple calls in a batch", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
+		local paymaster = createMockPaymaster()
+
+		local calls = {
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient1", "0x100", "0x0" },
+			},
+			{
+				contractAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient2", "0x200", "0x0" },
+			},
+		}
+
+		local result = account
+			:executePaymaster(calls, {
+				paymaster = paymaster,
+				feeMode = { mode = "sponsored" },
+			})
+			:expect()
+
+		expect(result.transactionHash):toBeTruthy()
+		expect(#paymaster._buildCalls[1].calls):toBe(2)
+	end)
+end)

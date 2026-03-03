@@ -569,8 +569,7 @@ function PaymasterRpcClass:buildTypedData(
 				estimatedFeeInStrk = rawFee.estimated_fee_in_strk or rawFee.estimatedFeeInStrk,
 				estimatedFeeInGasToken = rawFee.estimated_fee_in_gas_token or rawFee.estimatedFeeInGasToken,
 				suggestedMaxFeeInStrk = rawFee.suggested_max_fee_in_strk or rawFee.suggestedMaxFeeInStrk,
-				suggestedMaxFeeInGasToken = rawFee.suggested_max_fee_in_gas_token
-					or rawFee.suggestedMaxFeeInGasToken,
+				suggestedMaxFeeInGasToken = rawFee.suggested_max_fee_in_gas_token or rawFee.suggestedMaxFeeInGasToken,
 			}
 		end
 

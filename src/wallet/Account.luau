@@ -10,6 +10,7 @@ local Pedersen = require("../crypto/Pedersen")
 local StarkSigner = require("../signer/StarkSigner")
 local TransactionBuilder = require("../tx/TransactionBuilder")
 local TypedData = require("./TypedData")
+local OutsideExecution = require("./OutsideExecution")
 local ERC20 = require("../contract/ERC20")
 local Constants = require("../constants")
 local StarknetError = require("../errors/StarknetError")
@@ -739,6 +740,193 @@ function Account:signMessage(typedData: { [string]: any }): { string }
 	local hashBuf = BigInt.fromHex(msgHash)
 	local sig = self.signer:signRaw(hashBuf)
 	return { BigInt.toHex(sig.r), BigInt.toHex(sig.s) }
+end
+
+--- Estimate the fee for executing calls through a paymaster (SNIP-29).
+--- Returns a Promise resolving to { feeEstimate, typedData } from the paymaster's buildTypedData response.
+--- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
+function Account:estimatePaymasterFee(calls: { any }, paymasterDetails: { [string]: any }): any
+	if not paymasterDetails or not paymasterDetails.paymaster then
+		error(
+			StarknetError.validation(
+				"estimatePaymasterFee: paymaster is required in paymasterDetails",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not paymasterDetails.feeMode then
+		error(
+			StarknetError.validation(
+				"estimatePaymasterFee: feeMode is required in paymasterDetails",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+
+	local paymaster = paymasterDetails.paymaster
+	local feeMode = paymasterDetails.feeMode
+
+	-- Determine gas token address
+	local gasTokenAddress: string
+	if feeMode.mode == "sponsored" then
+		gasTokenAddress = "0x0"
+	elseif feeMode.mode == "default" then
+		if not feeMode.gasToken then
+			error(
+				StarknetError.validation(
+					"estimatePaymasterFee: gasToken is required for 'default' feeMode",
+					ErrorCodes.REQUIRED_FIELD.code
+				)
+			)
+		end
+		gasTokenAddress = feeMode.gasToken
+	else
+		error(
+			StarknetError.validation(
+				`estimatePaymasterFee: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	-- Build options
+	local options: { [string]: any } = {}
+	if paymasterDetails.deploymentData then
+		options.deploymentData = paymasterDetails.deploymentData
+	end
+
+	return paymaster:buildTypedData(self.address, calls, gasTokenAddress, options):andThen(function(buildResult: any)
+		return {
+			feeEstimate = buildResult.feeEstimate,
+			typedData = buildResult.typedData,
+		}
+	end)
+end
+
+--- Execute calls through a paymaster (SNIP-29) for gasless/sponsored transactions.
+--- Full flow: buildTypedData → validate returned calls → sign → executeTransaction.
+--- Returns a Promise resolving to { transactionHash, trackingId }.
+--- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
+function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: any }): any
+	if not paymasterDetails or not paymasterDetails.paymaster then
+		error(
+			StarknetError.validation(
+				"executePaymaster: paymaster is required in paymasterDetails",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not paymasterDetails.feeMode then
+		error(
+			StarknetError.validation(
+				"executePaymaster: feeMode is required in paymasterDetails",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not calls or #calls == 0 then
+		error(
+			StarknetError.validation(
+				"executePaymaster: at least one call is required",
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	local paymaster = paymasterDetails.paymaster
+	local feeMode = paymasterDetails.feeMode
+
+	-- Determine gas token address
+	local gasTokenAddress: string
+	if feeMode.mode == "sponsored" then
+		gasTokenAddress = "0x0"
+	elseif feeMode.mode == "default" then
+		if not feeMode.gasToken then
+			error(
+				StarknetError.validation(
+					"executePaymaster: gasToken is required for 'default' feeMode",
+					ErrorCodes.REQUIRED_FIELD.code
+				)
+			)
+		end
+		gasTokenAddress = feeMode.gasToken
+	else
+		error(
+			StarknetError.validation(
+				`executePaymaster: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+
+	-- Build options
+	local options: { [string]: any } = {}
+	if paymasterDetails.deploymentData then
+		options.deploymentData = paymasterDetails.deploymentData
+	end
+
+	-- Convert submitted calls to outside call format for validation comparison
+	local submittedOutsideCalls: { { [string]: any } } = {}
+	for _, call in calls do
+		table.insert(submittedOutsideCalls, OutsideExecution.getOutsideCall(call))
+	end
+
+	local Promise = self._provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Step 1: Build typed data via paymaster
+		local buildOk, buildResult = pcall(function()
+			return paymaster:buildTypedData(self.address, calls, gasTokenAddress, options):expect()
+		end)
+		if not buildOk then
+			reject(buildResult)
+			return
+		end
+
+		local typedData = buildResult.typedData
+
+		-- Step 2: Security validation — ensure returned calls match submitted calls
+		-- Normalize returned calls to lowercase keys (typed data may use capitalized V2 keys)
+		local rawReturnedCalls = typedData.message.Calls or typedData.message.calls or {}
+		local returnedCalls: { { [string]: any } } = {}
+		for _, rc in rawReturnedCalls do
+			table.insert(returnedCalls, {
+				to = rc.To or rc.to or rc.contractAddress,
+				selector = rc.Selector or rc.selector,
+				calldata = rc.Calldata or rc.calldata or {},
+			})
+		end
+		local valid = OutsideExecution.validateCalls(submittedOutsideCalls, returnedCalls)
+		if not valid then
+			reject(
+				StarknetError.new(
+					"executePaymaster: returned calls from paymaster do not match submitted calls",
+					ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code,
+					"PaymasterError"
+				)
+			)
+			return
+		end
+
+		-- Step 3: Sign the typed data
+		local signOk, signature = pcall(function()
+			return self:signMessage(typedData)
+		end)
+		if not signOk then
+			reject(signature)
+			return
+		end
+
+		-- Step 4: Execute via paymaster
+		local execOk, execResult = pcall(function()
+			return paymaster:executeTransaction(self.address, typedData, signature, options):expect()
+		end)
+		if not execOk then
+			reject(execResult)
+			return
+		end
+
+		resolve(execResult)
+	end)
 end
 
 return Account
