@@ -856,4 +856,16 @@ function BigInt.clone(a: BigInt): BigInt
 	return clone(a)
 end
 
+--- Convert a u256 value {low: string, high: string} to a single BigInt.
+--- Formula: high * 2^128 + low
+function BigInt.fromU256(u256: { low: string, high: string }): BigInt
+	local low = BigInt.fromHex(u256.low)
+	local high = BigInt.fromHex(u256.high)
+	if BigInt.isZero(high) then
+		return low
+	end
+	local TWO_128 = BigInt.shl(BigInt.one(), 128)
+	return BigInt.add(BigInt.mul(high, TWO_128), low)
+end
+
 return BigInt

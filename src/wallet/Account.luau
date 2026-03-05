@@ -58,28 +58,8 @@ local CLASS_HASH_TO_TYPE: { [string]: string } = {
 -- Internal helpers
 --------------------------------------------------------------------------------
 
---- Compute Pedersen hash of elements (equivalent to starknet.js computeHashOnElements).
---- Reduces [e1, e2, ..., en] as: pedersen(pedersen(...pedersen(pedersen(0, e1), e2)..., en), n)
-local function computeHashOnElements(elements: { Felt }): Felt
-	local result = StarkField.zero()
-	for _, element in elements do
-		result = Pedersen.hash(result, element)
-	end
-	result = Pedersen.hash(result, StarkField.fromNumber(#elements))
-	return result
-end
-
---- Convert a u256 value {low: string, high: string} from ERC-20 balance_of to a single BigInt.
---- Formula: high * 2^128 + low
-local function u256ToBigInt(u256: { low: string, high: string }): buffer
-	local low = BigInt.fromHex(u256.low)
-	local high = BigInt.fromHex(u256.high)
-	if BigInt.isZero(high) then
-		return low
-	end
-	local TWO_128 = BigInt.shl(BigInt.one(), 128)
-	return BigInt.add(BigInt.mul(high, TWO_128), low)
-end
+--- Alias for Pedersen.hashChain (computeHashOnElements).
+local computeHashOnElements = Pedersen.hashChain
 
 --- Get the default class hash for an account type via AccountType registry.
 local function getDefaultClassHash(accountType: string): string
@@ -284,7 +264,7 @@ function Account.checkDeploymentBalance(config: {
 		-- Convert u256 balance to BigInt
 		local balanceBigInt: buffer
 		if type(balResult) == "table" and balResult.low ~= nil then
-			balanceBigInt = u256ToBigInt(balResult)
+			balanceBigInt = BigInt.fromU256(balResult)
 		else
 			-- Fallback: single felt result
 			balanceBigInt = BigInt.fromHex(tostring(balResult))

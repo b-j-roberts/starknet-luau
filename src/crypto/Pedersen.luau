@@ -127,4 +127,15 @@ function Pedersen.hash(a: Felt, b: Felt): Felt
 	return (result :: AffinePoint).x
 end
 
+--- Compute Pedersen chain-hash of elements (equivalent to starknet.js computeHashOnElements).
+--- Reduces [e1, e2, ..., en] as: pedersen(pedersen(...pedersen(pedersen(0, e1), e2)..., en), n)
+function Pedersen.hashChain(elements: { Felt }): Felt
+	local result = StarkField.zero()
+	for _, element in elements do
+		result = Pedersen.hash(result, element)
+	end
+	result = Pedersen.hash(result, StarkField.fromNumber(#elements))
+	return result
+end
+
 return Pedersen

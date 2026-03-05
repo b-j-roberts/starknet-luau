@@ -77,12 +77,11 @@ end
 --- Pedersen-based hash method (LEGACY revision).
 --- Equivalent to computePedersenHashOnElements: [...data, #data].reduce(pedersen, 0)
 local function hashPedersen(data: { string }): string
-	local result = StarkField.zero()
+	local felts: { Felt } = {}
 	for _, hex in data do
-		result = Pedersen.hash(result, StarkField.fromHex(hex))
+		table.insert(felts, StarkField.fromHex(hex))
 	end
-	result = Pedersen.hash(result, StarkField.fromNumber(#data))
-	return StarkField.toHex(result)
+	return StarkField.toHex(Pedersen.hashChain(felts))
 end
 
 --- Poseidon-based hash method (ACTIVE revision).
