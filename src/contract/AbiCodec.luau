@@ -6,6 +6,7 @@
 
 local CallData = require("../tx/CallData")
 local HexUtils = require("../shared/HexUtils")
+local ByteArray = require("../shared/ByteArray")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -248,97 +249,11 @@ function AbiCodec.resolveType(typeName: string, typeMap: TypeMap): TypeDef
 end
 
 --------------------------------------------------------------------------------
--- ByteArray Encoding/Decoding
+-- ByteArray Encoding/Decoding (delegated to shared ByteArray module)
 --------------------------------------------------------------------------------
 
---- Encode a Luau string as a Cairo ByteArray.
---- Output: { num_full_chunks, chunk0_hex, ..., pending_word_hex, pending_word_len }
---- Each chunk is 31 bytes of ASCII packed big-endian into a felt.
-function AbiCodec.encodeByteArray(str: string): { string }
-	local CHUNK_SIZE = 31
-	local len = #str
-	local numFullChunks = math.floor(len / CHUNK_SIZE)
-	local pendingLen = len - (numFullChunks * CHUNK_SIZE)
-
-	local result: { string } = {}
-
-	-- Number of full 31-byte chunks
-	table.insert(result, string.format("0x%x", numFullChunks))
-
-	-- Encode each full chunk
-	for i = 0, numFullChunks - 1 do
-		local chunk = string.sub(str, i * CHUNK_SIZE + 1, (i + 1) * CHUNK_SIZE)
-		table.insert(result, HexUtils.asciiToHex(chunk))
-	end
-
-	-- Pending word (remaining bytes < 31)
-	if pendingLen > 0 then
-		local pending = string.sub(str, numFullChunks * CHUNK_SIZE + 1)
-		table.insert(result, HexUtils.asciiToHex(pending))
-	else
-		table.insert(result, "0x0")
-	end
-
-	-- Pending word length
-	table.insert(result, string.format("0x%x", pendingLen))
-
-	return result
-end
-
---- Decode a Cairo ByteArray from result felts starting at offset.
---- Returns (string, felts_consumed).
-function AbiCodec.decodeByteArray(results: { string }, offset: number): (string, number)
-	-- Read number of full chunks
-	local numChunksHex = results[offset]
-	local numChunks = HexUtils.parseHexToNumber(numChunksHex)
-	local consumed = 1
-
-	local parts: { string } = {}
-
-	-- Read each full 31-byte chunk
-	for _ = 1, numChunks do
-		local chunkHex = results[offset + consumed]
-		consumed += 1
-		-- Convert hex to 31 bytes
-		local hex = string.sub(chunkHex, 3) -- strip "0x"
-		-- Pad to 62 chars (31 bytes)
-		while #hex < 62 do
-			hex = "0" .. hex
-		end
-		local bytes = {}
-		for j = 1, 62, 2 do
-			local byte = tonumber(string.sub(hex, j, j + 1), 16) or 0
-			table.insert(bytes, string.char(byte))
-		end
-		table.insert(parts, table.concat(bytes))
-	end
-
-	-- Read pending word
-	local pendingHex = results[offset + consumed]
-	consumed += 1
-
-	-- Read pending word length
-	local pendingLenHex = results[offset + consumed]
-	consumed += 1
-	local pendingLen = HexUtils.parseHexToNumber(pendingLenHex)
-
-	-- Decode pending bytes
-	if pendingLen > 0 then
-		local hex = string.sub(pendingHex, 3) -- strip "0x"
-		-- Pad to 2*pendingLen
-		while #hex < pendingLen * 2 do
-			hex = "0" .. hex
-		end
-		local bytes = {}
-		for j = 1, pendingLen * 2, 2 do
-			local byte = tonumber(string.sub(hex, j, j + 1), 16) or 0
-			table.insert(bytes, string.char(byte))
-		end
-		table.insert(parts, table.concat(bytes))
-	end
-
-	return table.concat(parts), consumed
-end
+AbiCodec.encodeByteArray = ByteArray.encode
+AbiCodec.decodeByteArray = ByteArray.decode
 
 --------------------------------------------------------------------------------
 -- Recursive Encoder

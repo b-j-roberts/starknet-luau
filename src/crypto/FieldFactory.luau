@@ -32,7 +32,12 @@ export type Field = {
 
 local FieldFactory = {}
 
-function FieldFactory.createField(modulus: buffer, modulusMinus2: buffer, barrettCtx: BigInt.BarrettCtx, name: string): Field
+function FieldFactory.createField(
+	modulus: buffer,
+	modulusMinus2: buffer,
+	barrettCtx: BigInt.BarrettCtx,
+	name: string
+): Field
 	local F = {} :: Field
 	F.modulus = modulus
 	F.barrettCtx = barrettCtx

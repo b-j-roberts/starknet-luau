@@ -44,7 +44,6 @@ local L1_GAS_NAME = BigInt.fromHex("0x4c315f474153") -- "L1_GAS"
 local L2_GAS_NAME = BigInt.fromHex("0x4c325f474153") -- "L2_GAS"
 local L1_DATA_NAME = BigInt.fromHex("0x4c315f44415441") -- "L1_DATA"
 
-
 --------------------------------------------------------------------------------
 -- Internal helpers
 --------------------------------------------------------------------------------

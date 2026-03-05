@@ -9,7 +9,8 @@ local StarkField = require("../crypto/StarkField")
 local Pedersen = require("../crypto/Pedersen")
 local Poseidon = require("../crypto/Poseidon")
 local Keccak = require("../crypto/Keccak")
-local HexUtils = require("../shared/HexUtils")
+local ByteArray = require("../shared/ByteArray")
+local CallData = require("../tx/CallData")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -42,7 +43,11 @@ local PRESET_TYPES: { [string]: { { name: string, type: string } } } = {
 -- Internal helpers
 --------------------------------------------------------------------------------
 
-local encodeShortString = HexUtils.asciiToHex
+--- Encode a short string (max 31 ASCII chars) as a hex felt.
+--- Uses CallData.encodeShortString which validates length and ASCII range.
+local function encodeShortString(str: string): string
+	return CallData.encodeShortString(str)[1]
+end
 
 --- Normalize a value to a hex string.
 --- Handles: hex strings, numbers, short strings (non-hex strings).
@@ -126,56 +131,8 @@ local function escapeTypeString(s: string, revision: string): string
 end
 
 --- Build a ByteArray encoding of a string (for ACTIVE revision string type).
---- Returns array of hex strings: [numChunks, chunk0..N, pendingWord, pendingLen]
-local function encodeByteArray(str: string): { string }
-	local CHUNK_SIZE = 31
-	local len = #str
-	local chunks: { string } = {}
-
-	-- Split into 31-byte chunks
-	local i = 1
-	while i <= len do
-		local chunk = string.sub(str, i, math.min(i + CHUNK_SIZE - 1, len))
-		table.insert(chunks, chunk)
-		i += CHUNK_SIZE
-	end
-
-	-- If the last chunk is exactly 31 bytes, it's a full chunk (no pending)
-	local numFullChunks: number
-	local pendingWord: string
-	local pendingLen: number
-
-	if #chunks == 0 then
-		numFullChunks = 0
-		pendingWord = "0x0"
-		pendingLen = 0
-	elseif #chunks[#chunks] == CHUNK_SIZE then
-		numFullChunks = #chunks
-		pendingWord = "0x0"
-		pendingLen = 0
-	else
-		numFullChunks = #chunks - 1
-		local lastChunk = chunks[#chunks]
-		pendingLen = #lastChunk
-		pendingWord = encodeShortString(lastChunk)
-		table.remove(chunks)
-	end
-
-	local result: { string } = {}
-	-- Number of full chunks (as a BigNumberish element for Poseidon)
-	table.insert(result, string.format("0x%x", numFullChunks))
-
-	-- Encode each full chunk as a short string hex
-	for _, chunk in chunks do
-		table.insert(result, encodeShortString(chunk))
-	end
-
-	-- Pending word and length
-	table.insert(result, pendingWord)
-	table.insert(result, string.format("0x%x", pendingLen))
-
-	return result
-end
+--- Delegates to shared ByteArray module.
+local encodeByteArray = ByteArray.encode
 
 --------------------------------------------------------------------------------
 -- Merkle Tree
