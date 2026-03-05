@@ -11,6 +11,16 @@ _Issues that span multiple modules. Reference specific files where relevant._
 - `[refactor]` **StarkField + StarkScalarField: 16 identical functions** (~300 lines total). Biggest DRY violation. See crypto/ section for recommended field factory approach.
 - `[refactor]` **Curve order N computed twice**: `StarkScalarField.luau:17` and `StarkCurve.luau:41` both call `BigInt.fromHex()` with the same hex string. StarkCurve should import from StarkScalarField.
 - `[refactor]` **Stark prime P computed twice**: `StarkField.luau:16` and `wallet/TypedData.luau:25`. TypedData should import from StarkField.
+- `[refactor]` **JSON-RPC client infrastructure duplicated across provider/ and paymaster/.** Rate limiter (`createRateLimiter`, `tryAcquire`), HTTP helpers (`_doHttpRequest`, `_jsonEncode`, `_jsonDecode`), raw request (`_rawRequest`), retry loop (`_requestWithRetry`), and Promise loading (`_getPromise`) are independently implemented in both `RpcProvider.luau` (~200 lines) and `PaymasterRpc.luau` (~200 lines). This is the largest cross-module DRY violation in the SDK. See [provider/ section](./04-provider.md) for the extraction plan (`JsonRpcClient` base module).
+- `[refactor]` **`Promise<T>` type defined in 2 places**: `RpcProvider.luau:15-19` and `PaymasterRpc.luau:15-19`. Move to `RpcTypes.luau` as a single source of truth.
+- `[refactor]` **`HttpRequest` / `HttpResponse` types defined in 2 places**: `RpcTypes.luau:83-96` and `PaymasterRpc.luau:21-33`. PaymasterRpc should import from RpcTypes.
+
+### Private method coupling
+
+- `[refactor]` **`_getPromise()` called by 3 external modules despite being private.** Account.luau, NonceManager.luau (×2) call `provider:_getPromise()`. Either make public or inject the Promise module at construction time.
+- `[refactor]` **`_requestWithRetry()` called by EventPoller despite being private.** EventPoller.luau lines 68 and 109 bypass the public API. Add a public `fetchSync()` method to RpcProvider.
+- `[refactor]` **`_nonceManager` accessed directly by Account.** Account.luau accesses `provider._nonceManager` as a private field. Use `provider:getNonceManager()` (which exists at RpcProvider:636 but is not in the exported type).
+- `[refactor]` **`provider: any` used in 8+ constructor signatures.** Account, TransactionBuilder, Contract, ERC20, ERC721, AccountFactory, NonceManager, EventPoller all accept `provider: any`. Define a `ProviderInterface` type or use the `RpcProvider` export type.
 
 ### Require patterns (Roblox vs Lune)
 
