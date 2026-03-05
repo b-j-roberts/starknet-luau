@@ -15,6 +15,11 @@ _Issues that span multiple modules. Reference specific files where relevant._
 - `[refactor]` **`Promise<T>` type defined in 2 places**: `RpcProvider.luau:15-19` and `PaymasterRpc.luau:15-19`. Move to `RpcTypes.luau` as a single source of truth.
 - `[refactor]` **`HttpRequest` / `HttpResponse` types defined in 2 places**: `RpcTypes.luau:83-96` and `PaymasterRpc.luau:21-33`. PaymasterRpc should import from RpcTypes.
 
+- `[refactor]` **`normalizeHex()` duplicated 3× with divergent implementations.** `tx/CallData.luau:36-38` and `wallet/OutsideExecution.luau:134-136` use `BigInt.toHex(BigInt.fromHex(hex))` (BigInt roundtrip). `paymaster/PaymasterPolicy.luau:36-45` uses manual string manipulation (lowercase, strip prefix, strip leading zeros). These could produce different results for edge cases. Extract to a single `normalizeHex()` in a shared utility or add `BigInt.normalizeHex()`.
+- `[refactor]` **`encodeShortString()` duplicated in `tx/CallData.luau:57-74` and `wallet/TypedData.luau:45-54`.** CallData version validates length (≤31) and ASCII range (≤127); TypedData version does not validate. TypedData should import from CallData to get the validation guards.
+- `[refactor]` **`ResourceBounds` type exists in 2 incompatible shapes.** `tx/TransactionHash.luau:18-27` defines camelCase with 3 fields (`l1Gas`, `l2Gas`, `l1DataGas`). `provider/RpcTypes.luau:207-210` defines snake_case with 2 fields (`l1_gas`, `l2_gas`). The `l1DataGas`→`l1_data_gas` mapping is handled by `TransactionBuilder.toRpcResourceBounds()` which silently drops `l1DataGas`. This should be documented or unified.
+- `[fix]` **DA modes hardcoded in `TransactionBuilder.buildInvokeTransaction()` and `buildDeployAccountTransaction()`.** Despite accepting `nonceDataAvailabilityMode`/`feeDataAvailabilityMode` parameters, both builder functions output `"0x0"`. This causes a hash/transaction mismatch for non-L1 DA modes. See [tx/ section](./05-tx.md) for details.
+
 ### Private method coupling
 
 - `[refactor]` **`_getPromise()` called by 3 external modules despite being private.** Account.luau, NonceManager.luau (×2) call `provider:_getPromise()`. Either make public or inject the Promise module at construction time.
