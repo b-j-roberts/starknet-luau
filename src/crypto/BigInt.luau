@@ -796,6 +796,36 @@ function BigInt.mulmodB(a: BigInt, b: BigInt, ctx: BarrettCtx): BigInt
 end
 
 --------------------------------------------------------------------------------
+-- Barrett modular exponentiation
+--------------------------------------------------------------------------------
+
+-- Modular exponentiation using a pre-computed Barrett context for performance
+-- a^e mod ctx.m
+function BigInt.powmodB(a: BigInt, e: BigInt, ctx: BarrettCtx): BigInt
+	if isZeroBuf(e) then
+		return BigInt.one()
+	end
+
+	local b = a
+	if BigInt.cmp(a, ctx.m) >= 0 then
+		b = BigInt.mod(a, ctx.m)
+	end
+
+	local result = BigInt.one()
+	local eBitLen = BigInt.bitLength(e)
+
+	for i = 0, eBitLen - 1 do
+		if BigInt.getBit(e, i) == 1 then
+			result = BigInt.mulmodB(result, b, ctx)
+		end
+		if i < eBitLen - 1 then
+			b = BigInt.mulmodB(b, b, ctx)
+		end
+	end
+	return result
+end
+
+--------------------------------------------------------------------------------
 -- Utility
 --------------------------------------------------------------------------------
 

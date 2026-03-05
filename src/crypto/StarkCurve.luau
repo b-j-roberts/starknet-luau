@@ -7,6 +7,7 @@
 
 local BigInt = require("./BigInt")
 local StarkField = require("./StarkField")
+local StarkScalarField = require("./StarkScalarField")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -37,8 +38,8 @@ local GX = StarkField.fromHex("0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e0
 local GY = StarkField.fromHex("0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f")
 StarkCurve.G = { x = GX, y = GY } :: AffinePoint
 
--- Curve order N (re-exported for convenience)
-StarkCurve.N = BigInt.fromHex("0x800000000000010ffffffffffffffffb781126dcae7b2321e66a241adc64d2f")
+-- Curve order N (imported from StarkScalarField — single source of truth)
+StarkCurve.N = StarkScalarField.N
 
 --------------------------------------------------------------------------------
 -- Point predicates
