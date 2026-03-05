@@ -63,6 +63,26 @@ function expect(value: any)
 				error(`Expected falsy, got {value}`, 2)
 			end
 		end,
+		toContain = function(_, substring: string)
+			if type(value) ~= "string" or not string.find(value, substring, 1, true) then
+				error(`Expected string containing '{substring}', got {tostring(value)}`, 2)
+			end
+		end,
+		toBeNil = function()
+			if value ~= nil then
+				error(`Expected nil, got {value}`, 2)
+			end
+		end,
+		toBeGreaterThan = function(_, expected: number)
+			if type(value) ~= "number" or value <= expected then
+				error(`Expected {value} > {expected}`, 2)
+			end
+		end,
+		toBeGreaterThanOrEqual = function(_, expected: number)
+			if type(value) ~= "number" or value < expected then
+				error(`Expected {value} >= {expected}`, 2)
+			end
+		end,
 		toThrow = function()
 			if typeof(value) ~= "function" then
 				error("Expected a function for toThrow", 2)

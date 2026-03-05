@@ -53,13 +53,13 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 **Description**: 16 test files independently define identical mock HTTP handlers, mock providers, handler resets, and test constants, totaling ~1,717 lines of duplication. Additionally, 3 paymaster specs use an incompatible hand-rolled test harness invisible to the test runner.
 
 **Requirements**:
-- [ ] Create `tests/helpers/TestUtils.luau` with shared `createMockRpcLayer()`, `createTestProvider()`, `applyDefaultHandlers()`, and common test constants (`SN_SEPOLIA`, `TEST_PRIVATE_KEY`, `ETH_TOKEN_ADDRESS`, `OZ_CLASS_HASH`) (ref: 14-cross-cutting.md §9, 12-tests.md §cross-cutting)
-- [ ] Migrate 16 spec files to use shared mock infrastructure: RpcProvider, NonceManager, EventPoller, getAllEvents, RequestBatcher, TransactionBuilder, DeployAccount, Account, AccountFactory, PrefundingHelper, BatchDeploy, Contract, ERC20, ERC721, ContractEvents, PaymasterRpc, AvnuPaymaster (ref: 06-wallet.md §test duplication, 07-contract.md §DRY, 04-provider.md §DRY, 12-tests.md §9A-9D)
-- [ ] Migrate 3 paymaster specs (PaymasterPolicy, PaymasterBudget, SponsoredExecutor) from hand-rolled test harness to `run.luau` framework (ref: 12-tests.md §run.luau [fix], 14-cross-cutting.md §9E)
-- [ ] Move SponsoredExecutor's inline 58-line MockPromise to use shared `tests/helpers/MockPromise.luau` (ref: 12-tests.md §MockPromise [refactor])
-- [ ] Replace 11+ files' inline `SN_SEPOLIA` definitions with import from Constants or TestUtils (ref: 09-root.md §chain IDs [refactor], 14-cross-cutting.md §9D)
-- [ ] Consolidate 15 files' duplicate private key constants under a single variable name (ref: 14-cross-cutting.md §9D)
-- [ ] Migrate TypedData Account integration tests (lines 614-712) from separate mock setup to shared test infrastructure (ref: 06-wallet.md §TypedData [test])
+- [x] Create `tests/helpers/TestUtils.luau` with shared `createMockRpcLayer()`, `createTestProvider()`, `applyDefaultHandlers()`, and common test constants (`SN_SEPOLIA`, `TEST_PRIVATE_KEY`, `ETH_TOKEN_ADDRESS`, `OZ_CLASS_HASH`) (ref: 14-cross-cutting.md §9, 12-tests.md §cross-cutting)
+- [x] Migrate 16 spec files to use shared mock infrastructure: RpcProvider, NonceManager, EventPoller, getAllEvents, RequestBatcher, TransactionBuilder, DeployAccount, Account, AccountFactory, PrefundingHelper, BatchDeploy, Contract, ERC20, ERC721, ContractEvents, PaymasterRpc, AvnuPaymaster (ref: 06-wallet.md §test duplication, 07-contract.md §DRY, 04-provider.md §DRY, 12-tests.md §9A-9D)
+- [x] Migrate 3 paymaster specs (PaymasterPolicy, PaymasterBudget, SponsoredExecutor) from hand-rolled test harness to `run.luau` framework (ref: 12-tests.md §run.luau [fix], 14-cross-cutting.md §9E)
+- [x] Move SponsoredExecutor's inline 58-line MockPromise to use shared `tests/helpers/MockPromise.luau` (ref: 12-tests.md §MockPromise [refactor])
+- [x] Replace 11+ files' inline `SN_SEPOLIA` definitions with import from Constants or TestUtils (ref: 09-root.md §chain IDs [refactor], 14-cross-cutting.md §9D)
+- [x] Consolidate 15 files' duplicate private key constants under a single variable name (ref: 14-cross-cutting.md §9D)
+- [x] Migrate TypedData Account integration tests (lines 614-712) from separate mock setup to shared test infrastructure (ref: 06-wallet.md §TypedData [test])
 
 **Implementation Notes**:
 - Factory-based design (not global state) so tests remain isolated

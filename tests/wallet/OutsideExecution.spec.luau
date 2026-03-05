@@ -8,15 +8,16 @@ local StarkCurve = require("../../src/crypto/StarkCurve")
 local ECDSA = require("../../src/crypto/ECDSA")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local Constants = require("../../src/constants")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test fixtures
 --------------------------------------------------------------------------------
 
-local TEST_CHAIN_ID = "0x534e5f5345504f4c4941" -- SN_SEPOLIA
+local TEST_CHAIN_ID = TestUtils.SN_SEPOLIA
 local TEST_CALLER = "0x414e595f43414c4c4552" -- ANY_CALLER
 local TEST_NONCE = "0x1"
-local TEST_PRIVKEY = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
+local TEST_PRIVKEY = TestUtils.TEST_PRIVATE_KEY
 local TEST_ACCOUNT_ADDR = "0x65a822fbee1ae79e898688b5a4f7f5e6568f0b5cee3eb17bba58a4dea99ef1a"
 
 -- A simple Call for testing

@@ -3,22 +3,19 @@ local serde = require("@lune/serde")
 
 local RpcProvider = require("../../src/provider/RpcProvider")
 local RpcTypes = require("../../src/provider/RpcTypes")
-local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
--- Mock RPC layer (pure function-level mock, no net.serve needed)
+-- Mock RPC layer (shared TestUtils infrastructure)
 --------------------------------------------------------------------------------
 
---- Table of method handlers: method name -> function(params) -> result
-local mockHandlers: { [string]: (params: any) -> any } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
---- Reset all handlers to defaults
+--- Reset all handlers to defaults plus RpcProvider-specific handlers
 local function resetHandlers()
-	mockHandlers = {}
-
-	mockHandlers["starknet_chainId"] = function(_params)
-		return "0x534e5f5345504f4c4941" -- SN_SEPOLIA
-	end
+	rpc.resetHandlers()
 
 	mockHandlers["starknet_blockNumber"] = function(_params)
 		return 123456
@@ -28,48 +25,8 @@ local function resetHandlers()
 		return "0.7.1"
 	end
 
-	mockHandlers["starknet_getNonce"] = function(_params)
-		return "0x5"
-	end
-
 	mockHandlers["starknet_call"] = function(_params)
 		return { "0x1", "0x2" }
-	end
-
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
-	end
-
-	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
-		return { transaction_hash = "0xabc123" }
-	end
-
-	mockHandlers["starknet_getTransactionReceipt"] = function(_params)
-		return {
-			transaction_hash = "0xabc123",
-			actual_fee = { amount = "0x1234", unit = "WEI" },
-			execution_status = "SUCCEEDED",
-			finality_status = "ACCEPTED_ON_L2",
-			block_hash = "0xblock1",
-			block_number = 100,
-			events = {},
-		}
-	end
-
-	mockHandlers["starknet_getTransactionStatus"] = function(_params)
-		return {
-			finality_status = "ACCEPTED_ON_L2",
-			execution_status = "SUCCEEDED",
-		}
 	end
 
 	mockHandlers["starknet_getBlockWithTxHashes"] = function(_params)
@@ -227,91 +184,12 @@ local function resetHandlers()
 	end
 end
 
---- Track all requests received
-local requestLog: { { method: string, params: any } } = {}
-
-local function clearRequestLog()
-	requestLog = {}
-end
-
---- Create a mock HTTP function that processes requests through mockHandlers
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
-	end
-end
-
 --------------------------------------------------------------------------------
 -- Helper: create a provider with mock HTTP
 --------------------------------------------------------------------------------
 
 local function createTestProvider(overrides: { [string]: any }?): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end, -- no-op for fast tests
-		_clock = os.clock,
-	}
-
-	if overrides then
-		for k, v in overrides do
-			config[k] = v
-		end
-	end
-
-	local provider = RpcProvider.new(config)
-	-- Inject MockPromise for Lune test environment
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
+	return rpc.createTestProvider(overrides)
 end
 
 --------------------------------------------------------------------------------
@@ -363,7 +241,7 @@ describe("RpcProvider - getChainId", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getChainId():expect()
 		expect(#requestLog >= 1):toBe(true)
@@ -399,7 +277,7 @@ describe("RpcProvider - getNonce", function()
 
 	it("sends the contract address in params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0xaddr1"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -409,7 +287,7 @@ describe("RpcProvider - getNonce", function()
 
 	it("uses latest block by default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0xaddr1"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -418,7 +296,7 @@ describe("RpcProvider - getNonce", function()
 
 	it("accepts a block hash as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0xaddr1", "0xblockhash"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -427,7 +305,7 @@ describe("RpcProvider - getNonce", function()
 
 	it("accepts a block number as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0xaddr1", "100"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -436,7 +314,7 @@ describe("RpcProvider - getNonce", function()
 
 	it("accepts pending as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0xaddr1", "pending"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -460,7 +338,7 @@ describe("RpcProvider - call", function()
 
 	it("sends correct params structure", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:call({
 			contract_address = "0xcontract",
@@ -570,7 +448,7 @@ describe("RpcProvider - getClassHashAt", function()
 
 	it("sends correct params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClassHashAt("0xcontract", "latest"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -589,7 +467,7 @@ describe("RpcProvider - getStorageAt", function()
 
 	it("sends contract address, key, and block id in params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getStorageAt("0xcontract", "0xkey", "latest"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -640,7 +518,7 @@ describe("RpcProvider - JSON-RPC compliance", function()
 		local provider = createTestProvider({
 			_httpRequest = function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 				capturedBody = request.Body
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		provider:getChainId():expect()
@@ -658,7 +536,7 @@ describe("RpcProvider - JSON-RPC compliance", function()
 			_httpRequest = function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 				local parsed = serde.decode("json", request.Body :: string) :: any
 				table.insert(capturedIds, parsed.id)
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		provider:getChainId():expect()
@@ -673,7 +551,7 @@ describe("RpcProvider - JSON-RPC compliance", function()
 		local provider = createTestProvider({
 			_httpRequest = function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 				capturedHeaders = request.Headers
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		provider:getChainId():expect()
@@ -688,7 +566,7 @@ describe("RpcProvider - JSON-RPC compliance", function()
 			headers = { ["X-API-Key"] = "mykey" },
 			_httpRequest = function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 				capturedHeaders = request.Headers
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		provider:getChainId():expect()
@@ -701,7 +579,7 @@ describe("RpcProvider - JSON-RPC compliance", function()
 		local provider = createTestProvider({
 			_httpRequest = function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 				capturedMethod = request.Method
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		provider:getChainId():expect()
@@ -785,7 +663,7 @@ describe("RpcProvider - retry logic", function()
 				if callCount < 3 then
 					error("Connection timeout")
 				end
-				return createMockHttpRequest()(request)
+				return rpc.createMockHttpRequest()(request)
 			end,
 		})
 		local result = provider:getChainId():expect()
@@ -1049,7 +927,7 @@ end)
 describe("RpcProvider - block ID formatting", function()
 	it("formats nil as latest", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0x1"):expect()
 		expect(requestLog[#requestLog].params[1]):toBe("latest")
@@ -1057,7 +935,7 @@ describe("RpcProvider - block ID formatting", function()
 
 	it("formats 'latest' as string", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0x1", "latest"):expect()
 		expect(requestLog[#requestLog].params[1]):toBe("latest")
@@ -1065,7 +943,7 @@ describe("RpcProvider - block ID formatting", function()
 
 	it("formats 'pending' as string", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0x1", "pending"):expect()
 		expect(requestLog[#requestLog].params[1]):toBe("pending")
@@ -1073,7 +951,7 @@ describe("RpcProvider - block ID formatting", function()
 
 	it("formats hex string as block_hash object", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0x1", "0xabcdef"):expect()
 		expect(requestLog[#requestLog].params[1].block_hash):toBe("0xabcdef")
@@ -1081,7 +959,7 @@ describe("RpcProvider - block ID formatting", function()
 
 	it("formats numeric string as block_number object", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getNonce("0x1", "42"):expect()
 		expect(requestLog[#requestLog].params[1].block_number):toBe(42)
@@ -1114,7 +992,7 @@ describe("RpcProvider - queue enableQueue flag", function()
 
 	it("routes requests through queue when enabled", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({
 			enableQueue = true,
 			_defer = function(fn: () -> ())
@@ -1127,7 +1005,7 @@ describe("RpcProvider - queue enableQueue flag", function()
 
 	it("all existing methods work with queue enabled", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({
 			enableQueue = true,
 			_defer = function(fn: () -> ())
@@ -1167,11 +1045,10 @@ describe("RpcProvider - queue backpressure", function()
 
 		-- 3rd should be rejected (queue depth = 2)
 		local promise3 = provider:getSpecVersion()
-		-- MockPromise converts table error to string via .message, so check the string
 		expect(function()
 			promise3:expect()
 		end):toThrowMatching(function(err: any)
-			return type(err) == "string" and string.find(err, "queue full") ~= nil
+			return string.find(tostring(err), "queue full") ~= nil
 		end)
 	end)
 
@@ -1207,7 +1084,7 @@ describe("RpcProvider - getMetrics", function()
 
 	it("returns queue metrics when queue is enabled", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({
 			enableQueue = true,
 			_defer = function(fn: () -> ())
@@ -1257,7 +1134,7 @@ end)
 describe("RpcProvider - queue priority ordering", function()
 	it("dispatches HIGH before NORMAL before LOW", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local deferFns: { () -> () } = {}
 		local provider = createTestProvider({
 			enableQueue = true,
@@ -1306,7 +1183,7 @@ end)
 describe("RpcProvider - cache enablement", function()
 	it("cache is disabled by default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		-- Two calls should both hit network
 		provider:getChainId():expect()
@@ -1316,7 +1193,7 @@ describe("RpcProvider - cache enablement", function()
 
 	it("cache can be enabled via enableCache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getChainId():expect()
 		provider:getChainId():expect()
@@ -1335,7 +1212,7 @@ end)
 describe("RpcProvider - cache hit/miss", function()
 	it("second getChainId call is served from cache (no HTTP)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local r1 = provider:getChainId():expect()
 		local r2 = provider:getChainId():expect()
@@ -1345,7 +1222,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("second getSpecVersion call is served from cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local r1 = provider:getSpecVersion():expect()
 		local r2 = provider:getSpecVersion():expect()
@@ -1355,7 +1232,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("second getClassHashAt call is served from cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local r1 = provider:getClassHashAt("0xaddr1"):expect()
 		local r2 = provider:getClassHashAt("0xaddr1"):expect()
@@ -1365,7 +1242,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("different params produce separate cache entries", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getClassHashAt("0xaddr1"):expect()
 		provider:getClassHashAt("0xaddr2"):expect()
@@ -1375,7 +1252,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("getStorageAt is cached with 30s default TTL", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getStorageAt("0xaddr", "0xkey"):expect()
 		provider:getStorageAt("0xaddr", "0xkey"):expect()
@@ -1384,7 +1261,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("call is cached with 30s default TTL", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local request = {
 			contract_address = "0xaddr",
@@ -1398,7 +1275,7 @@ describe("RpcProvider - cache hit/miss", function()
 
 	it("getBlockNumber is cached briefly", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getBlockNumber():expect()
 		provider:getBlockNumber():expect()
@@ -1411,7 +1288,7 @@ end)
 describe("RpcProvider - uncacheable methods", function()
 	it("getNonce is never cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getNonce("0xaddr"):expect()
 		provider:getNonce("0xaddr"):expect()
@@ -1420,7 +1297,7 @@ describe("RpcProvider - uncacheable methods", function()
 
 	it("estimateFee is never cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local tx = {
 			type = "INVOKE",
@@ -1446,7 +1323,7 @@ describe("RpcProvider - uncacheable methods", function()
 
 	it("addInvokeTransaction is never cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local tx = {
 			type = "INVOKE",
@@ -1472,7 +1349,7 @@ describe("RpcProvider - uncacheable methods", function()
 
 	it("getTransactionReceipt is never cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getTransactionReceipt("0xtx1"):expect()
 		provider:getTransactionReceipt("0xtx1"):expect()
@@ -1481,7 +1358,7 @@ describe("RpcProvider - uncacheable methods", function()
 
 	it("getTransactionStatus is never cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getTransactionStatus("0xtx1"):expect()
 		provider:getTransactionStatus("0xtx1"):expect()
@@ -1492,7 +1369,7 @@ end)
 describe("RpcProvider - cache TTL expiration", function()
 	it("storage cache expires after TTL", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		local provider = createTestProvider({
 			enableCache = true,
@@ -1511,7 +1388,7 @@ describe("RpcProvider - cache TTL expiration", function()
 
 	it("chainId cache never expires (TTL=0)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		local provider = createTestProvider({
 			enableCache = true,
@@ -1527,7 +1404,7 @@ describe("RpcProvider - cache TTL expiration", function()
 
 	it("custom TTL overrides default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		local provider = createTestProvider({
 			enableCache = true,
@@ -1554,7 +1431,7 @@ end)
 describe("RpcProvider - cache bypass", function()
 	it("bypassCache skips cache lookup", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getChainId():expect() -- populates cache
 		expect(#requestLog):toBe(1)
@@ -1565,7 +1442,7 @@ describe("RpcProvider - cache bypass", function()
 
 	it("bypassCache does not store result in cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		-- First call with bypass — should not populate cache
 		provider:fetch("starknet_chainId", {}, { bypassCache = true }):expect()
@@ -1578,7 +1455,7 @@ end)
 describe("RpcProvider - block-based cache invalidation", function()
 	it("new block number invalidates storage cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -1612,7 +1489,7 @@ describe("RpcProvider - block-based cache invalidation", function()
 
 	it("new block does NOT invalidate chainId cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -1649,7 +1526,7 @@ describe("RpcProvider - block-based cache invalidation", function()
 
 	it("new block does NOT invalidate classHash cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -1685,7 +1562,7 @@ describe("RpcProvider - block-based cache invalidation", function()
 
 	it("new block invalidates call cache", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -1725,7 +1602,7 @@ describe("RpcProvider - block-based cache invalidation", function()
 
 	it("same block number does not invalidate", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
 			return 100
@@ -1758,7 +1635,7 @@ end)
 describe("RpcProvider - flushCache", function()
 	it("clears all cached entries", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getChainId():expect()
 		provider:getClassHashAt("0xaddr"):expect()
@@ -1776,7 +1653,7 @@ end)
 describe("RpcProvider - cache metrics", function()
 	it("reports cache metrics when cache is enabled", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 
 		local m0 = provider:getMetrics()
@@ -1807,7 +1684,7 @@ describe("RpcProvider - cache metrics", function()
 
 	it("cache evictions are tracked in metrics", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({
 			enableCache = true,
 			cacheConfig = { maxEntries = 1 },
@@ -1841,7 +1718,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithTxs():expect()
 		expect(requestLog[#requestLog].method):toBe("starknet_getBlockWithTxs")
@@ -1849,7 +1726,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("uses latest block by default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithTxs():expect()
 		expect(requestLog[#requestLog].params[1]):toBe("latest")
@@ -1857,7 +1734,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("accepts block hash as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithTxs("0xblockhash"):expect()
 		expect(requestLog[#requestLog].params[1].block_hash):toBe("0xblockhash")
@@ -1865,7 +1742,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("accepts block number as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithTxs("42"):expect()
 		expect(requestLog[#requestLog].params[1].block_number):toBe(42)
@@ -1873,7 +1750,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("accepts pending as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithTxs("pending"):expect()
 		expect(requestLog[#requestLog].params[1]):toBe("pending")
@@ -1881,7 +1758,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("is cached with blockTTL", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getBlockWithTxs():expect()
 		provider:getBlockWithTxs():expect()
@@ -1890,7 +1767,7 @@ describe("RpcProvider - getBlockWithTxs", function()
 
 	it("is invalidated on new block", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -1932,7 +1809,7 @@ describe("RpcProvider - getBlockWithReceipts", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithReceipts():expect()
 		expect(requestLog[#requestLog].method):toBe("starknet_getBlockWithReceipts")
@@ -1940,7 +1817,7 @@ describe("RpcProvider - getBlockWithReceipts", function()
 
 	it("uses latest block by default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithReceipts():expect()
 		expect(requestLog[#requestLog].params[1]):toBe("latest")
@@ -1948,7 +1825,7 @@ describe("RpcProvider - getBlockWithReceipts", function()
 
 	it("accepts block hash as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getBlockWithReceipts("0xblockhash"):expect()
 		expect(requestLog[#requestLog].params[1].block_hash):toBe("0xblockhash")
@@ -1956,7 +1833,7 @@ describe("RpcProvider - getBlockWithReceipts", function()
 
 	it("is cached with blockTTL", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getBlockWithReceipts():expect()
 		provider:getBlockWithReceipts():expect()
@@ -1965,7 +1842,7 @@ describe("RpcProvider - getBlockWithReceipts", function()
 
 	it("is invalidated on new block", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local blockNum = 100
 		local currentTime = 0
 		mockHandlers["starknet_blockNumber"] = function(_params)
@@ -2007,7 +1884,7 @@ describe("RpcProvider - getTransactionByHash", function()
 
 	it("sends correct JSON-RPC method and params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getTransactionByHash("0xmytx"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2026,7 +1903,7 @@ describe("RpcProvider - getTransactionByHash", function()
 
 	it("is not cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getTransactionByHash("0xtx1"):expect()
 		provider:getTransactionByHash("0xtx1"):expect()
@@ -2046,7 +1923,7 @@ describe("RpcProvider - getClass", function()
 
 	it("sends correct JSON-RPC method and params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClass("0xclasshash1"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2057,7 +1934,7 @@ describe("RpcProvider - getClass", function()
 
 	it("accepts block hash as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClass("0xclasshash1", "0xblockhash"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2066,7 +1943,7 @@ describe("RpcProvider - getClass", function()
 
 	it("accepts block number as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClass("0xclasshash1", "50"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2083,7 +1960,7 @@ describe("RpcProvider - getClass", function()
 
 	it("is cached indefinitely (classTTL=0)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		local provider = createTestProvider({
 			enableCache = true,
@@ -2105,7 +1982,7 @@ describe("RpcProvider - getClass", function()
 
 	it("different class hashes produce separate cache entries", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getClass("0xhash1"):expect()
 		provider:getClass("0xhash2"):expect()
@@ -2124,7 +2001,7 @@ describe("RpcProvider - getClassAt", function()
 
 	it("sends correct JSON-RPC method and params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClassAt("0xcontract1"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2135,7 +2012,7 @@ describe("RpcProvider - getClassAt", function()
 
 	it("accepts block hash as blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getClassAt("0xcontract1", "0xblockhash"):expect()
 		local lastReq = requestLog[#requestLog]
@@ -2144,7 +2021,7 @@ describe("RpcProvider - getClassAt", function()
 
 	it("is cached indefinitely (classTTL=0)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local currentTime = 0
 		local provider = createTestProvider({
 			enableCache = true,
@@ -2182,7 +2059,7 @@ describe("RpcProvider - estimateMessageFee", function()
 
 	it("sends correct JSON-RPC method and params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:estimateMessageFee({
 			from_address = "0xL1Sender",
@@ -2201,7 +2078,7 @@ describe("RpcProvider - estimateMessageFee", function()
 
 	it("accepts custom blockId", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:estimateMessageFee({
 			from_address = "0xL1Sender",
@@ -2215,7 +2092,7 @@ describe("RpcProvider - estimateMessageFee", function()
 
 	it("is not cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		local msg = {
 			from_address = "0xL1Sender",
@@ -2258,7 +2135,7 @@ describe("RpcProvider - getSyncingStats", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		provider:getSyncingStats():expect()
 		expect(requestLog[#requestLog].method):toBe("starknet_syncing")
@@ -2276,7 +2153,7 @@ describe("RpcProvider - getSyncingStats", function()
 
 	it("is not cached", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({ enableCache = true })
 		provider:getSyncingStats():expect()
 		provider:getSyncingStats():expect()
@@ -2287,7 +2164,7 @@ end)
 describe("RpcProvider - new methods work with queue", function()
 	it("all new methods work with queue enabled", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider({
 			enableQueue = true,
 			_defer = function(fn: () -> ())

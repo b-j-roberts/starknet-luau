@@ -612,58 +612,31 @@ describe("TypedData getMessageHash", function()
 end)
 
 describe("TypedData Account integration", function()
-	it("hashMessage returns correct hash", function()
-		local StarkSigner = require("../../src/signer/StarkSigner")
-		local RpcProvider = require("../../src/provider/RpcProvider")
-		local Account = require("../../src/wallet/Account")
-		local MockPromise = require("../helpers/MockPromise")
+	local BigInt = require("../../src/crypto/BigInt")
+	local StarkSigner = require("../../src/signer/StarkSigner")
+	local ECDSA = require("../../src/crypto/ECDSA")
+	local Account = require("../../src/wallet/Account")
+	local TestUtils = require("../helpers/TestUtils")
 
-		local function mockHttp(_url: string, _method: string, _body: string?): (number, string)
-			return 200, '{"jsonrpc":"2.0","id":1,"result":"0x0"}'
-		end
-		local provider = RpcProvider.new({
-			nodeUrl = "https://mock.example.com",
-			_httpRequest = mockHttp,
-			_Promise = MockPromise,
-		})
-
-		local privKey = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-		local signer = StarkSigner.new(privKey)
-		local account = Account.new({
+	local function createTestAccount(): any
+		local rpc = TestUtils.createMockRpcLayer()
+		local provider = rpc.createTestProvider()
+		local signer = StarkSigner.new(TestUtils.TEST_PRIVATE_KEY)
+		return Account.new({
 			address = exampleAddress,
 			signer = signer,
 			provider = provider,
-		})
+		}), signer
+	end
 
+	it("hashMessage returns correct hash", function()
+		local account = createTestAccount()
 		local hash = account:hashMessage(typedDataExample)
 		expect(hash):toBe("0x6fcff244f63e38b9d88b9e3378d44757710d1b244282b435cb472053c8d78d0")
 	end)
 
 	it("signMessage returns valid signature", function()
-		local BigInt = require("../../src/crypto/BigInt")
-		local StarkSigner = require("../../src/signer/StarkSigner")
-		local ECDSA = require("../../src/crypto/ECDSA")
-		local RpcProvider = require("../../src/provider/RpcProvider")
-		local Account = require("../../src/wallet/Account")
-		local MockPromise = require("../helpers/MockPromise")
-
-		local function mockHttp(_url: string, _method: string, _body: string?): (number, string)
-			return 200, '{"jsonrpc":"2.0","id":1,"result":"0x0"}'
-		end
-		local provider = RpcProvider.new({
-			nodeUrl = "https://mock.example.com",
-			_httpRequest = mockHttp,
-			_Promise = MockPromise,
-		})
-
-		local privKey = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-		local signer = StarkSigner.new(privKey)
-		local account = Account.new({
-			address = exampleAddress,
-			signer = signer,
-			provider = provider,
-		})
-
+		local account, signer = createTestAccount()
 		local sig = account:signMessage(typedDataExample)
 		expect(#sig):toBe(2)
 		-- Verify the signature
@@ -676,30 +649,7 @@ describe("TypedData Account integration", function()
 	end)
 
 	it("signMessage for ACTIVE revision", function()
-		local BigInt = require("../../src/crypto/BigInt")
-		local StarkSigner = require("../../src/signer/StarkSigner")
-		local ECDSA = require("../../src/crypto/ECDSA")
-		local RpcProvider = require("../../src/provider/RpcProvider")
-		local Account = require("../../src/wallet/Account")
-		local MockPromise = require("../helpers/MockPromise")
-
-		local function mockHttp(_url: string, _method: string, _body: string?): (number, string)
-			return 200, '{"jsonrpc":"2.0","id":1,"result":"0x0"}'
-		end
-		local provider = RpcProvider.new({
-			nodeUrl = "https://mock.example.com",
-			_httpRequest = mockHttp,
-			_Promise = MockPromise,
-		})
-
-		local privKey = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-		local signer = StarkSigner.new(privKey)
-		local account = Account.new({
-			address = exampleAddress,
-			signer = signer,
-			provider = provider,
-		})
-
+		local account, signer = createTestAccount()
 		local sig = account:signMessage(exampleBaseTypes)
 		expect(#sig):toBe(2)
 		-- Verify the signature

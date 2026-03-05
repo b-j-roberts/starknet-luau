@@ -1,80 +1,7 @@
 --!strict
 local PaymasterPolicy = require("../../src/paymaster/PaymasterPolicy")
 local BigInt = require("../../src/crypto/BigInt")
-
---------------------------------------------------------------------------------
--- Helpers
---------------------------------------------------------------------------------
-
-local passed = 0
-local failed = 0
-local errors: { string } = {}
-
-local function test(name: string, fn: () -> ())
-	local ok, err = pcall(fn)
-	if ok then
-		passed += 1
-		print("  ✓ " .. name)
-	else
-		failed += 1
-		local msg = tostring(err)
-		table.insert(errors, name .. ": " .. msg)
-		print("  ✗ " .. name .. " — " .. msg)
-	end
-end
-
-local function describe(name: string, fn: () -> ())
-	print("\n" .. name)
-	fn()
-end
-
-local function expect(val: any)
-	return {
-		toBe = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toEqual = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toBeTruthy = function()
-			if not val then
-				error("Expected truthy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeFalsy = function()
-			if val then
-				error("Expected falsy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeNil = function()
-			if val ~= nil then
-				error("Expected nil but got " .. tostring(val), 2)
-			end
-		end,
-		toContain = function(substring: string)
-			if type(val) ~= "string" or not string.find(val, substring, 1, true) then
-				error("Expected string containing '" .. substring .. "' but got " .. tostring(val), 2)
-			end
-		end,
-	}
-end
-
-local function expectError(fn: () -> (), pattern: string?)
-	local ok, err = pcall(fn)
-	if ok then
-		error("Expected error but none was thrown", 2)
-	end
-	if pattern then
-		local msg = tostring(err)
-		if not string.find(msg, pattern, 1, true) then
-			error("Expected error containing '" .. pattern .. "' but got: " .. msg, 2)
-		end
-	end
-end
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test constants
@@ -96,26 +23,17 @@ local function makeCall(contractAddress: string, entrypoint: string, calldata: {
 	}
 end
 
-local function makeClock(startTime: number): () -> number
-	local time = startTime
-	return function(): number
-		return time
-	end, function(newTime: number)
-		time = newTime
-	end
-end
-
 --------------------------------------------------------------------------------
 -- Tests: Constructor
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy.new", function()
-	test("creates policy with minimal config", function()
+	it("creates policy with minimal config", function()
 		local policy = PaymasterPolicy.new({})
-		expect(policy).toBeTruthy()
+		expect(policy):toBeTruthy()
 	end)
 
-	test("creates policy with all options", function()
+	it("creates policy with all options", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
@@ -124,10 +42,10 @@ describe("PaymasterPolicy.new", function()
 			maxTxPerPlayer = 5,
 			timeWindow = 60,
 		})
-		expect(policy).toBeTruthy()
+		expect(policy):toBeTruthy()
 	end)
 
-	test("accepts empty arrays (no restriction)", function()
+	it("accepts empty arrays (no restriction)", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = {},
 			allowedMethods = {},
@@ -135,74 +53,90 @@ describe("PaymasterPolicy.new", function()
 		})
 		-- Empty arrays = no restriction, same as omitting
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("accepts maxFeePerTx as hex string", function()
+	it("accepts maxFeePerTx as hex string", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0xDE0B6B3A7640000" })
-		expect(policy).toBeTruthy()
+		expect(policy):toBeTruthy()
 	end)
 
-	test("accepts maxFeePerTx as BigInt buffer", function()
+	it("accepts maxFeePerTx as BigInt buffer", function()
 		local fee = BigInt.fromHex("0xDE0B6B3A7640000")
 		local policy = PaymasterPolicy.new({ maxFeePerTx = fee })
-		expect(policy).toBeTruthy()
+		expect(policy):toBeTruthy()
 	end)
 
-	test("rejects allowedContracts entry without address", function()
-		expectError(function()
+	it("rejects allowedContracts entry without address", function()
+		expect(function()
 			PaymasterPolicy.new({
 				allowedContracts = { { address = "" } },
 			})
-		end, "allowedContracts entry must have an address")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "allowedContracts entry must have an address", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects allowedMethods entry without contract", function()
-		expectError(function()
+	it("rejects allowedMethods entry without contract", function()
+		expect(function()
 			PaymasterPolicy.new({
 				allowedMethods = { { contract = "", selector = "transfer" } },
 			})
-		end, "allowedMethods entry must have a contract address")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "allowedMethods entry must have a contract address", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects allowedMethods entry without selector", function()
-		expectError(function()
+	it("rejects allowedMethods entry without selector", function()
+		expect(function()
 			PaymasterPolicy.new({
 				allowedMethods = { { contract = GAME_CONTRACT, selector = "" } },
 			})
-		end, "allowedMethods entry must have a selector")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "allowedMethods entry must have a selector", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects allowedPlayers entry without playerId", function()
-		expectError(function()
+	it("rejects allowedPlayers entry without playerId", function()
+		expect(function()
 			PaymasterPolicy.new({
 				allowedPlayers = { { playerId = nil :: any } },
 			})
-		end, "allowedPlayers entry must have a playerId")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "allowedPlayers entry must have a playerId", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects maxTxPerPlayer <= 0", function()
-		expectError(function()
+	it("rejects maxTxPerPlayer <= 0", function()
+		expect(function()
 			PaymasterPolicy.new({ maxTxPerPlayer = 0, timeWindow = 60 })
-		end, "maxTxPerPlayer must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "maxTxPerPlayer must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects negative maxTxPerPlayer", function()
-		expectError(function()
+	it("rejects negative maxTxPerPlayer", function()
+		expect(function()
 			PaymasterPolicy.new({ maxTxPerPlayer = -1, timeWindow = 60 })
-		end, "maxTxPerPlayer must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "maxTxPerPlayer must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects timeWindow <= 0", function()
-		expectError(function()
+	it("rejects timeWindow <= 0", function()
+		expect(function()
 			PaymasterPolicy.new({ maxTxPerPlayer = 5, timeWindow = 0 })
-		end, "timeWindow must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "timeWindow must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects maxTxPerPlayer without timeWindow", function()
-		expectError(function()
+	it("rejects maxTxPerPlayer without timeWindow", function()
+		expect(function()
 			PaymasterPolicy.new({ maxTxPerPlayer = 5 })
-		end, "timeWindow is required when maxTxPerPlayer is set")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "timeWindow is required when maxTxPerPlayer is set", 1, true) ~= nil
+		end)
 	end)
 end)
 
@@ -211,28 +145,28 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — player whitelist", function()
-	test("allows any player when no whitelist", function()
+	it("allows any player when no whitelist", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows whitelisted player", function()
+	it("allows whitelisted player", function()
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 }, { playerId = PLAYER_2 } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects non-whitelisted player", function()
+	it("rejects non-whitelisted player", function()
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 } },
 		})
 		local result = policy:validate(PLAYER_3, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("not in the allowed players list")
-		expect(result.reason).toContain(tostring(PLAYER_3))
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("not in the allowed players list")
+		expect(result.reason):toContain(tostring(PLAYER_3))
 	end)
 end)
 
@@ -241,47 +175,47 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — contract whitelist", function()
-	test("allows any contract when no whitelist", function()
+	it("allows any contract when no whitelist", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, { makeCall(OTHER_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows whitelisted contract", function()
+	it("allows whitelisted contract", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects non-whitelisted contract", function()
+	it("rejects non-whitelisted contract", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall(OTHER_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("not in the allowed contracts list")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("not in the allowed contracts list")
 	end)
 
-	test("normalizes hex addresses for comparison", function()
+	it("normalizes hex addresses for comparison", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = "0x00ABC" } },
 		})
 		-- Same address with different formatting
 		local result = policy:validate(PLAYER_1, { makeCall("0x0abc", "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("normalizes uppercase vs lowercase", function()
+	it("normalizes uppercase vs lowercase", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = "0xABCDEF" } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall("0xabcdef", "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("validates all calls in multicall", function()
+	it("validates all calls in multicall", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
@@ -289,11 +223,11 @@ describe("PaymasterPolicy:validate — contract whitelist", function()
 			makeCall(GAME_CONTRACT, "approve"),
 			makeCall(OTHER_CONTRACT, "transfer"),
 		})
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("not in the allowed contracts list")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("not in the allowed contracts list")
 	end)
 
-	test("allows multicall when all contracts whitelisted", function()
+	it("allows multicall when all contracts whitelisted", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT }, { address = TOKEN_CONTRACT } },
 		})
@@ -301,22 +235,22 @@ describe("PaymasterPolicy:validate — contract whitelist", function()
 			makeCall(GAME_CONTRACT, "approve"),
 			makeCall(TOKEN_CONTRACT, "transfer"),
 		})
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects call without contractAddress", function()
+	it("rejects call without contractAddress", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, { { entrypoint = "transfer" } })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("missing contractAddress")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("missing contractAddress")
 	end)
 
-	test("accepts 'to' as alias for contractAddress", function()
+	it("accepts 'to' as alias for contractAddress", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
 		local result = policy:validate(PLAYER_1, { { to = GAME_CONTRACT, entrypoint = "transfer" } })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 end)
 
@@ -325,65 +259,65 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — method whitelist", function()
-	test("allows any method when no whitelist", function()
+	it("allows any method when no whitelist", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "anything") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows whitelisted method", function()
+	it("allows whitelisted method", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects non-whitelisted method", function()
+	it("rejects non-whitelisted method", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "approve") })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("not allowed")
-		expect(result.reason).toContain("approve")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("not allowed")
+		expect(result.reason):toContain("approve")
 	end)
 
-	test("method whitelist is per-contract", function()
+	it("method whitelist is per-contract", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
 		-- Same method on different contract is not allowed
 		local result = policy:validate(PLAYER_1, { makeCall(TOKEN_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
+		expect(result.allowed):toBe(false)
 	end)
 
-	test("normalizes contract address in method whitelist", function()
+	it("normalizes contract address in method whitelist", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = "0x00ABC", selector = "transfer" } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall("0xabc", "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects call without entrypoint when methods restricted", function()
+	it("rejects call without entrypoint when methods restricted", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
 		local result = policy:validate(PLAYER_1, { { contractAddress = GAME_CONTRACT } })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("missing entrypoint")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("missing entrypoint")
 	end)
 
-	test("accepts 'selector' field on call as entrypoint alias", function()
+	it("accepts 'selector' field on call as entrypoint alias", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
 		local result = policy:validate(PLAYER_1, { { contractAddress = GAME_CONTRACT, selector = "transfer" } })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows multiple methods on same contract", function()
+	it("allows multiple methods on same contract", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = {
 				{ contract = GAME_CONTRACT, selector = "transfer" },
@@ -392,8 +326,8 @@ describe("PaymasterPolicy:validate — method whitelist", function()
 		})
 		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
 		local r2 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "approve") })
-		expect(r1.allowed).toBe(true)
-		expect(r2.allowed).toBe(true)
+		expect(r1.allowed):toBe(true)
+		expect(r2.allowed):toBe(true)
 	end)
 end)
 
@@ -402,16 +336,16 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — rate limiting", function()
-	test("allows transactions when no rate limit configured", function()
+	it("allows transactions when no rate limit configured", function()
 		local policy = PaymasterPolicy.new({})
 		for _ = 1, 100 do
 			local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-			expect(result.allowed).toBe(true)
+			expect(result.allowed):toBe(true)
 		end
 	end)
 
-	test("allows transactions under limit", function()
-		local clock, setClock = makeClock(1000)
+	it("allows transactions under limit", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 3,
 			timeWindow = 60,
@@ -422,11 +356,11 @@ describe("PaymasterPolicy:validate — rate limiting", function()
 		policy:recordUsage(PLAYER_1)
 		-- 2 recorded, limit is 3 — should still allow
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects transactions at limit", function()
-		local clock, _setClock = makeClock(1000)
+	it("rejects transactions at limit", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 3,
 			timeWindow = 60,
@@ -438,12 +372,12 @@ describe("PaymasterPolicy:validate — rate limiting", function()
 		policy:recordUsage(PLAYER_1)
 		-- 3 recorded, limit is 3 — should reject
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("exceeded")
-		expect(result.reason).toContain("3")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("exceeded")
+		expect(result.reason):toContain("3")
 	end)
 
-	test("allows transactions after time window expires", function()
+	it("allows transactions after time window expires", function()
 		local currentTime = 1000
 		local clock = function()
 			return currentTime
@@ -460,18 +394,18 @@ describe("PaymasterPolicy:validate — rate limiting", function()
 
 		-- At limit — should reject
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
+		expect(result.allowed):toBe(false)
 
 		-- Advance time past window
 		currentTime = 1061
 
 		-- Should allow again
 		local result2 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result2.allowed).toBe(true)
+		expect(result2.allowed):toBe(true)
 	end)
 
-	test("tracks players independently", function()
-		local clock, _setClock = makeClock(1000)
+	it("tracks players independently", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 1,
 			timeWindow = 60,
@@ -482,14 +416,14 @@ describe("PaymasterPolicy:validate — rate limiting", function()
 
 		-- Player 1 at limit
 		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r1.allowed).toBe(false)
+		expect(r1.allowed):toBe(false)
 
 		-- Player 2 has no usage
 		local r2 = policy:validate(PLAYER_2, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r2.allowed).toBe(true)
+		expect(r2.allowed):toBe(true)
 	end)
 
-	test("sliding window removes only expired entries", function()
+	it("sliding window removes only expired entries", function()
 		local currentTime = 1000
 		local clock = function()
 			return currentTime
@@ -510,12 +444,12 @@ describe("PaymasterPolicy:validate — rate limiting", function()
 		-- At t=1050: both in window, should reject
 		currentTime = 1050
 		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r1.allowed).toBe(false)
+		expect(r1.allowed):toBe(false)
 
 		-- At t=1061: first expired, second still in window — 1 usage, allow
 		currentTime = 1061
 		local r2 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r2.allowed).toBe(true)
+		expect(r2.allowed):toBe(true)
 	end)
 end)
 
@@ -524,7 +458,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — combined rules", function()
-	test("checks player first, then contracts, then methods", function()
+	it("checks player first, then contracts, then methods", function()
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 } },
 			allowedContracts = { { address = GAME_CONTRACT } },
@@ -533,26 +467,26 @@ describe("PaymasterPolicy:validate — combined rules", function()
 
 		-- Unauthorized player with valid contract/method
 		local r1 = policy:validate(PLAYER_3, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r1.allowed).toBe(false)
-		expect(r1.reason).toContain("not in the allowed players list")
+		expect(r1.allowed):toBe(false)
+		expect(r1.reason):toContain("not in the allowed players list")
 
 		-- Authorized player with invalid contract
 		local r2 = policy:validate(PLAYER_1, { makeCall(OTHER_CONTRACT, "transfer") })
-		expect(r2.allowed).toBe(false)
-		expect(r2.reason).toContain("not in the allowed contracts list")
+		expect(r2.allowed):toBe(false)
+		expect(r2.reason):toContain("not in the allowed contracts list")
 
 		-- Authorized player, valid contract, invalid method
 		local r3 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "approve") })
-		expect(r3.allowed).toBe(false)
-		expect(r3.reason).toContain("not allowed")
+		expect(r3.allowed):toBe(false)
+		expect(r3.reason):toContain("not allowed")
 
 		-- All valid
 		local r4 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r4.allowed).toBe(true)
+		expect(r4.allowed):toBe(true)
 	end)
 
-	test("rate limit checked after whitelist checks", function()
-		local clock, _setClock = makeClock(1000)
+	it("rate limit checked after whitelist checks", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 } },
 			allowedContracts = { { address = GAME_CONTRACT } },
@@ -564,8 +498,8 @@ describe("PaymasterPolicy:validate — combined rules", function()
 		policy:recordUsage(PLAYER_1)
 
 		local result = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("exceeded")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("exceeded")
 	end)
 end)
 
@@ -574,29 +508,29 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validate — edge cases", function()
-	test("rejects empty calls array", function()
+	it("rejects empty calls array", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, {})
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("At least one call is required")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("At least one call is required")
 	end)
 
-	test("handles nil calls", function()
+	it("handles nil calls", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validate(PLAYER_1, nil :: any)
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("At least one call is required")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("At least one call is required")
 	end)
 
-	test("handles zero address correctly", function()
+	it("handles zero address correctly", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = "0x0" } },
 		})
 		local result = policy:validate(PLAYER_1, { makeCall("0x0000", "transfer") })
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("large multicall with all valid calls", function()
+	it("large multicall with all valid calls", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
@@ -605,10 +539,10 @@ describe("PaymasterPolicy:validate — edge cases", function()
 			table.insert(calls, makeCall(GAME_CONTRACT, "method_" .. tostring(i)))
 		end
 		local result = policy:validate(PLAYER_1, calls)
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects at first invalid call in multicall", function()
+	it("rejects at first invalid call in multicall", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
@@ -618,8 +552,8 @@ describe("PaymasterPolicy:validate — edge cases", function()
 			makeCall(OTHER_CONTRACT, "steal"),
 			makeCall(GAME_CONTRACT, "finalize"),
 		})
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain(OTHER_CONTRACT)
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain(OTHER_CONTRACT)
 	end)
 end)
 
@@ -628,70 +562,70 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:validateFee", function()
-	test("allows any fee when no limit set", function()
+	it("allows any fee when no limit set", function()
 		local policy = PaymasterPolicy.new({})
 		local result = policy:validateFee(PLAYER_1, "0xFFFFFFFFFFFFFFFF")
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows fee under limit (hex string)", function()
+	it("allows fee under limit (hex string)", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0x1000" })
 		local result = policy:validateFee(PLAYER_1, "0xFFF")
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows fee equal to limit", function()
+	it("allows fee equal to limit", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0x1000" })
 		local result = policy:validateFee(PLAYER_1, "0x1000")
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("rejects fee over limit", function()
+	it("rejects fee over limit", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0x1000" })
 		local result = policy:validateFee(PLAYER_1, "0x1001")
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("exceeds maximum")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("exceeds maximum")
 	end)
 
-	test("works with BigInt buffer input", function()
+	it("works with BigInt buffer input", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0x1000" })
 		local fee = BigInt.fromHex("0x2000")
 		local result = policy:validateFee(PLAYER_1, fee)
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("exceeds maximum")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("exceeds maximum")
 	end)
 
-	test("works with large fee values (1 ETH)", function()
+	it("works with large fee values (1 ETH)", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0xDE0B6B3A7640000" }) -- 1e18
 		local r1 = policy:validateFee(PLAYER_1, "0xDE0B6B3A763FFFF") -- slightly under
-		expect(r1.allowed).toBe(true)
+		expect(r1.allowed):toBe(true)
 		local r2 = policy:validateFee(PLAYER_1, "0xDE0B6B3A7640001") -- slightly over
-		expect(r2.allowed).toBe(false)
+		expect(r2.allowed):toBe(false)
 	end)
 
-	test("checks player whitelist for fee validation", function()
+	it("checks player whitelist for fee validation", function()
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 } },
 			maxFeePerTx = "0x1000",
 		})
 		local result = policy:validateFee(PLAYER_3, "0x100")
-		expect(result.allowed).toBe(false)
-		expect(result.reason).toContain("not in the allowed players list")
+		expect(result.allowed):toBe(false)
+		expect(result.reason):toContain("not in the allowed players list")
 	end)
 
-	test("allows whitelisted player with valid fee", function()
+	it("allows whitelisted player with valid fee", function()
 		local policy = PaymasterPolicy.new({
 			allowedPlayers = { { playerId = PLAYER_1 } },
 			maxFeePerTx = "0x1000",
 		})
 		local result = policy:validateFee(PLAYER_1, "0x100")
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 
-	test("allows any player when no player whitelist for fee validation", function()
+	it("allows any player when no player whitelist for fee validation", function()
 		local policy = PaymasterPolicy.new({ maxFeePerTx = "0x1000" })
 		local result = policy:validateFee(PLAYER_3, "0x100")
-		expect(result.allowed).toBe(true)
+		expect(result.allowed):toBe(true)
 	end)
 end)
 
@@ -700,31 +634,31 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:recordUsage", function()
-	test("no-op when rate limiting not configured", function()
+	it("no-op when rate limiting not configured", function()
 		local policy = PaymasterPolicy.new({})
 		-- Should not error
 		policy:recordUsage(PLAYER_1)
 		policy:recordUsage(PLAYER_1)
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
 	end)
 
-	test("increments usage count", function()
-		local clock, _setClock = makeClock(1000)
+	it("increments usage count", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 10,
 			timeWindow = 60,
 			_clock = clock,
 		})
 
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
 		policy:recordUsage(PLAYER_1)
-		expect(policy:getUsageCount(PLAYER_1)).toBe(1)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(1)
 		policy:recordUsage(PLAYER_1)
-		expect(policy:getUsageCount(PLAYER_1)).toBe(2)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(2)
 	end)
 
-	test("tracks players separately", function()
-		local clock, _setClock = makeClock(1000)
+	it("tracks players separately", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 10,
 			timeWindow = 60,
@@ -735,8 +669,8 @@ describe("PaymasterPolicy:recordUsage", function()
 		policy:recordUsage(PLAYER_1)
 		policy:recordUsage(PLAYER_2)
 
-		expect(policy:getUsageCount(PLAYER_1)).toBe(2)
-		expect(policy:getUsageCount(PLAYER_2)).toBe(1)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(2)
+		expect(policy:getUsageCount(PLAYER_2)):toBe(1)
 	end)
 end)
 
@@ -745,8 +679,8 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:resetUsage", function()
-	test("resets specific player", function()
-		local clock, _setClock = makeClock(1000)
+	it("resets specific player", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 10,
 			timeWindow = 60,
@@ -757,12 +691,12 @@ describe("PaymasterPolicy:resetUsage", function()
 		policy:recordUsage(PLAYER_2)
 		policy:resetUsage(PLAYER_1)
 
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
-		expect(policy:getUsageCount(PLAYER_2)).toBe(1)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
+		expect(policy:getUsageCount(PLAYER_2)):toBe(1)
 	end)
 
-	test("resets all players when nil", function()
-		local clock, _setClock = makeClock(1000)
+	it("resets all players when nil", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 10,
 			timeWindow = 60,
@@ -773,12 +707,12 @@ describe("PaymasterPolicy:resetUsage", function()
 		policy:recordUsage(PLAYER_2)
 		policy:resetUsage()
 
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
-		expect(policy:getUsageCount(PLAYER_2)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
+		expect(policy:getUsageCount(PLAYER_2)):toBe(0)
 	end)
 
-	test("allows transactions after reset", function()
-		local clock, _setClock = makeClock(1000)
+	it("allows transactions after reset", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 1,
 			timeWindow = 60,
@@ -787,11 +721,11 @@ describe("PaymasterPolicy:resetUsage", function()
 
 		policy:recordUsage(PLAYER_1)
 		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r1.allowed).toBe(false)
+		expect(r1.allowed):toBe(false)
 
 		policy:resetUsage(PLAYER_1)
 		local r2 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
-		expect(r2.allowed).toBe(true)
+		expect(r2.allowed):toBe(true)
 	end)
 end)
 
@@ -800,22 +734,22 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy:getUsageCount", function()
-	test("returns 0 when no rate limit configured", function()
+	it("returns 0 when no rate limit configured", function()
 		local policy = PaymasterPolicy.new({})
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
 	end)
 
-	test("returns 0 for unknown player", function()
-		local clock, _setClock = makeClock(1000)
+	it("returns 0 for unknown player", function()
+		local clock, _setClock = TestUtils.makeClock(1000)
 		local policy = PaymasterPolicy.new({
 			maxTxPerPlayer = 10,
 			timeWindow = 60,
 			_clock = clock,
 		})
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
 	end)
 
-	test("excludes expired entries", function()
+	it("excludes expired entries", function()
 		local currentTime = 1000
 		local clock = function()
 			return currentTime
@@ -832,15 +766,15 @@ describe("PaymasterPolicy:getUsageCount", function()
 
 		-- At t=1050: both in window
 		currentTime = 1050
-		expect(policy:getUsageCount(PLAYER_1)).toBe(2)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(2)
 
 		-- At t=1061: first expired
 		currentTime = 1061
-		expect(policy:getUsageCount(PLAYER_1)).toBe(1)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(1)
 
 		-- At t=1091: both expired
 		currentTime = 1091
-		expect(policy:getUsageCount(PLAYER_1)).toBe(0)
+		expect(policy:getUsageCount(PLAYER_1)):toBe(0)
 	end)
 end)
 
@@ -849,7 +783,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterPolicy — integration scenario", function()
-	test("game server policy: whitelisted players + contracts + rate limit + fee cap", function()
+	it("game server policy: whitelisted players + contracts + rate limit + fee cap", function()
 		local currentTime = 1000
 		local clock = function()
 			return currentTime
@@ -871,9 +805,9 @@ describe("PaymasterPolicy — integration scenario", function()
 
 		-- Player 1 makes a valid game action
 		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "move") })
-		expect(r1.allowed).toBe(true)
+		expect(r1.allowed):toBe(true)
 		local f1 = policy:validateFee(PLAYER_1, "0x5AF3107A4000") -- 0.0001 ETH
-		expect(f1.allowed).toBe(true)
+		expect(f1.allowed):toBe(true)
 		policy:recordUsage(PLAYER_1)
 
 		-- Player 1 tries multicall: game action + token transfer
@@ -881,64 +815,50 @@ describe("PaymasterPolicy — integration scenario", function()
 			makeCall(GAME_CONTRACT, "attack"),
 			makeCall(TOKEN_CONTRACT, "transfer"),
 		})
-		expect(r2.allowed).toBe(true)
+		expect(r2.allowed):toBe(true)
 		policy:recordUsage(PLAYER_1)
 
 		-- Unauthorized player 3 tries
 		local r3 = policy:validate(PLAYER_3, { makeCall(GAME_CONTRACT, "move") })
-		expect(r3.allowed).toBe(false)
+		expect(r3.allowed):toBe(false)
 
 		-- Player 1 tries unauthorized contract
 		local r4 = policy:validate(PLAYER_1, { makeCall(OTHER_CONTRACT, "steal") })
-		expect(r4.allowed).toBe(false)
+		expect(r4.allowed):toBe(false)
 
 		-- Player 1 tries unauthorized method
 		local r5 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "admin_reset") })
-		expect(r5.allowed).toBe(false)
+		expect(r5.allowed):toBe(false)
 
 		-- Player 1 tries excessive fee
 		local f2 = policy:validateFee(PLAYER_1, "0xDE0B6B3A7640000") -- 1 ETH
-		expect(f2.allowed).toBe(false)
+		expect(f2.allowed):toBe(false)
 
 		-- Use up the rate limit for player 2
 		for _ = 1, 10 do
 			policy:recordUsage(PLAYER_2)
 		end
 		local r6 = policy:validate(PLAYER_2, { makeCall(GAME_CONTRACT, "move") })
-		expect(r6.allowed).toBe(false)
-		expect(r6.reason).toContain("exceeded")
+		expect(r6.allowed):toBe(false)
+		expect(r6.reason):toContain("exceeded")
 
 		-- After time window, player 2 can transact again
 		currentTime = 1301
 		local r7 = policy:validate(PLAYER_2, { makeCall(GAME_CONTRACT, "move") })
-		expect(r7.allowed).toBe(true)
+		expect(r7.allowed):toBe(true)
 	end)
 
-	test("open policy: no restrictions except fee cap", function()
+	it("open policy: no restrictions except fee cap", function()
 		local policy = PaymasterPolicy.new({
 			maxFeePerTx = "0x2386F26FC10000",
 		})
 
 		-- Anyone, any contract, any method
 		local r1 = policy:validate(99999, { makeCall(OTHER_CONTRACT, "anything") })
-		expect(r1.allowed).toBe(true)
+		expect(r1.allowed):toBe(true)
 
 		-- But fee is capped
 		local f1 = policy:validateFee(99999, "0xDE0B6B3A7640000")
-		expect(f1.allowed).toBe(false)
+		expect(f1.allowed):toBe(false)
 	end)
 end)
-
---------------------------------------------------------------------------------
--- Summary
---------------------------------------------------------------------------------
-
-print("\n" .. string.rep("—", 60))
-print("PaymasterPolicy: " .. tostring(passed) .. " passed, " .. tostring(failed) .. " failed")
-if #errors > 0 then
-	print("\nFailed tests:")
-	for _, e in errors do
-		print("  • " .. e)
-	end
-end
-print(string.rep("—", 60))

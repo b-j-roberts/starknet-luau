@@ -2,17 +2,20 @@
 local serde = require("@lune/serde")
 
 local PaymasterRpc = require("../../src/paymaster/PaymasterRpc")
-local RpcTypes = require("../../src/provider/RpcTypes")
 local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
--- Mock RPC layer
+-- Mock RPC layer (shared infrastructure from TestUtils)
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
+--- Install paymaster-specific default handlers (called after rpc.resetHandlers())
 local function resetHandlers()
-	mockHandlers = {}
+	rpc.resetHandlers()
 
 	mockHandlers["paymaster_isAvailable"] = function(_params)
 		return true
@@ -100,64 +103,17 @@ local function resetHandlers()
 	end
 end
 
---- Track all requests
-local requestLog: { { method: string, params: any, headers: { [string]: string }? } } = {}
-
-local function clearRequestLog()
-	requestLog = {}
-end
-
---- Create mock HTTP function
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params, headers = request.Headers })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
+--- Create a paymaster-specific mock HTTP function that also logs headers
+local function createMockPaymasterHttpRequest(): (request: any) -> any
+	local baseHttpRequest = rpc.createMockHttpRequest()
+	return function(request: any): any
+		-- Capture headers in requestLog (the base mock already logs method/params)
+		local response = baseHttpRequest(request)
+		-- Patch the last requestLog entry to include headers
+		if #requestLog > 0 then
+			requestLog[#requestLog].headers = request.Headers
 		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
+		return response
 	end
 end
 
@@ -170,7 +126,7 @@ local function createTestPaymaster(overrides: { [string]: any }?): any
 		nodeUrl = "http://mock-paymaster.test",
 		retryAttempts = 1,
 		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
+		_httpRequest = createMockPaymasterHttpRequest(),
 		_sleep = function(_seconds: number) end,
 		_clock = os.clock,
 	}
@@ -227,7 +183,7 @@ describe("PaymasterRpc - constructor", function()
 	it("defaults retryAttempts to 3", function()
 		local config: any = {
 			nodeUrl = "http://mock-paymaster.test",
-			_httpRequest = createMockHttpRequest(),
+			_httpRequest = createMockPaymasterHttpRequest(),
 			_sleep = function(_s: number) end,
 			_clock = os.clock,
 		}
@@ -238,7 +194,7 @@ describe("PaymasterRpc - constructor", function()
 	it("defaults retryDelay to 1", function()
 		local config: any = {
 			nodeUrl = "http://mock-paymaster.test",
-			_httpRequest = createMockHttpRequest(),
+			_httpRequest = createMockPaymasterHttpRequest(),
 			_sleep = function(_s: number) end,
 			_clock = os.clock,
 		}
@@ -282,7 +238,7 @@ describe("PaymasterRpc - isAvailable", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:isAvailable():expect()
 		expect(#requestLog >= 1):toBe(true)
@@ -331,7 +287,7 @@ describe("PaymasterRpc - getSupportedTokens", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:getSupportedTokens():expect()
 		expect(requestLog[#requestLog].method):toBe("paymaster_getSupportedTokens")
@@ -395,7 +351,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser123",
@@ -407,7 +363,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("formats calls correctly in request params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData("0xuser123", {
 			{
@@ -435,7 +391,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("sets default fee mode for non-zero gas token", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -451,7 +407,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("sets sponsored fee mode for zero gas token", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -466,7 +422,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("sets sponsored fee mode for empty gas token", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -481,7 +437,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("includes deployment data for deploy-via-paymaster", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -509,7 +465,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("includes account class hash when provided without deployment data", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -542,7 +498,7 @@ describe("PaymasterRpc - buildTypedData", function()
 
 	it("sets version parameter to 0x1", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -583,7 +539,7 @@ describe("PaymasterRpc - executeTransaction", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:executeTransaction(
 			"0xuser",
@@ -595,7 +551,7 @@ describe("PaymasterRpc - executeTransaction", function()
 
 	it("passes user address and signature correctly", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:executeTransaction(
 			"0xuser456",
@@ -613,7 +569,7 @@ describe("PaymasterRpc - executeTransaction", function()
 
 	it("includes typed data in request", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local typedData = { types = { Foo = {} }, primaryType = "Foo", domain = { name = "test" }, message = {} }
 		local pm = createTestPaymaster()
 		pm:executeTransaction("0xuser", typedData, { "0xr", "0xs" }):expect()
@@ -624,7 +580,7 @@ describe("PaymasterRpc - executeTransaction", function()
 
 	it("includes deployment data for deploy-via-paymaster", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:executeTransaction(
 			"0xuser",
@@ -650,7 +606,7 @@ describe("PaymasterRpc - executeTransaction", function()
 
 	it("sets sponsored fee mode in parameters", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:executeTransaction(
 			"0xuser",
@@ -674,7 +630,7 @@ describe("PaymasterRpc - trackingIdToLatestHash", function()
 
 	it("sends correct JSON-RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:trackingIdToLatestHash("track-99"):expect()
 		expect(requestLog[#requestLog].method):toBe("paymaster_trackingIdToLatestHash")
@@ -682,7 +638,7 @@ describe("PaymasterRpc - trackingIdToLatestHash", function()
 
 	it("passes tracking id in params", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:trackingIdToLatestHash("track-xyz"):expect()
 		local params = requestLog[#requestLog].params
@@ -1089,7 +1045,7 @@ end)
 describe("PaymasterRpc - custom headers", function()
 	it("sends custom headers with every request", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster({
 			headers = {
 				["x-paymaster-api-key"] = "my-secret-key",
@@ -1105,7 +1061,7 @@ describe("PaymasterRpc - custom headers", function()
 
 	it("always includes Content-Type header", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:isAvailable():expect()
 
@@ -1137,7 +1093,7 @@ end)
 describe("PaymasterRpc - deployment data details", function()
 	it("includes sigdata when provided", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -1161,7 +1117,7 @@ describe("PaymasterRpc - deployment data details", function()
 
 	it("defaults unique to false", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -1183,7 +1139,7 @@ describe("PaymasterRpc - deployment data details", function()
 
 	it("defaults version to 1", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -1205,7 +1161,7 @@ describe("PaymasterRpc - deployment data details", function()
 
 	it("allows custom version", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -1228,7 +1184,7 @@ describe("PaymasterRpc - deployment data details", function()
 
 	it("executeTransaction includes deployment data with sigdata", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
 		pm:executeTransaction(
 			"0xuser",

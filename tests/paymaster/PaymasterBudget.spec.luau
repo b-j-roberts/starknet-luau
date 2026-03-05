@@ -1,99 +1,10 @@
 --!strict
 local PaymasterBudget = require("../../src/paymaster/PaymasterBudget")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-
-local passed = 0
-local failed = 0
-local errors: { string } = {}
-
-local function test(name: string, fn: () -> ())
-	local ok, err = pcall(fn)
-	if ok then
-		passed += 1
-		print("  ✓ " .. name)
-	else
-		failed += 1
-		local msg = tostring(err)
-		table.insert(errors, name .. ": " .. msg)
-		print("  ✗ " .. name .. " — " .. msg)
-	end
-end
-
-local function describe(name: string, fn: () -> ())
-	print("\n" .. name)
-	fn()
-end
-
-local function expect(val: any)
-	return {
-		toBe = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toEqual = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toBeTruthy = function()
-			if not val then
-				error("Expected truthy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeFalsy = function()
-			if val then
-				error("Expected falsy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeNil = function()
-			if val ~= nil then
-				error("Expected nil but got " .. tostring(val), 2)
-			end
-		end,
-		toContain = function(substring: string)
-			if type(val) ~= "string" or not string.find(val, substring, 1, true) then
-				error("Expected string containing '" .. substring .. "' but got " .. tostring(val), 2)
-			end
-		end,
-		toBeGreaterThan = function(expected: number)
-			if type(val) ~= "number" or val <= expected then
-				error("Expected > " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toBeGreaterThanOrEqual = function(expected: number)
-			if type(val) ~= "number" or val < expected then
-				error("Expected >= " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-	}
-end
-
-local function expectError(fn: () -> (), pattern: string?)
-	local ok, err = pcall(fn)
-	if ok then
-		error("Expected error but none was thrown", 2)
-	end
-	if pattern then
-		local msg = tostring(err)
-		if not string.find(msg, pattern, 1, true) then
-			error("Expected error containing '" .. pattern .. "' but got: " .. msg, 2)
-		end
-	end
-end
-
---- Create a mock clock with controllable time.
-local function makeClock(startTime: number): (() -> number, (number) -> ())
-	local time = startTime
-	return function(): number
-		return time
-	end, function(newTime: number)
-		time = newTime
-	end
-end
 
 --- Create a mock DataStore for testing.
 local function createMockDataStore(): (any, { [string]: any })
@@ -140,19 +51,19 @@ local PLAYER_3 = 11111
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget.new", function()
-	test("creates budget with default config", function()
+	it("creates budget with default config", function()
 		local budget = PaymasterBudget.new({})
-		expect(budget).toBeTruthy()
+		expect(budget):toBeTruthy()
 	end)
 
-	test("creates budget with nil config", function()
+	it("creates budget with nil config", function()
 		local budget = PaymasterBudget.new()
-		expect(budget).toBeTruthy()
+		expect(budget):toBeTruthy()
 	end)
 
-	test("creates budget with all options", function()
+	it("creates budget with all options", function()
 		local mockDS, _ = createMockDataStore()
-		local clock, _ = makeClock(1000)
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			dataStoreName = "MyGameBudget",
 			defaultTokenBalance = 10,
@@ -163,53 +74,65 @@ describe("PaymasterBudget.new", function()
 			_dataStore = mockDS,
 			_clock = clock,
 		})
-		expect(budget).toBeTruthy()
+		expect(budget):toBeTruthy()
 	end)
 
-	test("rejects negative costPerTransaction", function()
-		expectError(function()
+	it("rejects negative costPerTransaction", function()
+		expect(function()
 			PaymasterBudget.new({ costPerTransaction = -1 })
-		end, "costPerTransaction must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "costPerTransaction must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects negative costPerGasUnit", function()
-		expectError(function()
+	it("rejects negative costPerGasUnit", function()
+		expect(function()
 			PaymasterBudget.new({ costPerGasUnit = -0.5 })
-		end, "costPerGasUnit must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "costPerGasUnit must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects negative defaultTokenBalance", function()
-		expectError(function()
+	it("rejects negative defaultTokenBalance", function()
+		expect(function()
 			PaymasterBudget.new({ defaultTokenBalance = -10 })
-		end, "defaultTokenBalance must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "defaultTokenBalance must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects non-positive flushInterval", function()
-		expectError(function()
+	it("rejects non-positive flushInterval", function()
+		expect(function()
 			PaymasterBudget.new({ flushInterval = 0 })
-		end, "flushInterval must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "flushInterval must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects negative flushInterval", function()
-		expectError(function()
+	it("rejects negative flushInterval", function()
+		expect(function()
 			PaymasterBudget.new({ flushInterval = -5 })
-		end, "flushInterval must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "flushInterval must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("rejects non-positive maxDirtyEntries", function()
-		expectError(function()
+	it("rejects non-positive maxDirtyEntries", function()
+		expect(function()
 			PaymasterBudget.new({ maxDirtyEntries = 0 })
-		end, "maxDirtyEntries must be a positive number")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "maxDirtyEntries must be a positive number", 1, true) ~= nil
+		end)
 	end)
 
-	test("allows costPerTransaction of 0", function()
+	it("allows costPerTransaction of 0", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 0 })
-		expect(budget).toBeTruthy()
+		expect(budget):toBeTruthy()
 	end)
 
-	test("allows costPerGasUnit of 0", function()
+	it("allows costPerGasUnit of 0", function()
 		local budget = PaymasterBudget.new({ costPerGasUnit = 0 })
-		expect(budget).toBeTruthy()
+		expect(budget):toBeTruthy()
 	end)
 end)
 
@@ -218,23 +141,23 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:getBalance", function()
-	test("returns 0 for new player with default config", function()
+	it("returns 0 for new player with default config", function()
 		local budget = PaymasterBudget.new({})
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 
-	test("returns defaultTokenBalance for new player", function()
+	it("returns defaultTokenBalance for new player", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 100 })
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 
-	test("returns balance after granting tokens", function()
+	it("returns balance after granting tokens", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 50)
-		expect(budget:getBalance(PLAYER_1)).toBe(50)
+		expect(budget:getBalance(PLAYER_1)):toBe(50)
 	end)
 
-	test("returns balance from DataStore on first access", function()
+	it("returns balance from DataStore on first access", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = {
 			balance = 75,
@@ -243,10 +166,10 @@ describe("PaymasterBudget:getBalance", function()
 			lastTxTime = 999,
 		}
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
-		expect(budget:getBalance(PLAYER_1)).toBe(75)
+		expect(budget:getBalance(PLAYER_1)):toBe(75)
 	end)
 
-	test("uses cache after first DataStore load", function()
+	it("uses cache after first DataStore load", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = {
 			balance = 75,
@@ -257,7 +180,7 @@ describe("PaymasterBudget:getBalance", function()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 
 		-- First access loads from DataStore
-		expect(budget:getBalance(PLAYER_1)).toBe(75)
+		expect(budget:getBalance(PLAYER_1)):toBe(75)
 
 		-- Modify DataStore directly — cache should still return 75
 		data["player_12345"] = {
@@ -266,32 +189,32 @@ describe("PaymasterBudget:getBalance", function()
 			totalTokensSpent = 50,
 			lastTxTime = 1500,
 		}
-		expect(budget:getBalance(PLAYER_1)).toBe(75)
+		expect(budget:getBalance(PLAYER_1)):toBe(75)
 	end)
 
-	test("tracks players independently", function()
+	it("tracks players independently", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
 		budget:grantTokens(PLAYER_2, 200)
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
-		expect(budget:getBalance(PLAYER_2)).toBe(200)
-		expect(budget:getBalance(PLAYER_3)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
+		expect(budget:getBalance(PLAYER_2)):toBe(200)
+		expect(budget:getBalance(PLAYER_3)):toBe(0)
 	end)
 
-	test("gracefully handles DataStore GetAsync failure", function()
+	it("gracefully handles DataStore GetAsync failure", function()
 		local failingDS = createFailingDataStore(true, false)
 		local budget = PaymasterBudget.new({
 			_dataStore = failingDS,
 			defaultTokenBalance = 5,
 		})
 		-- Should fall back to default balance instead of crashing
-		expect(budget:getBalance(PLAYER_1)).toBe(5)
+		expect(budget:getBalance(PLAYER_1)):toBe(5)
 		-- Should have recorded the error
 		local flushErrors = budget:getFlushErrors()
-		expect(#flushErrors).toBeGreaterThan(0)
+		expect(#flushErrors):toBeGreaterThan(0)
 	end)
 
-	test("ignores invalid DataStore data", function()
+	it("ignores invalid DataStore data", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = "not a table" -- invalid data
 		local budget = PaymasterBudget.new({
@@ -299,10 +222,10 @@ describe("PaymasterBudget:getBalance", function()
 			defaultTokenBalance = 10,
 		})
 		-- Should use default balance since stored data is invalid
-		expect(budget:getBalance(PLAYER_1)).toBe(10)
+		expect(budget:getBalance(PLAYER_1)):toBe(10)
 	end)
 
-	test("ignores DataStore data with missing fields", function()
+	it("ignores DataStore data with missing fields", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = { balance = 50 } -- missing other fields
 		local budget = PaymasterBudget.new({
@@ -310,7 +233,7 @@ describe("PaymasterBudget:getBalance", function()
 			defaultTokenBalance = 10,
 		})
 		-- Invalid shape — use default
-		expect(budget:getBalance(PLAYER_1)).toBe(10)
+		expect(budget:getBalance(PLAYER_1)):toBe(10)
 	end)
 end)
 
@@ -319,69 +242,71 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:grantTokens", function()
-	test("adds tokens to player balance", function()
+	it("adds tokens to player balance", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 
-	test("accumulates multiple grants", function()
+	it("accumulates multiple grants", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 50)
 		budget:grantTokens(PLAYER_1, 30)
 		budget:grantTokens(PLAYER_1, 20)
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 
-	test("adds to existing balance", function()
+	it("adds to existing balance", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 10 })
 		budget:grantTokens(PLAYER_1, 25)
-		expect(budget:getBalance(PLAYER_1)).toBe(35)
+		expect(budget:getBalance(PLAYER_1)):toBe(35)
 	end)
 
-	test("rejects negative amount", function()
+	it("rejects negative amount", function()
 		local budget = PaymasterBudget.new({})
-		expectError(function()
+		expect(function()
 			budget:grantTokens(PLAYER_1, -10)
-		end, "amount must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "amount must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("no-op for zero amount", function()
+	it("no-op for zero amount", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 10 })
 		budget:grantTokens(PLAYER_1, 0)
-		expect(budget:getBalance(PLAYER_1)).toBe(10)
-		expect(budget:getDirtyCount()).toBe(0) -- should not mark dirty
+		expect(budget:getBalance(PLAYER_1)):toBe(10)
+		expect(budget:getDirtyCount()):toBe(0) -- should not mark dirty
 	end)
 
-	test("handles large amounts", function()
+	it("handles large amounts", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 1000000)
-		expect(budget:getBalance(PLAYER_1)).toBe(1000000)
+		expect(budget:getBalance(PLAYER_1)):toBe(1000000)
 	end)
 
-	test("handles fractional amounts", function()
+	it("handles fractional amounts", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 0.5)
 		budget:grantTokens(PLAYER_1, 0.3)
 		-- Floating point: 0.5 + 0.3 = 0.8
 		local bal = budget:getBalance(PLAYER_1)
-		expect(bal > 0.79 and bal < 0.81).toBe(true)
+		expect(bal > 0.79 and bal < 0.81):toBe(true)
 	end)
 
-	test("marks player data as dirty", function()
+	it("marks player data as dirty", function()
 		local budget = PaymasterBudget.new({})
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(budget:getDirtyCount()):toBe(0)
 		budget:grantTokens(PLAYER_1, 10)
-		expect(budget:getDirtyCount()).toBe(1)
+		expect(budget:getDirtyCount()):toBe(1)
 	end)
 
-	test("grants to different players independently", function()
+	it("grants to different players independently", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
 		budget:grantTokens(PLAYER_2, 200)
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
-		expect(budget:getBalance(PLAYER_2)).toBe(200)
-		expect(budget:getDirtyCount()).toBe(2)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
+		expect(budget:getBalance(PLAYER_2)):toBe(200)
+		expect(budget:getDirtyCount()):toBe(2)
 	end)
 end)
 
@@ -390,44 +315,46 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:revokeTokens", function()
-	test("removes tokens from player balance", function()
+	it("removes tokens from player balance", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
 		budget:revokeTokens(PLAYER_1, 30)
-		expect(budget:getBalance(PLAYER_1)).toBe(70)
+		expect(budget:getBalance(PLAYER_1)):toBe(70)
 	end)
 
-	test("clamps balance to zero (does not go negative)", function()
+	it("clamps balance to zero (does not go negative)", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 10)
 		budget:revokeTokens(PLAYER_1, 50)
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 
-	test("revoke from default balance clamps to zero", function()
+	it("revoke from default balance clamps to zero", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 5 })
 		budget:revokeTokens(PLAYER_1, 10)
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 
-	test("rejects negative amount", function()
+	it("rejects negative amount", function()
 		local budget = PaymasterBudget.new({})
-		expectError(function()
+		expect(function()
 			budget:revokeTokens(PLAYER_1, -5)
-		end, "amount must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "amount must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("no-op for zero amount", function()
+	it("no-op for zero amount", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 10 })
 		budget:revokeTokens(PLAYER_1, 0)
-		expect(budget:getBalance(PLAYER_1)).toBe(10)
+		expect(budget:getBalance(PLAYER_1)):toBe(10)
 	end)
 
-	test("full revoke leaves balance at zero", function()
+	it("full revoke leaves balance at zero", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
 		budget:revokeTokens(PLAYER_1, 100)
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 end)
 
@@ -436,47 +363,47 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:canAfford", function()
-	test("returns false for new player with 0 balance", function()
+	it("returns false for new player with 0 balance", function()
 		local budget = PaymasterBudget.new({})
-		expect(budget:canAfford(PLAYER_1)).toBe(false)
+		expect(budget:canAfford(PLAYER_1)):toBe(false)
 	end)
 
-	test("returns true when balance >= default cost", function()
+	it("returns true when balance >= default cost", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 5 })
 		budget:grantTokens(PLAYER_1, 10)
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 	end)
 
-	test("returns true when balance exactly equals cost", function()
+	it("returns true when balance exactly equals cost", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 10)
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 	end)
 
-	test("returns false when balance < default cost", function()
+	it("returns false when balance < default cost", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 5)
-		expect(budget:canAfford(PLAYER_1)).toBe(false)
+		expect(budget:canAfford(PLAYER_1)):toBe(false)
 	end)
 
-	test("uses custom txCost override", function()
+	it("uses custom txCost override", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 1 })
 		budget:grantTokens(PLAYER_1, 5)
-		expect(budget:canAfford(PLAYER_1, 5)).toBe(true)
-		expect(budget:canAfford(PLAYER_1, 6)).toBe(false)
+		expect(budget:canAfford(PLAYER_1, 5)):toBe(true)
+		expect(budget:canAfford(PLAYER_1, 6)):toBe(false)
 	end)
 
-	test("returns true with zero-cost transactions", function()
+	it("returns true with zero-cost transactions", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 0 })
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 	end)
 
-	test("works with defaultTokenBalance", function()
+	it("works with defaultTokenBalance", function()
 		local budget = PaymasterBudget.new({
 			defaultTokenBalance = 50,
 			costPerTransaction = 10,
 		})
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 	end)
 end)
 
@@ -485,39 +412,39 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:calculateCost", function()
-	test("returns costPerTransaction when no gas", function()
+	it("returns costPerTransaction when no gas", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 5 })
-		expect(budget:calculateCost()).toBe(5)
+		expect(budget:calculateCost()):toBe(5)
 	end)
 
-	test("returns costPerTransaction when gas provided but no costPerGasUnit", function()
+	it("returns costPerTransaction when gas provided but no costPerGasUnit", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 5 })
-		expect(budget:calculateCost(1000)).toBe(5)
+		expect(budget:calculateCost(1000)):toBe(5)
 	end)
 
-	test("adds gas cost when costPerGasUnit is set", function()
+	it("adds gas cost when costPerGasUnit is set", function()
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 2,
 			costPerGasUnit = 0.01,
 		})
 		-- 2 + (1000 * 0.01) = 2 + 10 = 12
-		expect(budget:calculateCost(1000)).toBe(12)
+		expect(budget:calculateCost(1000)):toBe(12)
 	end)
 
-	test("returns base cost when gas is nil and costPerGasUnit set", function()
+	it("returns base cost when gas is nil and costPerGasUnit set", function()
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 3,
 			costPerGasUnit = 0.5,
 		})
-		expect(budget:calculateCost()).toBe(3)
+		expect(budget:calculateCost()):toBe(3)
 	end)
 
-	test("handles zero gas used", function()
+	it("handles zero gas used", function()
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 5,
 			costPerGasUnit = 0.01,
 		})
-		expect(budget:calculateCost(0)).toBe(5)
+		expect(budget:calculateCost(0)):toBe(5)
 	end)
 end)
 
@@ -526,122 +453,130 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:consumeTransaction", function()
-	test("deducts default costPerTransaction", function()
+	it("deducts default costPerTransaction", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 5 })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(95)
+		expect(budget:getBalance(PLAYER_1)):toBe(95)
 	end)
 
-	test("deducts custom txCost", function()
+	it("deducts custom txCost", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 1 })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1, 25)
-		expect(budget:getBalance(PLAYER_1)).toBe(75)
+		expect(budget:getBalance(PLAYER_1)):toBe(75)
 	end)
 
-	test("returns the actual cost deducted", function()
+	it("returns the actual cost deducted", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 7 })
 		budget:grantTokens(PLAYER_1, 100)
 		local cost = budget:consumeTransaction(PLAYER_1)
-		expect(cost).toBe(7)
+		expect(cost):toBe(7)
 	end)
 
-	test("returns custom txCost when provided", function()
+	it("returns custom txCost when provided", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 1 })
 		budget:grantTokens(PLAYER_1, 100)
 		local cost = budget:consumeTransaction(PLAYER_1, 15)
-		expect(cost).toBe(15)
+		expect(cost):toBe(15)
 	end)
 
-	test("errors when insufficient balance", function()
+	it("errors when insufficient balance", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 5)
-		expectError(function()
+		expect(function()
 			budget:consumeTransaction(PLAYER_1)
-		end, "Insufficient paymaster tokens")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "Insufficient paymaster tokens", 1, true) ~= nil
+		end)
 	end)
 
-	test("error message includes cost and balance", function()
+	it("error message includes cost and balance", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 3)
-		expectError(function()
+		expect(function()
 			budget:consumeTransaction(PLAYER_1)
-		end, "need 10")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "need 10", 1, true) ~= nil
+		end)
 	end)
 
-	test("error message includes player ID", function()
+	it("error message includes player ID", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
-		expectError(function()
+		expect(function()
 			budget:consumeTransaction(PLAYER_1)
-		end, tostring(PLAYER_1))
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), tostring(PLAYER_1), 1, true) ~= nil
+		end)
 	end)
 
-	test("allows exact balance consumption", function()
+	it("allows exact balance consumption", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 50 })
 		budget:grantTokens(PLAYER_1, 50)
 		budget:consumeTransaction(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 
-	test("supports multiple consecutive transactions", function()
+	it("supports multiple consecutive transactions", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(70)
+		expect(budget:getBalance(PLAYER_1)):toBe(70)
 	end)
 
-	test("updates totalTxCount", function()
-		local clock, _ = makeClock(1000)
+	it("updates totalTxCount", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 1, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1)
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(3)
+		expect(stats.totalTxCount):toBe(3)
 	end)
 
-	test("updates totalTokensSpent", function()
-		local clock, _ = makeClock(1000)
+	it("updates totalTokensSpent", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 5, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1, 10)
 		-- 5 + 10 = 15
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTokensSpent).toBe(15)
+		expect(stats.totalTokensSpent):toBe(15)
 	end)
 
-	test("updates lastTxTime", function()
-		local clock, setClock = makeClock(1000)
+	it("updates lastTxTime", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 1, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
 		local stats1 = budget:getUsageStats(PLAYER_1)
-		expect(stats1.lastTxTime).toBe(1000)
+		expect(stats1.lastTxTime):toBe(1000)
 
 		setClock(2000)
 		budget:consumeTransaction(PLAYER_1)
 		local stats2 = budget:getUsageStats(PLAYER_1)
-		expect(stats2.lastTxTime).toBe(2000)
+		expect(stats2.lastTxTime):toBe(2000)
 	end)
 
-	test("rejects negative txCost", function()
+	it("rejects negative txCost", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
-		expectError(function()
+		expect(function()
 			budget:consumeTransaction(PLAYER_1, -5)
-		end, "transaction cost must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "transaction cost must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("allows zero-cost transaction", function()
+	it("allows zero-cost transaction", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 0 })
 		local cost = budget:consumeTransaction(PLAYER_1)
-		expect(cost).toBe(0)
-		expect(budget:getBalance(PLAYER_1)).toBe(0)
+		expect(cost):toBe(0)
+		expect(budget:getBalance(PLAYER_1)):toBe(0)
 	end)
 end)
 
@@ -650,85 +585,87 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:refundTransaction", function()
-	test("adds cost back to balance", function()
+	it("adds cost back to balance", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 10 })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1) -- 100 - 10 = 90
 		budget:refundTransaction(PLAYER_1) -- 90 + 10 = 100
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 
-	test("refunds custom txCost", function()
+	it("refunds custom txCost", function()
 		local budget = PaymasterBudget.new({ costPerTransaction = 1 })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1, 25) -- 100 - 25 = 75
 		budget:refundTransaction(PLAYER_1, 25) -- 75 + 25 = 100
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 
-	test("decrements totalTxCount", function()
-		local clock, _ = makeClock(1000)
+	it("decrements totalTxCount", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 1, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1)
 		budget:consumeTransaction(PLAYER_1)
 		budget:refundTransaction(PLAYER_1)
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(1)
+		expect(stats.totalTxCount):toBe(1)
 	end)
 
-	test("decrements totalTokensSpent", function()
-		local clock, _ = makeClock(1000)
+	it("decrements totalTokensSpent", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 5, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:consumeTransaction(PLAYER_1) -- spent 5
 		budget:refundTransaction(PLAYER_1) -- refund 5
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTokensSpent).toBe(0)
+		expect(stats.totalTokensSpent):toBe(0)
 	end)
 
-	test("totalTxCount does not go below 0", function()
-		local clock, _ = makeClock(1000)
+	it("totalTxCount does not go below 0", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 1, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:refundTransaction(PLAYER_1) -- refund without prior consume
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(0)
+		expect(stats.totalTxCount):toBe(0)
 	end)
 
-	test("totalTokensSpent does not go below 0", function()
-		local clock, _ = makeClock(1000)
+	it("totalTokensSpent does not go below 0", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 10, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:refundTransaction(PLAYER_1) -- refund without prior consume
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTokensSpent).toBe(0)
+		expect(stats.totalTokensSpent):toBe(0)
 	end)
 
-	test("rejects negative refund amount", function()
+	it("rejects negative refund amount", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
-		expectError(function()
+		expect(function()
 			budget:refundTransaction(PLAYER_1, -5)
-		end, "refund amount must be non-negative")
+		end):toThrowMatching(function(err)
+			return string.find(tostring(err), "refund amount must be non-negative", 1, true) ~= nil
+		end)
 	end)
 
-	test("atomic consume-then-refund restores original state", function()
-		local clock, _ = makeClock(1000)
+	it("atomic consume-then-refund restores original state", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 15, _clock = clock })
 		budget:grantTokens(PLAYER_1, 100)
 
 		-- Consume
 		local cost = budget:consumeTransaction(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(85)
+		expect(budget:getBalance(PLAYER_1)):toBe(85)
 
 		-- Simulate paymaster failure → refund
 		budget:refundTransaction(PLAYER_1, cost)
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(0)
-		expect(stats.totalTokensSpent).toBe(0)
+		expect(stats.totalTxCount):toBe(0)
+		expect(stats.totalTokensSpent):toBe(0)
 	end)
 end)
 
@@ -737,24 +674,24 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:getUsageStats", function()
-	test("returns default stats for new player", function()
+	it("returns default stats for new player", function()
 		local budget = PaymasterBudget.new({})
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.balance).toBe(0)
-		expect(stats.totalTxCount).toBe(0)
-		expect(stats.totalTokensSpent).toBe(0)
-		expect(stats.lastTxTime).toBe(0)
+		expect(stats.balance):toBe(0)
+		expect(stats.totalTxCount):toBe(0)
+		expect(stats.totalTokensSpent):toBe(0)
+		expect(stats.lastTxTime):toBe(0)
 	end)
 
-	test("returns stats with defaultTokenBalance", function()
+	it("returns stats with defaultTokenBalance", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 50 })
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.balance).toBe(50)
-		expect(stats.totalTxCount).toBe(0)
+		expect(stats.balance):toBe(50)
+		expect(stats.totalTxCount):toBe(0)
 	end)
 
-	test("reflects grant and consume operations", function()
-		local clock, setClock = makeClock(1000)
+	it("reflects grant and consume operations", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 5,
 			_clock = clock,
@@ -770,14 +707,14 @@ describe("PaymasterBudget:getUsageStats", function()
 		budget:consumeTransaction(PLAYER_1, 10) -- -10
 
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.balance).toBe(80) -- 100 - 5 - 5 - 10
-		expect(stats.totalTxCount).toBe(3)
-		expect(stats.totalTokensSpent).toBe(20) -- 5 + 5 + 10
-		expect(stats.lastTxTime).toBe(2500)
+		expect(stats.balance):toBe(80) -- 100 - 5 - 5 - 10
+		expect(stats.totalTxCount):toBe(3)
+		expect(stats.totalTokensSpent):toBe(20) -- 5 + 5 + 10
+		expect(stats.lastTxTime):toBe(2500)
 	end)
 
-	test("returns independent stats per player", function()
-		local clock, _ = makeClock(1000)
+	it("returns independent stats per player", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({ costPerTransaction = 1, _clock = clock })
 		budget:grantTokens(PLAYER_1, 50)
 		budget:grantTokens(PLAYER_2, 100)
@@ -788,13 +725,13 @@ describe("PaymasterBudget:getUsageStats", function()
 		local stats1 = budget:getUsageStats(PLAYER_1)
 		local stats2 = budget:getUsageStats(PLAYER_2)
 
-		expect(stats1.balance).toBe(49)
-		expect(stats1.totalTxCount).toBe(1)
-		expect(stats2.balance).toBe(98)
-		expect(stats2.totalTxCount).toBe(2)
+		expect(stats1.balance):toBe(49)
+		expect(stats1.totalTxCount):toBe(1)
+		expect(stats2.balance):toBe(98)
+		expect(stats2.totalTxCount):toBe(2)
 	end)
 
-	test("stats from DataStore are preserved", function()
+	it("stats from DataStore are preserved", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = {
 			balance = 75,
@@ -804,10 +741,10 @@ describe("PaymasterBudget:getUsageStats", function()
 		}
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.balance).toBe(75)
-		expect(stats.totalTxCount).toBe(10)
-		expect(stats.totalTokensSpent).toBe(25)
-		expect(stats.lastTxTime).toBe(999)
+		expect(stats.balance):toBe(75)
+		expect(stats.totalTxCount):toBe(10)
+		expect(stats.totalTokensSpent):toBe(25)
+		expect(stats.lastTxTime):toBe(999)
 	end)
 end)
 
@@ -816,7 +753,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:flush", function()
-	test("writes dirty entries to DataStore", function()
+	it("writes dirty entries to DataStore", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		budget:grantTokens(PLAYER_1, 100)
@@ -826,33 +763,33 @@ describe("PaymasterBudget:flush", function()
 
 		-- Verify data was written
 		local p1Data = data["player_12345"]
-		expect(p1Data).toBeTruthy()
-		expect(p1Data.balance).toBe(100)
+		expect(p1Data):toBeTruthy()
+		expect(p1Data.balance):toBe(100)
 
 		local p2Data = data["player_67890"]
-		expect(p2Data).toBeTruthy()
-		expect(p2Data.balance).toBe(200)
+		expect(p2Data):toBeTruthy()
+		expect(p2Data.balance):toBe(200)
 	end)
 
-	test("clears dirty count after flush", function()
+	it("clears dirty count after flush", function()
 		local mockDS, _ = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		budget:grantTokens(PLAYER_1, 100)
-		expect(budget:getDirtyCount()).toBe(1)
+		expect(budget:getDirtyCount()):toBe(1)
 
 		budget:flush()
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(budget:getDirtyCount()):toBe(0)
 	end)
 
-	test("does not error without DataStore", function()
+	it("does not error without DataStore", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
 		-- Should not error
 		budget:flush()
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(budget:getDirtyCount()):toBe(0)
 	end)
 
-	test("handles DataStore SetAsync failure gracefully", function()
+	it("handles DataStore SetAsync failure gracefully", function()
 		local failingDS = createFailingDataStore(false, true)
 		local budget = PaymasterBudget.new({ _dataStore = failingDS })
 		budget:grantTokens(PLAYER_1, 100)
@@ -862,10 +799,10 @@ describe("PaymasterBudget:flush", function()
 
 		-- Should have logged the error
 		local flushErrors = budget:getFlushErrors()
-		expect(#flushErrors).toBeGreaterThan(0)
+		expect(#flushErrors):toBeGreaterThan(0)
 	end)
 
-	test("only writes dirty entries (not clean ones)", function()
+	it("only writes dirty entries (not clean ones)", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 
@@ -879,14 +816,14 @@ describe("PaymasterBudget:flush", function()
 		budget:flush()
 
 		-- Player 1 should NOT have been re-written (it was clean)
-		expect(data["player_12345"]).toBeNil()
+		expect(data["player_12345"]):toBeNil()
 		-- Player 2 should have been written
-		expect(data["player_67890"]).toBeTruthy()
+		expect(data["player_67890"]):toBeTruthy()
 	end)
 end)
 
 describe("PaymasterBudget:flushPlayer", function()
-	test("flushes a single player to DataStore", function()
+	it("flushes a single player to DataStore", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		budget:grantTokens(PLAYER_1, 100)
@@ -895,14 +832,14 @@ describe("PaymasterBudget:flushPlayer", function()
 		budget:flushPlayer(PLAYER_1)
 
 		-- Player 1 should be written
-		expect(data["player_12345"]).toBeTruthy()
-		expect(data["player_12345"].balance).toBe(100)
+		expect(data["player_12345"]):toBeTruthy()
+		expect(data["player_12345"].balance):toBe(100)
 
 		-- Player 2 should NOT be written yet
-		expect(data["player_67890"]).toBeNil()
+		expect(data["player_67890"]):toBeNil()
 
 		-- Dirty count should decrease by 1
-		expect(budget:getDirtyCount()).toBe(1)
+		expect(budget:getDirtyCount()):toBe(1)
 	end)
 end)
 
@@ -911,7 +848,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget — lazy flush", function()
-	test("flushes when maxDirtyEntries reached", function()
+	it("flushes when maxDirtyEntries reached", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -922,19 +859,19 @@ describe("PaymasterBudget — lazy flush", function()
 		-- Grant to 2 players — no flush yet
 		budget:grantTokens(PLAYER_1, 10)
 		budget:grantTokens(PLAYER_2, 20)
-		expect(data["player_12345"]).toBeNil() -- not flushed yet
+		expect(data["player_12345"]):toBeNil() -- not flushed yet
 
 		-- Grant to 3rd player — triggers flush (dirtyCount reaches 3)
 		budget:grantTokens(PLAYER_3, 30)
 		-- After flush, data should be written
-		expect(data["player_12345"]).toBeTruthy()
-		expect(data["player_67890"]).toBeTruthy()
-		expect(data["player_11111"]).toBeTruthy()
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(data["player_12345"]):toBeTruthy()
+		expect(data["player_67890"]):toBeTruthy()
+		expect(data["player_11111"]):toBeTruthy()
+		expect(budget:getDirtyCount()):toBe(0)
 	end)
 
-	test("flushes when flushInterval elapsed", function()
-		local clock, setClock = makeClock(1000)
+	it("flushes when flushInterval elapsed", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -944,19 +881,19 @@ describe("PaymasterBudget — lazy flush", function()
 		})
 
 		budget:grantTokens(PLAYER_1, 10)
-		expect(data["player_12345"]).toBeNil() -- not flushed yet
+		expect(data["player_12345"]):toBeNil() -- not flushed yet
 
 		-- Advance time past flushInterval
 		setClock(1031)
 		budget:grantTokens(PLAYER_2, 20) -- triggers _markDirty → _maybeFlush
 
 		-- Should have flushed
-		expect(data["player_12345"]).toBeTruthy()
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(data["player_12345"]):toBeTruthy()
+		expect(budget:getDirtyCount()):toBe(0)
 	end)
 
-	test("does not flush before interval elapsed", function()
-		local clock, setClock = makeClock(1000)
+	it("does not flush before interval elapsed", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -972,8 +909,8 @@ describe("PaymasterBudget — lazy flush", function()
 		budget:grantTokens(PLAYER_2, 20)
 
 		-- Should NOT have flushed
-		expect(data["player_12345"]).toBeNil()
-		expect(budget:getDirtyCount()).toBe(2)
+		expect(data["player_12345"]):toBeNil()
+		expect(budget:getDirtyCount()):toBe(2)
 	end)
 end)
 
@@ -982,7 +919,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget:loadPlayer", function()
-	test("loads player data from DataStore", function()
+	it("loads player data from DataStore", function()
 		local mockDS, data = createMockDataStore()
 		data["player_12345"] = {
 			balance = 500,
@@ -993,11 +930,11 @@ describe("PaymasterBudget:loadPlayer", function()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 
 		budget:loadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(true)
-		expect(budget:getBalance(PLAYER_1)).toBe(500)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
+		expect(budget:getBalance(PLAYER_1)):toBe(500)
 	end)
 
-	test("creates default data when not in DataStore", function()
+	it("creates default data when not in DataStore", function()
 		local mockDS, _ = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -1005,18 +942,18 @@ describe("PaymasterBudget:loadPlayer", function()
 		})
 
 		budget:loadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(true)
-		expect(budget:getBalance(PLAYER_1)).toBe(25)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
+		expect(budget:getBalance(PLAYER_1)):toBe(25)
 	end)
 
-	test("creates default data when no DataStore", function()
+	it("creates default data when no DataStore", function()
 		local budget = PaymasterBudget.new({ defaultTokenBalance = 15 })
 		budget:loadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(true)
-		expect(budget:getBalance(PLAYER_1)).toBe(15)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
+		expect(budget:getBalance(PLAYER_1)):toBe(15)
 	end)
 
-	test("handles DataStore failure gracefully", function()
+	it("handles DataStore failure gracefully", function()
 		local failingDS = createFailingDataStore(true, false)
 		local budget = PaymasterBudget.new({
 			_dataStore = failingDS,
@@ -1025,55 +962,55 @@ describe("PaymasterBudget:loadPlayer", function()
 
 		-- Should not crash
 		budget:loadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(true)
-		expect(budget:getBalance(PLAYER_1)).toBe(10)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
+		expect(budget:getBalance(PLAYER_1)):toBe(10)
 	end)
 end)
 
 describe("PaymasterBudget:unloadPlayer", function()
-	test("removes player from cache", function()
+	it("removes player from cache", function()
 		local budget = PaymasterBudget.new({})
 		budget:grantTokens(PLAYER_1, 100)
-		expect(budget:isCached(PLAYER_1)).toBe(true)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
 
 		budget:unloadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(false)
+		expect(budget:isCached(PLAYER_1)):toBe(false)
 	end)
 
-	test("flushes dirty data before unloading", function()
+	it("flushes dirty data before unloading", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		budget:grantTokens(PLAYER_1, 100)
-		expect(data["player_12345"]).toBeNil() -- not flushed yet
+		expect(data["player_12345"]):toBeNil() -- not flushed yet
 
 		budget:unloadPlayer(PLAYER_1)
 
 		-- Should have flushed before removing from cache
-		expect(data["player_12345"]).toBeTruthy()
-		expect(data["player_12345"].balance).toBe(100)
-		expect(budget:isCached(PLAYER_1)).toBe(false)
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(data["player_12345"]):toBeTruthy()
+		expect(data["player_12345"].balance):toBe(100)
+		expect(budget:isCached(PLAYER_1)):toBe(false)
+		expect(budget:getDirtyCount()):toBe(0)
 	end)
 
-	test("decrements dirty count on unload", function()
+	it("decrements dirty count on unload", function()
 		local mockDS, _ = createMockDataStore()
 		local budget = PaymasterBudget.new({ _dataStore = mockDS })
 		budget:grantTokens(PLAYER_1, 100)
 		budget:grantTokens(PLAYER_2, 200)
-		expect(budget:getDirtyCount()).toBe(2)
+		expect(budget:getDirtyCount()):toBe(2)
 
 		budget:unloadPlayer(PLAYER_1)
-		expect(budget:getDirtyCount()).toBe(1)
+		expect(budget:getDirtyCount()):toBe(1)
 	end)
 
-	test("no-op for non-cached player", function()
+	it("no-op for non-cached player", function()
 		local budget = PaymasterBudget.new({})
 		-- Should not error
 		budget:unloadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(false)
+		expect(budget:isCached(PLAYER_1)):toBe(false)
 	end)
 
-	test("player data reloads from DataStore after unload", function()
+	it("player data reloads from DataStore after unload", function()
 		local mockDS, data = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -1083,7 +1020,7 @@ describe("PaymasterBudget:unloadPlayer", function()
 		budget:unloadPlayer(PLAYER_1) -- flushes 100 to DataStore
 
 		-- Next access should reload from DataStore
-		expect(budget:getBalance(PLAYER_1)).toBe(100)
+		expect(budget:getBalance(PLAYER_1)):toBe(100)
 	end)
 end)
 
@@ -1092,48 +1029,48 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget — cache utilities", function()
-	test("isCached returns false for unknown player", function()
+	it("isCached returns false for unknown player", function()
 		local budget = PaymasterBudget.new({})
-		expect(budget:isCached(PLAYER_1)).toBe(false)
+		expect(budget:isCached(PLAYER_1)):toBe(false)
 	end)
 
-	test("isCached returns true after first access", function()
+	it("isCached returns true after first access", function()
 		local budget = PaymasterBudget.new({})
 		budget:getBalance(PLAYER_1) -- triggers cache load
-		expect(budget:isCached(PLAYER_1)).toBe(true)
+		expect(budget:isCached(PLAYER_1)):toBe(true)
 	end)
 
-	test("getDirtyCount tracks dirty entries correctly", function()
+	it("getDirtyCount tracks dirty entries correctly", function()
 		local budget = PaymasterBudget.new({ maxDirtyEntries = 999, flushInterval = 9999 })
-		expect(budget:getDirtyCount()).toBe(0)
+		expect(budget:getDirtyCount()):toBe(0)
 
 		budget:grantTokens(PLAYER_1, 10)
-		expect(budget:getDirtyCount()).toBe(1)
+		expect(budget:getDirtyCount()):toBe(1)
 
 		budget:grantTokens(PLAYER_2, 20)
-		expect(budget:getDirtyCount()).toBe(2)
+		expect(budget:getDirtyCount()):toBe(2)
 
 		-- Same player again — should not increase dirty count
 		budget:grantTokens(PLAYER_1, 5)
-		expect(budget:getDirtyCount()).toBe(2)
+		expect(budget:getDirtyCount()):toBe(2)
 	end)
 
-	test("getFlushErrors returns empty array initially", function()
+	it("getFlushErrors returns empty array initially", function()
 		local budget = PaymasterBudget.new({})
-		expect(#budget:getFlushErrors()).toBe(0)
+		expect(#budget:getFlushErrors()):toBe(0)
 	end)
 
-	test("clearFlushErrors clears all errors", function()
+	it("clearFlushErrors clears all errors", function()
 		local failingDS = createFailingDataStore(true, false)
 		local budget = PaymasterBudget.new({
 			_dataStore = failingDS,
 			defaultTokenBalance = 0,
 		})
 		budget:getBalance(PLAYER_1) -- triggers failed GetAsync
-		expect(#budget:getFlushErrors()).toBeGreaterThan(0)
+		expect(#budget:getFlushErrors()):toBeGreaterThan(0)
 
 		budget:clearFlushErrors()
-		expect(#budget:getFlushErrors()).toBe(0)
+		expect(#budget:getFlushErrors()):toBe(0)
 	end)
 end)
 
@@ -1142,8 +1079,8 @@ end)
 --------------------------------------------------------------------------------
 
 describe("PaymasterBudget — integration: game onboarding flow", function()
-	test("new player signup: grant → transactions → stats", function()
-		local clock, setClock = makeClock(1000)
+	it("new player signup: grant → transactions → stats", function()
+		local clock, setClock = TestUtils.makeClock(1000)
 		local mockDS, _ = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 2,
@@ -1153,8 +1090,8 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 
 		-- Player joins game and receives signup bonus
 		budget:grantTokens(PLAYER_1, 20)
-		expect(budget:getBalance(PLAYER_1)).toBe(20)
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:getBalance(PLAYER_1)):toBe(20)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 
 		-- Player makes 5 transactions
 		for i = 1, 5 do
@@ -1162,22 +1099,22 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 			budget:consumeTransaction(PLAYER_1)
 		end
 
-		expect(budget:getBalance(PLAYER_1)).toBe(10) -- 20 - (5 * 2)
+		expect(budget:getBalance(PLAYER_1)):toBe(10) -- 20 - (5 * 2)
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(5)
-		expect(stats.totalTokensSpent).toBe(10)
-		expect(stats.lastTxTime).toBe(1500)
+		expect(stats.totalTxCount):toBe(5)
+		expect(stats.totalTokensSpent):toBe(10)
+		expect(stats.lastTxTime):toBe(1500)
 
 		-- Player earns reward tokens
 		budget:grantTokens(PLAYER_1, 50)
-		expect(budget:getBalance(PLAYER_1)).toBe(60)
+		expect(budget:getBalance(PLAYER_1)):toBe(60)
 
 		-- Flush to DataStore
 		budget:flush()
 	end)
 
-	test("multiple players with independent budgets", function()
-		local clock, _ = makeClock(1000)
+	it("multiple players with independent budgets", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 1,
 			defaultTokenBalance = 10,
@@ -1185,24 +1122,24 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 		})
 
 		-- All players start with 10 tokens
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
-		expect(budget:canAfford(PLAYER_2)).toBe(true)
-		expect(budget:canAfford(PLAYER_3)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
+		expect(budget:canAfford(PLAYER_2)):toBe(true)
+		expect(budget:canAfford(PLAYER_3)):toBe(true)
 
 		-- Player 1 uses all tokens
 		for _ = 1, 10 do
 			budget:consumeTransaction(PLAYER_1)
 		end
-		expect(budget:canAfford(PLAYER_1)).toBe(false)
-		expect(budget:canAfford(PLAYER_2)).toBe(true) -- unaffected
+		expect(budget:canAfford(PLAYER_1)):toBe(false)
+		expect(budget:canAfford(PLAYER_2)):toBe(true) -- unaffected
 
 		-- Player 2 gets extra tokens
 		budget:grantTokens(PLAYER_2, 100)
-		expect(budget:getBalance(PLAYER_2)).toBe(110)
+		expect(budget:getBalance(PLAYER_2)):toBe(110)
 	end)
 
-	test("atomic consume → paymaster fail → refund", function()
-		local clock, _ = makeClock(1000)
+	it("atomic consume → paymaster fail → refund", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 5,
 			_clock = clock,
@@ -1210,11 +1147,11 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 		budget:grantTokens(PLAYER_1, 50)
 
 		-- Step 1: Check affordability
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 
 		-- Step 2: Deduct tokens BEFORE paymaster submit
 		local cost = budget:consumeTransaction(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(45)
+		expect(budget:getBalance(PLAYER_1)):toBe(45)
 
 		-- Step 3: Paymaster submission fails (simulated)
 		local paymasterFailed = true
@@ -1225,14 +1162,14 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 		end
 
 		-- Player should be back to original state
-		expect(budget:getBalance(PLAYER_1)).toBe(50)
+		expect(budget:getBalance(PLAYER_1)):toBe(50)
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(0)
-		expect(stats.totalTokensSpent).toBe(0)
+		expect(stats.totalTxCount):toBe(0)
+		expect(stats.totalTokensSpent):toBe(0)
 	end)
 
-	test("consume → paymaster success → no refund", function()
-		local clock, _ = makeClock(1000)
+	it("consume → paymaster success → no refund", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 5,
 			_clock = clock,
@@ -1242,14 +1179,14 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 		-- Deduct and submit
 		budget:consumeTransaction(PLAYER_1)
 		-- Paymaster succeeds — no refund needed
-		expect(budget:getBalance(PLAYER_1)).toBe(45)
+		expect(budget:getBalance(PLAYER_1)):toBe(45)
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(1)
-		expect(stats.totalTokensSpent).toBe(5)
+		expect(stats.totalTxCount):toBe(1)
+		expect(stats.totalTokensSpent):toBe(5)
 	end)
 
-	test("variable gas cost with calculateCost", function()
-		local clock, _ = makeClock(1000)
+	it("variable gas cost with calculateCost", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 1,
 			costPerGasUnit = 0.01,
@@ -1260,19 +1197,19 @@ describe("PaymasterBudget — integration: game onboarding flow", function()
 		-- Calculate cost based on gas used
 		local gasUsed = 500
 		local cost = budget:calculateCost(gasUsed) -- 1 + 500*0.01 = 6
-		expect(cost).toBe(6)
+		expect(cost):toBe(6)
 
 		-- Consume with calculated cost
-		expect(budget:canAfford(PLAYER_1, cost)).toBe(true)
+		expect(budget:canAfford(PLAYER_1, cost)):toBe(true)
 		budget:consumeTransaction(PLAYER_1, cost)
-		expect(budget:getBalance(PLAYER_1)).toBe(94)
+		expect(budget:getBalance(PLAYER_1)):toBe(94)
 	end)
 end)
 
 describe("PaymasterBudget — integration: DataStore persistence", function()
-	test("full lifecycle: load → use → flush → unload → reload", function()
+	it("full lifecycle: load → use → flush → unload → reload", function()
 		local mockDS, data = createMockDataStore()
-		local clock, setClock = makeClock(1000)
+		local clock, setClock = TestUtils.makeClock(1000)
 
 		-- Session 1: Create budget and use it
 		local budget1 = PaymasterBudget.new({
@@ -1290,9 +1227,9 @@ describe("PaymasterBudget — integration: DataStore persistence", function()
 
 		-- Verify DataStore state
 		local stored = data["player_12345"]
-		expect(stored).toBeTruthy()
-		expect(stored.balance).toBe(98)
-		expect(stored.totalTxCount).toBe(2)
+		expect(stored):toBeTruthy()
+		expect(stored.balance):toBe(98)
+		expect(stored.totalTxCount):toBe(2)
 
 		-- Session 2: New budget instance loads from DataStore
 		setClock(2000)
@@ -1303,13 +1240,13 @@ describe("PaymasterBudget — integration: DataStore persistence", function()
 		})
 
 		-- Should load from DataStore
-		expect(budget2:getBalance(PLAYER_1)).toBe(98)
+		expect(budget2:getBalance(PLAYER_1)):toBe(98)
 		local stats = budget2:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(2)
-		expect(stats.totalTokensSpent).toBe(2)
+		expect(stats.totalTxCount):toBe(2)
+		expect(stats.totalTokensSpent):toBe(2)
 	end)
 
-	test("unload and reload preserves data", function()
+	it("unload and reload preserves data", function()
 		local mockDS, _ = createMockDataStore()
 		local budget = PaymasterBudget.new({
 			_dataStore = mockDS,
@@ -1318,19 +1255,19 @@ describe("PaymasterBudget — integration: DataStore persistence", function()
 
 		budget:grantTokens(PLAYER_1, 75)
 		budget:unloadPlayer(PLAYER_1)
-		expect(budget:isCached(PLAYER_1)).toBe(false)
+		expect(budget:isCached(PLAYER_1)):toBe(false)
 
 		-- Reload from DataStore
 		budget:loadPlayer(PLAYER_1)
-		expect(budget:getBalance(PLAYER_1)).toBe(75)
+		expect(budget:getBalance(PLAYER_1)):toBe(75)
 	end)
 end)
 
 describe("PaymasterBudget — integration: with PaymasterPolicy", function()
 	-- This test demonstrates how PaymasterBudget composes with PaymasterPolicy
 	-- in a realistic game server scenario.
-	test("policy check → budget check → consume → refund flow", function()
-		local clock, _ = makeClock(1000)
+	it("policy check → budget check → consume → refund flow", function()
+		local clock, _ = TestUtils.makeClock(1000)
 		local budget = PaymasterBudget.new({
 			costPerTransaction = 5,
 			_clock = clock,
@@ -1342,33 +1279,19 @@ describe("PaymasterBudget — integration: with PaymasterPolicy", function()
 		-- Simulate the typical flow:
 		-- 1. policy:validate() → allowed (handled by PaymasterPolicy, not tested here)
 		-- 2. budget:canAfford() → check balance
-		expect(budget:canAfford(PLAYER_1)).toBe(true)
+		expect(budget:canAfford(PLAYER_1)):toBe(true)
 
 		-- 3. budget:consumeTransaction() → deduct BEFORE paymaster submit
 		local cost = budget:consumeTransaction(PLAYER_1)
-		expect(cost).toBe(5)
-		expect(budget:getBalance(PLAYER_1)).toBe(45)
+		expect(cost):toBe(5)
+		expect(budget:getBalance(PLAYER_1)):toBe(45)
 
 		-- 4. account:executePaymaster() → submit (simulated success)
 		-- No refund needed — tokens stay deducted
 
 		-- 5. Verify final state
 		local stats = budget:getUsageStats(PLAYER_1)
-		expect(stats.totalTxCount).toBe(1)
-		expect(stats.balance).toBe(45)
+		expect(stats.totalTxCount):toBe(1)
+		expect(stats.balance):toBe(45)
 	end)
 end)
-
---------------------------------------------------------------------------------
--- Summary
---------------------------------------------------------------------------------
-
-print("\n" .. string.rep("—", 60))
-print("PaymasterBudget: " .. tostring(passed) .. " passed, " .. tostring(failed) .. " failed")
-if #errors > 0 then
-	print("\nFailed tests:")
-	for _, e in errors do
-		print("  • " .. e)
-	end
-end
-print(string.rep("—", 60))

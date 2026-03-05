@@ -2,149 +2,15 @@
 local SponsoredExecutor = require("../../src/paymaster/SponsoredExecutor")
 local StarknetError = require("../../src/errors/StarknetError")
 local ErrorCodes = require("../../src/errors/ErrorCodes")
-
---------------------------------------------------------------------------------
--- Test helpers
---------------------------------------------------------------------------------
-
-local passed = 0
-local failed = 0
-local errors: { string } = {}
-
-local function test(name: string, fn: () -> ())
-	local ok, err = pcall(fn)
-	if ok then
-		passed += 1
-		print("  ✓ " .. name)
-	else
-		failed += 1
-		local msg = tostring(err)
-		table.insert(errors, name .. ": " .. msg)
-		print("  ✗ " .. name .. " — " .. msg)
-	end
-end
-
-local function describe(name: string, fn: () -> ())
-	print("\n" .. name)
-	fn()
-end
-
-local function expect(val: any)
-	return {
-		toBe = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toEqual = function(expected: any)
-			if val ~= expected then
-				error("Expected " .. tostring(expected) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toBeTruthy = function()
-			if not val then
-				error("Expected truthy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeFalsy = function()
-			if val then
-				error("Expected falsy but got " .. tostring(val), 2)
-			end
-		end,
-		toBeNil = function()
-			if val ~= nil then
-				error("Expected nil but got " .. tostring(val), 2)
-			end
-		end,
-		toContain = function(substring: string)
-			if type(val) ~= "string" or not string.find(val, substring, 1, true) then
-				error("Expected string containing '" .. substring .. "' but got " .. tostring(val), 2)
-			end
-		end,
-		toBeGreaterThan = function(n: number)
-			if type(val) ~= "number" or val <= n then
-				error("Expected > " .. tostring(n) .. " but got " .. tostring(val), 2)
-			end
-		end,
-		toBeGreaterThanOrEqual = function(n: number)
-			if type(val) ~= "number" or val < n then
-				error("Expected >= " .. tostring(n) .. " but got " .. tostring(val), 2)
-			end
-		end,
-	}
-end
-
---------------------------------------------------------------------------------
--- MockPromise: synchronous Promise shim for Lune tests
---------------------------------------------------------------------------------
-
-local MockPromise = {}
-MockPromise.__index = MockPromise
-
-function MockPromise.new(executor: (resolve: (any) -> (), reject: (any) -> ()) -> ())
-	local self = setmetatable({ _status = "pending", _value = nil :: any }, MockPromise)
-	executor(function(value)
-		self._status = "resolved"
-		self._value = value
-	end, function(err)
-		self._status = "rejected"
-		self._value = err
-	end)
-	return self
-end
-
-function MockPromise.resolve(value: any)
-	return MockPromise.new(function(resolve, _)
-		resolve(value)
-	end)
-end
-
-function MockPromise.reject(err: any)
-	return MockPromise.new(function(_, reject)
-		reject(err)
-	end)
-end
-
-function MockPromise:expect(): any
-	if self._status == "resolved" then
-		return self._value
-	end
-	if self._status == "rejected" then
-		error(self._value)
-	end
-	error("Promise not settled")
-end
-
-function MockPromise:andThen(fn: (any) -> any)
-	if self._status == "resolved" then
-		local ok, result = pcall(fn, self._value)
-		if ok then
-			return MockPromise.resolve(result)
-		end
-		return MockPromise.reject(result)
-	end
-	return self
-end
-
-function MockPromise:catch(fn: (any) -> any)
-	if self._status == "rejected" then
-		local ok, result = pcall(fn, self._value)
-		if ok then
-			return MockPromise.resolve(result)
-		end
-		return MockPromise.reject(result)
-	end
-	return self
-end
+local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Mock factories
 --------------------------------------------------------------------------------
 
 local noopSleep = function(_seconds: number) end
-local noopClock = function()
-	return 0
-end
+local noopClock = TestUtils.makeClock(0)
 
 local function createMockProvider(overrides: { [string]: any }?)
 	local o = overrides or {}
@@ -188,13 +54,6 @@ local function createMockPolicy(overrides: { [string]: any }?)
 		policy.validate = o.validate
 	else
 		policy.validate = function(_self: any, _playerId: number, _calls: any)
-			return { allowed = true }
-		end
-	end
-	if o.validateFee then
-		policy.validateFee = o.validateFee
-	else
-		policy.validateFee = function(_self: any, _playerId: number, _feeAmount: any)
 			return { allowed = true }
 		end
 	end
@@ -275,15 +134,15 @@ end
 --------------------------------------------------------------------------------
 
 describe("SponsoredExecutor — Constructor validation", function()
-	test("throws on nil config", function()
+	it("throws on nil config", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new(nil :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.REQUIRED_FIELD.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
-	test("throws on missing account", function()
+	it("throws on missing account", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new({
 				paymaster = createMockPaymaster(),
@@ -291,11 +150,11 @@ describe("SponsoredExecutor — Constructor validation", function()
 				_sleep = noopSleep,
 			} :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.REQUIRED_FIELD.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
-	test("throws on missing paymaster", function()
+	it("throws on missing paymaster", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new({
 				account = createMockAccount(),
@@ -303,11 +162,11 @@ describe("SponsoredExecutor — Constructor validation", function()
 				_sleep = noopSleep,
 			} :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.REQUIRED_FIELD.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
-	test("throws on missing feeMode", function()
+	it("throws on missing feeMode", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new({
 				account = createMockAccount(),
@@ -315,11 +174,11 @@ describe("SponsoredExecutor — Constructor validation", function()
 				_sleep = noopSleep,
 			} :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.REQUIRED_FIELD.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
-	test("throws on invalid feeMode.mode", function()
+	it("throws on invalid feeMode.mode", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new({
 				account = createMockAccount(),
@@ -328,11 +187,11 @@ describe("SponsoredExecutor — Constructor validation", function()
 				_sleep = noopSleep,
 			} :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.INVALID_ARGUMENT.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.INVALID_ARGUMENT.code)
 	end)
 
-	test("throws on default mode without gasToken", function()
+	it("throws on default mode without gasToken", function()
 		local ok, err = pcall(function()
 			SponsoredExecutor.new({
 				account = createMockAccount(),
@@ -341,23 +200,23 @@ describe("SponsoredExecutor — Constructor validation", function()
 				_sleep = noopSleep,
 			} :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.REQUIRED_FIELD.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
-	test("succeeds with minimal config (sponsored)", function()
+	it("succeeds with minimal config (sponsored)", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
-		expect(executor).toBeTruthy()
+		expect(executor):toBeTruthy()
 	end)
 
-	test("succeeds with default mode and gasToken", function()
+	it("succeeds with default mode and gasToken", function()
 		local executor = SponsoredExecutor.new(minimalConfig({
 			feeMode = { mode = "default", gasToken = "0xstrk" },
 		}))
-		expect(executor).toBeTruthy()
+		expect(executor):toBeTruthy()
 	end)
 
-	test("succeeds with all optional fields", function()
+	it("succeeds with all optional fields", function()
 		local executor = SponsoredExecutor.new(minimalConfig({
 			policy = createMockPolicy(),
 			budget = createMockBudget(),
@@ -370,53 +229,53 @@ describe("SponsoredExecutor — Constructor validation", function()
 			retryDelay = 2,
 			deploymentData = { classHash = "0xclass" },
 		}))
-		expect(executor).toBeTruthy()
+		expect(executor):toBeTruthy()
 	end)
 end)
 
 describe("SponsoredExecutor — Execute input validation", function()
-	test("throws on non-number playerId", function()
+	it("throws on non-number playerId", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, err = pcall(function()
 			executor:execute("abc" :: any, sampleCalls())
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.INVALID_ARGUMENT.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.INVALID_ARGUMENT.code)
 	end)
 
-	test("throws on empty calls", function()
+	it("throws on empty calls", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, err = pcall(function()
 			executor:execute(123, {})
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.INVALID_ARGUMENT.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.INVALID_ARGUMENT.code)
 	end)
 
-	test("throws on nil calls", function()
+	it("throws on nil calls", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, err = pcall(function()
 			executor:execute(123, nil :: any)
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.INVALID_ARGUMENT.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.INVALID_ARGUMENT.code)
 	end)
 end)
 
 describe("SponsoredExecutor — Basic execution success", function()
-	test("successful execution returns transactionHash and trackingId", function()
+	it("successful execution returns transactionHash and trackingId", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
-		expect(result.trackingId).toBe("track-001")
-		expect(result.tokensCost).toBe(0)
-		expect(result.retryCount).toBe(0)
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
+		expect(result.trackingId):toBe("track-001")
+		expect(result.tokensCost):toBe(0)
+		expect(result.retryCount):toBe(0)
 	end)
 
-	test("forwards feeMode to account:executePaymaster", function()
+	it("forwards feeMode to account:executePaymaster", function()
 		local capturedPd: any = nil
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, pd: any)
@@ -429,11 +288,11 @@ describe("SponsoredExecutor — Basic execution success", function()
 			feeMode = { mode = "default", gasToken = "0xstrk" },
 		}))
 		executor:execute(123, sampleCalls()):expect()
-		expect(capturedPd.feeMode.mode).toBe("default")
-		expect(capturedPd.feeMode.gasToken).toBe("0xstrk")
+		expect(capturedPd.feeMode.mode):toBe("default")
+		expect(capturedPd.feeMode.gasToken):toBe("0xstrk")
 	end)
 
-	test("forwards config deploymentData to paymasterDetails", function()
+	it("forwards config deploymentData to paymasterDetails", function()
 		local capturedPd: any = nil
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, pd: any)
@@ -446,10 +305,10 @@ describe("SponsoredExecutor — Basic execution success", function()
 			deploymentData = { classHash = "0xclass", calldata = { "0x1" }, salt = "0xsalt" },
 		}))
 		executor:execute(123, sampleCalls()):expect()
-		expect(capturedPd.deploymentData.classHash).toBe("0xclass")
+		expect(capturedPd.deploymentData.classHash):toBe("0xclass")
 	end)
 
-	test("options deploymentData overrides config deploymentData", function()
+	it("options deploymentData overrides config deploymentData", function()
 		local capturedPd: any = nil
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, pd: any)
@@ -462,12 +321,12 @@ describe("SponsoredExecutor — Basic execution success", function()
 			deploymentData = { classHash = "0xold" },
 		}))
 		executor:execute(123, sampleCalls(), { deploymentData = { classHash = "0xnew" } }):expect()
-		expect(capturedPd.deploymentData.classHash).toBe("0xnew")
+		expect(capturedPd.deploymentData.classHash):toBe("0xnew")
 	end)
 end)
 
 describe("SponsoredExecutor — Policy integration", function()
-	test("policy rejection prevents execution and fires onTransactionFailed", function()
+	it("policy rejection prevents execution and fires onTransactionFailed", function()
 		local failedCalled = false
 		local policy = createMockPolicy({
 			validate = function(_self: any, _pid: number, _calls: any)
@@ -485,12 +344,12 @@ describe("SponsoredExecutor — Policy integration", function()
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.PAYMASTER_POLICY_REJECTED.code)
-		expect(failedCalled).toBe(true)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_POLICY_REJECTED.code)
+		expect(failedCalled):toBe(true)
 	end)
 
-	test("policy rejection error includes reason", function()
+	it("policy rejection error includes reason", function()
 		local policy = createMockPolicy({
 			validate = function(_self: any, _pid: number, _calls: any)
 				return { allowed = false, reason = "Rate limit exceeded" }
@@ -500,29 +359,29 @@ describe("SponsoredExecutor — Policy integration", function()
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(tostring(err)).toContain("Rate limit exceeded")
+		expect(ok):toBe(false)
+		expect(tostring(err)):toContain("Rate limit exceeded")
 	end)
 
-	test("policy allows → proceeds to execution", function()
+	it("policy allows → proceeds to execution", function()
 		local policy = createMockPolicy()
 		local executor = SponsoredExecutor.new(minimalConfig({ policy = policy }))
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
 	end)
 
-	test("policy records usage on successful execution", function()
+	it("policy records usage on successful execution", function()
 		local policy = createMockPolicy()
 		local executor = SponsoredExecutor.new(minimalConfig({ policy = policy }))
 		executor:execute(123, sampleCalls()):expect()
-		expect(#policy._usageRecorded).toBe(1)
-		expect(policy._usageRecorded[1]).toBe(123)
+		expect(#policy._usageRecorded):toBe(1)
+		expect(policy._usageRecorded[1]):toBe(123)
 	end)
 
-	test("policy does NOT record usage on failed execution", function()
+	it("policy does NOT record usage on failed execution", function()
 		local policy = createMockPolicy()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -539,31 +398,31 @@ describe("SponsoredExecutor — Policy integration", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(#policy._usageRecorded).toBe(0)
+		expect(#policy._usageRecorded):toBe(0)
 	end)
 
-	test("no policy → skips check, executes normally", function()
+	it("no policy → skips check, executes normally", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
 	end)
 end)
 
 describe("SponsoredExecutor — Budget integration", function()
-	test("insufficient budget prevents execution", function()
+	it("insufficient budget prevents execution", function()
 		local budget = createMockBudget({ balance = 0 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.INSUFFICIENT_BUDGET.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.INSUFFICIENT_BUDGET.code)
 	end)
 
-	test("insufficient budget fires onTransactionFailed", function()
+	it("insufficient budget fires onTransactionFailed", function()
 		local failedInfo: any = nil
 		local budget = createMockBudget({ balance = 0 })
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -577,28 +436,28 @@ describe("SponsoredExecutor — Budget integration", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(failedInfo).toBeTruthy()
-		expect(failedInfo.playerId).toBe(123)
-		expect(failedInfo.tokensRefunded).toBe(0)
+		expect(failedInfo):toBeTruthy()
+		expect(failedInfo.playerId):toBe(123)
+		expect(failedInfo.tokensRefunded):toBe(0)
 	end)
 
-	test("budget consumed before execution", function()
+	it("budget consumed before execution", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		executor:execute(123, sampleCalls()):expect()
-		expect(#budget._consumed).toBe(1)
-		expect(budget._consumed[1].cost).toBe(5)
-		expect(budget._balance).toBe(95)
+		expect(#budget._consumed):toBe(1)
+		expect(budget._consumed[1].cost):toBe(5)
+		expect(budget._balance):toBe(95)
 	end)
 
-	test("budget NOT refunded on success", function()
+	it("budget NOT refunded on success", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		executor:execute(123, sampleCalls()):expect()
-		expect(#budget._refunded).toBe(0)
+		expect(#budget._refunded):toBe(0)
 	end)
 
-	test("budget refunded on execution failure", function()
+	it("budget refunded on execution failure", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -615,35 +474,35 @@ describe("SponsoredExecutor — Budget integration", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(#budget._refunded).toBe(1)
-		expect(budget._refunded[1].cost).toBe(5)
-		expect(budget._balance).toBe(100) -- consumed then refunded
+		expect(#budget._refunded):toBe(1)
+		expect(budget._refunded[1].cost):toBe(5)
+		expect(budget._balance):toBe(100) -- consumed then refunded
 	end)
 
-	test("custom txCost option overrides calculated cost", function()
+	it("custom txCost option overrides calculated cost", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		local result = executor:execute(123, sampleCalls(), { txCost = 10 }):expect()
-		expect(result.tokensCost).toBe(10)
-		expect(budget._consumed[1].cost).toBe(10)
-		expect(budget._balance).toBe(90)
+		expect(result.tokensCost):toBe(10)
+		expect(budget._consumed[1].cost):toBe(10)
+		expect(budget._balance):toBe(90)
 	end)
 
-	test("gasUsed option calculates variable cost", function()
+	it("gasUsed option calculates variable cost", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 1, costPerGasUnit = 0.5 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		local result = executor:execute(123, sampleCalls(), { gasUsed = 10 }):expect()
 		-- cost = 1 + (10 * 0.5) = 6
-		expect(result.tokensCost).toBe(6)
+		expect(result.tokensCost):toBe(6)
 	end)
 
-	test("no budget → tokensCost is 0", function()
+	it("no budget → tokensCost is 0", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.tokensCost).toBe(0)
+		expect(result.tokensCost):toBe(0)
 	end)
 
-	test("policy rejection does NOT consume budget", function()
+	it("policy rejection does NOT consume budget", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local policy = createMockPolicy({
 			validate = function(_self: any, _pid: number, _calls: any)
@@ -657,13 +516,13 @@ describe("SponsoredExecutor — Budget integration", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(#budget._consumed).toBe(0)
-		expect(budget._balance).toBe(100)
+		expect(#budget._consumed):toBe(0)
+		expect(budget._balance):toBe(100)
 	end)
 end)
 
 describe("SponsoredExecutor — Retry logic", function()
-	test("transient error (502) triggers retry", function()
+	it("transient error (502) triggers retry", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -676,12 +535,12 @@ describe("SponsoredExecutor — Retry logic", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.transactionHash).toBe("0xretried")
-		expect(result.retryCount).toBe(1)
-		expect(attemptCount).toBe(2)
+		expect(result.transactionHash):toBe("0xretried")
+		expect(result.retryCount):toBe(1)
+		expect(attemptCount):toBe(2)
 	end)
 
-	test("succeeds on 3rd attempt → retryCount=2", function()
+	it("succeeds on 3rd attempt → retryCount=2", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -694,11 +553,11 @@ describe("SponsoredExecutor — Retry logic", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.transactionHash).toBe("0xthird")
-		expect(result.retryCount).toBe(2)
+		expect(result.transactionHash):toBe("0xthird")
+		expect(result.retryCount):toBe(2)
 	end)
 
-	test("deterministic error does NOT retry", function()
+	it("deterministic error does NOT retry", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -712,10 +571,10 @@ describe("SponsoredExecutor — Retry logic", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(attemptCount).toBe(1) -- no retries
+		expect(attemptCount):toBe(1) -- no retries
 	end)
 
-	test("all retries exhausted → wraps error with SPONSORED_EXECUTION_FAILED", function()
+	it("all retries exhausted → wraps error with SPONSORED_EXECUTION_FAILED", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				return MockPromise.reject(StarknetError.rpc("HTTP 502", ErrorCodes.NETWORK_ERROR.code, 502))
@@ -728,12 +587,12 @@ describe("SponsoredExecutor — Retry logic", function()
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.SPONSORED_EXECUTION_FAILED.code)
-		expect(err.data.attempts).toBe(3)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.SPONSORED_EXECUTION_FAILED.code)
+		expect(err.data.attempts):toBe(3)
 	end)
 
-	test("single attempt failure (retryAttempts=1) returns original error", function()
+	it("single attempt failure (retryAttempts=1) returns original error", function()
 		local originalErr = StarknetError.rpc("invalid sig", ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code, 153)
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -747,11 +606,11 @@ describe("SponsoredExecutor — Retry logic", function()
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code)
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code)
 	end)
 
-	test("exponential backoff timing", function()
+	it("exponential backoff timing", function()
 		local sleepCalls: { number } = {}
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -770,13 +629,13 @@ describe("SponsoredExecutor — Retry logic", function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
 		-- Backoff: attempt 2 → 1*2^0=1, attempt 3 → 1*2^1=2, attempt 4 → 1*2^2=4
-		expect(#sleepCalls).toBe(3)
-		expect(sleepCalls[1]).toBe(1)
-		expect(sleepCalls[2]).toBe(2)
-		expect(sleepCalls[3]).toBe(4)
+		expect(#sleepCalls):toBe(3)
+		expect(sleepCalls[1]):toBe(1)
+		expect(sleepCalls[2]):toBe(2)
+		expect(sleepCalls[3]):toBe(4)
 	end)
 
-	test("custom retryDelay scales backoff", function()
+	it("custom retryDelay scales backoff", function()
 		local sleepCalls: { number } = {}
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -794,11 +653,11 @@ describe("SponsoredExecutor — Retry logic", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(sleepCalls[1]).toBe(0.5)
-		expect(sleepCalls[2]).toBe(1)
+		expect(sleepCalls[1]):toBe(0.5)
+		expect(sleepCalls[2]):toBe(1)
 	end)
 
-	test("network error triggers retry", function()
+	it("network error triggers retry", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -811,10 +670,10 @@ describe("SponsoredExecutor — Retry logic", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.transactionHash).toBe("0xrecovered")
+		expect(result.transactionHash):toBe("0xrecovered")
 	end)
 
-	test("rate limit error triggers retry", function()
+	it("rate limit error triggers retry", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -827,10 +686,10 @@ describe("SponsoredExecutor — Retry logic", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.transactionHash).toBe("0xunlimited")
+		expect(result.transactionHash):toBe("0xunlimited")
 	end)
 
-	test("paymaster unavailable triggers retry", function()
+	it("paymaster unavailable triggers retry", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -845,10 +704,10 @@ describe("SponsoredExecutor — Retry logic", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		local result = executor:execute(123, sampleCalls()):expect()
-		expect(result.transactionHash).toBe("0xback")
+		expect(result.transactionHash):toBe("0xback")
 	end)
 
-	test("budget refunded after all retries exhausted", function()
+	it("budget refunded after all retries exhausted", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 10 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -863,13 +722,13 @@ describe("SponsoredExecutor — Retry logic", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(#budget._refunded).toBe(1)
-		expect(budget._balance).toBe(100) -- consumed then refunded
+		expect(#budget._refunded):toBe(1)
+		expect(budget._balance):toBe(100) -- consumed then refunded
 	end)
 end)
 
 describe("SponsoredExecutor — Callbacks", function()
-	test("onTransactionSubmitted fires on success with correct info", function()
+	it("onTransactionSubmitted fires on success with correct info", function()
 		local submittedInfo: any = nil
 		local executor = SponsoredExecutor.new(minimalConfig({
 			callbacks = {
@@ -879,15 +738,15 @@ describe("SponsoredExecutor — Callbacks", function()
 			},
 		}))
 		executor:execute(42, sampleCalls()):expect()
-		expect(submittedInfo).toBeTruthy()
-		expect(submittedInfo.playerId).toBe(42)
-		expect(submittedInfo.transactionHash).toBe("0xdeadbeef")
-		expect(submittedInfo.trackingId).toBe("track-001")
-		expect(submittedInfo.tokensCost).toBe(0)
-		expect(#submittedInfo.calls).toBe(1)
+		expect(submittedInfo):toBeTruthy()
+		expect(submittedInfo.playerId):toBe(42)
+		expect(submittedInfo.transactionHash):toBe("0xdeadbeef")
+		expect(submittedInfo.trackingId):toBe("track-001")
+		expect(submittedInfo.tokensCost):toBe(0)
+		expect(#submittedInfo.calls):toBe(1)
 	end)
 
-	test("onTransactionFailed fires on execution failure", function()
+	it("onTransactionFailed fires on execution failure", function()
 		local failedInfo: any = nil
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -908,12 +767,12 @@ describe("SponsoredExecutor — Callbacks", function()
 		pcall(function()
 			executor:execute(99, sampleCalls()):expect()
 		end)
-		expect(failedInfo).toBeTruthy()
-		expect(failedInfo.playerId).toBe(99)
-		expect(failedInfo.retryCount).toBe(0)
+		expect(failedInfo):toBeTruthy()
+		expect(failedInfo.playerId):toBe(99)
+		expect(failedInfo.retryCount):toBe(0)
 	end)
 
-	test("onTransactionFailed includes tokensRefunded", function()
+	it("onTransactionFailed includes tokensRefunded", function()
 		local failedInfo: any = nil
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 7 })
 		local account = createMockAccount({
@@ -936,10 +795,10 @@ describe("SponsoredExecutor — Callbacks", function()
 		pcall(function()
 			executor:execute(99, sampleCalls()):expect()
 		end)
-		expect(failedInfo.tokensRefunded).toBe(7)
+		expect(failedInfo.tokensRefunded):toBe(7)
 	end)
 
-	test("callback error does not crash executor", function()
+	it("callback error does not crash executor", function()
 		local executor = SponsoredExecutor.new(minimalConfig({
 			callbacks = {
 				onTransactionSubmitted = function(_info: any)
@@ -951,20 +810,20 @@ describe("SponsoredExecutor — Callbacks", function()
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
 	end)
 
-	test("no callbacks → no crash", function()
+	it("no callbacks → no crash", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
 	end)
 
-	test("onTransactionFailed fires on policy rejection", function()
+	it("onTransactionFailed fires on policy rejection", function()
 		local failedInfo: any = nil
 		local policy = createMockPolicy({
 			validate = function(_self: any, _pid: number, _calls: any)
@@ -982,12 +841,12 @@ describe("SponsoredExecutor — Callbacks", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(failedInfo).toBeTruthy()
-		expect(failedInfo.retryCount).toBe(0)
-		expect(failedInfo.tokensRefunded).toBe(0)
+		expect(failedInfo):toBeTruthy()
+		expect(failedInfo.retryCount):toBe(0)
+		expect(failedInfo.tokensRefunded):toBe(0)
 	end)
 
-	test("onTransactionFailed fires on budget rejection", function()
+	it("onTransactionFailed fires on budget rejection", function()
 		local failedInfo: any = nil
 		local budget = createMockBudget({ balance = 0 })
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -1001,13 +860,13 @@ describe("SponsoredExecutor — Callbacks", function()
 		pcall(function()
 			executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(failedInfo).toBeTruthy()
-		expect(failedInfo.playerId).toBe(123)
+		expect(failedInfo):toBeTruthy()
+		expect(failedInfo.playerId):toBe(123)
 	end)
 end)
 
 describe("SponsoredExecutor — waitForConfirmation", function()
-	test("waitForConfirmation=true waits and fires onTransactionConfirmed", function()
+	it("waitForConfirmation=true waits and fires onTransactionConfirmed", function()
 		local confirmedInfo: any = nil
 		local provider = createMockProvider({
 			waitForTransaction = function(_self: any, _txHash: string)
@@ -1024,13 +883,13 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 			},
 		}))
 		local result = executor:execute(123, sampleCalls(), { waitForConfirmation = true }):expect()
-		expect(result.transactionHash).toBe("0xdeadbeef")
-		expect(confirmedInfo).toBeTruthy()
-		expect(confirmedInfo.playerId).toBe(123)
-		expect(confirmedInfo.transactionHash).toBe("0xdeadbeef")
+		expect(result.transactionHash):toBe("0xdeadbeef")
+		expect(confirmedInfo):toBeTruthy()
+		expect(confirmedInfo.playerId):toBe(123)
+		expect(confirmedInfo.transactionHash):toBe("0xdeadbeef")
 	end)
 
-	test("waitForConfirmation=true + revert → refunds budget and rejects", function()
+	it("waitForConfirmation=true + revert → refunds budget and rejects", function()
 		local failedInfo: any = nil
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 5 })
 		local provider = createMockProvider({
@@ -1053,14 +912,14 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls(), { waitForConfirmation = true }):expect()
 		end)
-		expect(ok).toBe(false)
-		expect(err.code).toBe(ErrorCodes.TRANSACTION_REVERTED.code)
-		expect(failedInfo).toBeTruthy()
-		expect(failedInfo.tokensRefunded).toBe(5)
-		expect(budget._balance).toBe(100) -- consumed then refunded
+		expect(ok):toBe(false)
+		expect(err.code):toBe(ErrorCodes.TRANSACTION_REVERTED.code)
+		expect(failedInfo):toBeTruthy()
+		expect(failedInfo.tokensRefunded):toBe(5)
+		expect(budget._balance):toBe(100) -- consumed then refunded
 	end)
 
-	test("waitForConfirmation=false resolves immediately without waiting", function()
+	it("waitForConfirmation=false resolves immediately without waiting", function()
 		local waitCalled = false
 		local provider = createMockProvider({
 			waitForTransaction = function(_self: any, _txHash: string)
@@ -1071,10 +930,10 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 		local account = createMockAccount({ _provider = provider })
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		executor:execute(123, sampleCalls()):expect()
-		expect(waitCalled).toBe(false)
+		expect(waitCalled):toBe(false)
 	end)
 
-	test("waitForConfirmation=true + no waitForTransaction method → resolves immediately", function()
+	it("waitForConfirmation=true + no waitForTransaction method → resolves immediately", function()
 		-- Provider without waitForTransaction
 		local provider = createMockProvider()
 		local account = createMockAccount({ _provider = provider })
@@ -1082,11 +941,11 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 		local ok, result = pcall(function()
 			return executor:execute(123, sampleCalls(), { waitForConfirmation = true }):expect()
 		end)
-		expect(ok).toBe(true)
-		expect(result.transactionHash).toBe("0xdeadbeef")
+		expect(ok):toBe(true)
+		expect(result.transactionHash):toBe("0xdeadbeef")
 	end)
 
-	test("waitForConfirmation + policy records usage only after confirmation", function()
+	it("waitForConfirmation + policy records usage only after confirmation", function()
 		local policy = createMockPolicy()
 		local provider = createMockProvider({
 			waitForTransaction = function(_self: any, _txHash: string)
@@ -1099,10 +958,10 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 			policy = policy,
 		}))
 		executor:execute(123, sampleCalls(), { waitForConfirmation = true }):expect()
-		expect(#policy._usageRecorded).toBe(1)
+		expect(#policy._usageRecorded):toBe(1)
 	end)
 
-	test("waitForConfirmation + revert → policy does NOT record usage", function()
+	it("waitForConfirmation + revert → policy does NOT record usage", function()
 		local policy = createMockPolicy()
 		local provider = createMockProvider({
 			waitForTransaction = function(_self: any, _txHash: string)
@@ -1117,25 +976,25 @@ describe("SponsoredExecutor — waitForConfirmation", function()
 		pcall(function()
 			executor:execute(123, sampleCalls(), { waitForConfirmation = true }):expect()
 		end)
-		expect(#policy._usageRecorded).toBe(0)
+		expect(#policy._usageRecorded):toBe(0)
 	end)
 end)
 
 describe("SponsoredExecutor — Metrics", function()
-	test("totalExecutions incremented per call", function()
+	it("totalExecutions incremented per call", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(1, sampleCalls()):expect()
 		executor:execute(2, sampleCalls()):expect()
-		expect(executor:getMetrics().totalExecutions).toBe(2)
+		expect(executor:getMetrics().totalExecutions):toBe(2)
 	end)
 
-	test("totalSuccessful incremented on success", function()
+	it("totalSuccessful incremented on success", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(1, sampleCalls()):expect()
-		expect(executor:getMetrics().totalSuccessful).toBe(1)
+		expect(executor:getMetrics().totalSuccessful):toBe(1)
 	end)
 
-	test("totalFailed incremented on failure", function()
+	it("totalFailed incremented on failure", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				return MockPromise.reject(
@@ -1150,10 +1009,10 @@ describe("SponsoredExecutor — Metrics", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(executor:getMetrics().totalFailed).toBe(1)
+		expect(executor:getMetrics().totalFailed):toBe(1)
 	end)
 
-	test("totalRetries tracked across attempts", function()
+	it("totalRetries tracked across attempts", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				return MockPromise.reject(StarknetError.rpc("HTTP 502", ErrorCodes.NETWORK_ERROR.code, 502))
@@ -1166,10 +1025,10 @@ describe("SponsoredExecutor — Metrics", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(executor:getMetrics().totalRetries).toBe(3) -- 4 attempts - 1 = 3 retries
+		expect(executor:getMetrics().totalRetries):toBe(3) -- 4 attempts - 1 = 3 retries
 	end)
 
-	test("totalTokensConsumed and totalTokensRefunded tracked", function()
+	it("totalTokensConsumed and totalTokensRefunded tracked", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 8 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1187,62 +1046,62 @@ describe("SponsoredExecutor — Metrics", function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
 		local m = executor:getMetrics()
-		expect(m.totalTokensConsumed).toBe(8)
-		expect(m.totalTokensRefunded).toBe(8)
+		expect(m.totalTokensConsumed):toBe(8)
+		expect(m.totalTokensRefunded):toBe(8)
 	end)
 
-	test("per-player metrics tracked", function()
+	it("per-player metrics tracked", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(100, sampleCalls()):expect()
 		executor:execute(100, sampleCalls()):expect()
 		executor:execute(200, sampleCalls()):expect()
 		local m = executor:getMetrics()
-		expect(m.byPlayer[100].executions).toBe(2)
-		expect(m.byPlayer[100].successful).toBe(2)
-		expect(m.byPlayer[200].executions).toBe(1)
+		expect(m.byPlayer[100].executions):toBe(2)
+		expect(m.byPlayer[100].successful):toBe(2)
+		expect(m.byPlayer[200].executions):toBe(1)
 	end)
 
-	test("per-contract metrics tracked", function()
+	it("per-contract metrics tracked", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(1, {
 			{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
 			{ contractAddress = "0xbbb", entrypoint = "approve", calldata = {} },
 		}):expect()
 		local m = executor:getMetrics()
-		expect(m.byContract["0xaaa"]).toBe(1)
-		expect(m.byContract["0xbbb"]).toBe(1)
+		expect(m.byContract["0xaaa"]):toBe(1)
+		expect(m.byContract["0xbbb"]):toBe(1)
 	end)
 
-	test("per-method metrics tracked", function()
+	it("per-method metrics tracked", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(1, {
 			{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
 		}):expect()
 		local m = executor:getMetrics()
-		expect(m.byMethod["0xaaa:transfer"]).toBe(1)
+		expect(m.byMethod["0xaaa:transfer"]):toBe(1)
 	end)
 
-	test("resetMetrics clears all metrics", function()
+	it("resetMetrics clears all metrics", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
 		executor:execute(1, sampleCalls()):expect()
 		executor:resetMetrics()
 		local m = executor:getMetrics()
-		expect(m.totalExecutions).toBe(0)
-		expect(m.totalSuccessful).toBe(0)
-		expect(m.totalFailed).toBe(0)
-		expect(m.totalRetries).toBe(0)
-		expect(m.totalTokensConsumed).toBe(0)
-		expect(m.totalTokensRefunded).toBe(0)
+		expect(m.totalExecutions):toBe(0)
+		expect(m.totalSuccessful):toBe(0)
+		expect(m.totalFailed):toBe(0)
+		expect(m.totalRetries):toBe(0)
+		expect(m.totalTokensConsumed):toBe(0)
+		expect(m.totalTokensRefunded):toBe(0)
 	end)
 
-	test("per-player tokensSpent tracked on success", function()
+	it("per-player tokensSpent tracked on success", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 3 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		executor:execute(1, sampleCalls()):expect()
-		expect(executor:getMetrics().byPlayer[1].tokensSpent).toBe(3)
+		expect(executor:getMetrics().byPlayer[1].tokensSpent):toBe(3)
 	end)
 
-	test("failed execution increments player failed count", function()
+	it("failed execution increments player failed count", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				return MockPromise.reject(
@@ -1257,12 +1116,12 @@ describe("SponsoredExecutor — Metrics", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(executor:getMetrics().byPlayer[1].failed).toBe(1)
+		expect(executor:getMetrics().byPlayer[1].failed):toBe(1)
 	end)
 end)
 
 describe("SponsoredExecutor — Integration scenarios", function()
-	test("full flow: policy + budget + execute", function()
+	it("full flow: policy + budget + execute", function()
 		local policy = createMockPolicy()
 		local budget = createMockBudget({ balance = 50, costPerTransaction = 5 })
 		local submittedInfo: any = nil
@@ -1277,29 +1136,29 @@ describe("SponsoredExecutor — Integration scenarios", function()
 		}))
 		local result = executor:execute(42, sampleCalls()):expect()
 		-- Execution succeeded
-		expect(result.transactionHash).toBe("0xdeadbeef")
-		expect(result.tokensCost).toBe(5)
+		expect(result.transactionHash):toBe("0xdeadbeef")
+		expect(result.tokensCost):toBe(5)
 		-- Policy usage recorded
-		expect(#policy._usageRecorded).toBe(1)
+		expect(#policy._usageRecorded):toBe(1)
 		-- Budget consumed
-		expect(budget._balance).toBe(45)
+		expect(budget._balance):toBe(45)
 		-- Callback fired
-		expect(submittedInfo).toBeTruthy()
-		expect(submittedInfo.tokensCost).toBe(5)
+		expect(submittedInfo):toBeTruthy()
+		expect(submittedInfo.tokensCost):toBe(5)
 	end)
 
-	test("multiple sequential executions", function()
+	it("multiple sequential executions", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 10 })
 		local executor = SponsoredExecutor.new(minimalConfig({ budget = budget }))
 		executor:execute(1, sampleCalls()):expect()
 		executor:execute(1, sampleCalls()):expect()
 		executor:execute(1, sampleCalls()):expect()
-		expect(budget._balance).toBe(70)
-		expect(executor:getMetrics().totalExecutions).toBe(3)
-		expect(executor:getMetrics().totalSuccessful).toBe(3)
+		expect(budget._balance):toBe(70)
+		expect(executor:getMetrics().totalExecutions):toBe(3)
+		expect(executor:getMetrics().totalSuccessful):toBe(3)
 	end)
 
-	test("retry with budget: consumed once, refunded once on final failure", function()
+	it("retry with budget: consumed once, refunded once on final failure", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 10 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1315,12 +1174,12 @@ describe("SponsoredExecutor — Integration scenarios", function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
 		-- Budget consumed once, refunded once
-		expect(#budget._consumed).toBe(1)
-		expect(#budget._refunded).toBe(1)
-		expect(budget._balance).toBe(100)
+		expect(#budget._consumed):toBe(1)
+		expect(#budget._refunded):toBe(1)
+		expect(budget._balance):toBe(100)
 	end)
 
-	test("multiple calls forwarded to account", function()
+	it("multiple calls forwarded to account", function()
 		local capturedCalls: any = nil
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, calls: any, _pd: any)
@@ -1334,12 +1193,12 @@ describe("SponsoredExecutor — Integration scenarios", function()
 			{ contractAddress = "0xbbb", entrypoint = "approve", calldata = { "0x2" } },
 		}
 		executor:execute(1, calls):expect()
-		expect(#capturedCalls).toBe(2)
-		expect(capturedCalls[1].entrypoint).toBe("transfer")
-		expect(capturedCalls[2].entrypoint).toBe("approve")
+		expect(#capturedCalls):toBe(2)
+		expect(capturedCalls[1].entrypoint):toBe("transfer")
+		expect(capturedCalls[2].entrypoint):toBe("approve")
 	end)
 
-	test("mixed success and failure across calls", function()
+	it("mixed success and failure across calls", function()
 		local callCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1358,23 +1217,23 @@ describe("SponsoredExecutor — Integration scenarios", function()
 		}))
 		-- First call succeeds
 		local r1 = executor:execute(1, sampleCalls()):expect()
-		expect(r1.transactionHash).toBe("0x1")
+		expect(r1.transactionHash):toBe("0x1")
 		-- Second call fails
 		local ok2, _ = pcall(function()
 			return executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(ok2).toBe(false)
+		expect(ok2):toBe(false)
 		-- Third call succeeds
 		local r3 = executor:execute(1, sampleCalls()):expect()
-		expect(r3.transactionHash).toBe("0x3")
+		expect(r3.transactionHash):toBe("0x3")
 		local m = executor:getMetrics()
-		expect(m.totalSuccessful).toBe(2)
-		expect(m.totalFailed).toBe(1)
+		expect(m.totalSuccessful):toBe(2)
+		expect(m.totalFailed):toBe(1)
 	end)
 end)
 
 describe("SponsoredExecutor — Transient error detection", function()
-	test("HTTP 502 is transient (retried)", function()
+	it("HTTP 502 is transient (retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1387,10 +1246,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		executor:execute(1, sampleCalls()):expect()
-		expect(attemptCount).toBe(2)
+		expect(attemptCount):toBe(2)
 	end)
 
-	test("HTTP 503 is transient (retried)", function()
+	it("HTTP 503 is transient (retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1405,10 +1264,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		executor:execute(1, sampleCalls()):expect()
-		expect(attemptCount).toBe(2)
+		expect(attemptCount):toBe(2)
 	end)
 
-	test("HTTP 504 is transient (retried)", function()
+	it("HTTP 504 is transient (retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1421,10 +1280,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		executor:execute(1, sampleCalls()):expect()
-		expect(attemptCount).toBe(2)
+		expect(attemptCount):toBe(2)
 	end)
 
-	test("PAYMASTER_INVALID_SIGNATURE is deterministic (not retried)", function()
+	it("PAYMASTER_INVALID_SIGNATURE is deterministic (not retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1441,10 +1300,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(attemptCount).toBe(1)
+		expect(attemptCount):toBe(1)
 	end)
 
-	test("PAYMASTER_EXECUTION_ERROR is deterministic (not retried)", function()
+	it("PAYMASTER_EXECUTION_ERROR is deterministic (not retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1461,10 +1320,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(attemptCount).toBe(1)
+		expect(attemptCount):toBe(1)
 	end)
 
-	test("PAYMASTER_CALL_VALIDATION_FAILED is deterministic (not retried)", function()
+	it("PAYMASTER_CALL_VALIDATION_FAILED is deterministic (not retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1481,10 +1340,10 @@ describe("SponsoredExecutor — Transient error detection", function()
 		pcall(function()
 			executor:execute(1, sampleCalls()):expect()
 		end)
-		expect(attemptCount).toBe(1)
+		expect(attemptCount):toBe(1)
 	end)
 
-	test("raw string error is treated as transient (retried)", function()
+	it("raw string error is treated as transient (retried)", function()
 		local attemptCount = 0
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
@@ -1497,21 +1356,6 @@ describe("SponsoredExecutor — Transient error detection", function()
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({ account = account }))
 		executor:execute(1, sampleCalls()):expect()
-		expect(attemptCount).toBe(2)
+		expect(attemptCount):toBe(2)
 	end)
 end)
-
---------------------------------------------------------------------------------
--- Summary
---------------------------------------------------------------------------------
-
-print("\n=============================")
-if failed > 0 then
-	print(`  {passed} passed, {failed} FAILED`)
-	for _, e in errors do
-		print("  " .. e)
-	end
-else
-	print(`  All {passed} tests passed!`)
-end
-print("=============================\n")

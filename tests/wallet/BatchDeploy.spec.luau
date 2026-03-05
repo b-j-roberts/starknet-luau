@@ -1,11 +1,8 @@
 --!strict
-local serde = require("@lune/serde")
-
 local AccountType = require("../../src/wallet/AccountType")
 local AccountFactory = require("../../src/wallet/AccountFactory")
 local StarkSigner = require("../../src/signer/StarkSigner")
-local RpcProvider = require("../../src/provider/RpcProvider")
-local RpcTypes = require("../../src/provider/RpcTypes")
+local TestUtils = require("../helpers/TestUtils")
 local MockPromise = require("../helpers/MockPromise")
 
 --------------------------------------------------------------------------------
@@ -13,45 +10,26 @@ local MockPromise = require("../helpers/MockPromise")
 --------------------------------------------------------------------------------
 
 -- Private keys (must be < curve order N)
-local PRIVKEY_1 = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
+local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
 local PRIVKEY_2 = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F"
 local PRIVKEY_3 = "0x1"
 local PRIVKEY_4 = "0x2"
 local PRIVKEY_5 = "0x3"
 
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
-
 --------------------------------------------------------------------------------
 -- Mock RPC layer
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
 
+-- Override defaults with deploy-specific handlers
 local function resetHandlers()
-	mockHandlers = {}
-	requestLog = {}
+	rpc.resetHandlers()
 
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
-
-	-- Default: getNonce errors (account not deployed) — triggers deployment flow
+	-- Default: getNonce errors (account not deployed) -- triggers deployment flow
 	mockHandlers["starknet_getNonce"] = function(_params)
 		error("Contract not found")
-	end
-
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
 	end
 
 	mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
@@ -60,93 +38,10 @@ local function resetHandlers()
 			contract_address = "0xdeployed",
 		}
 	end
-
-	mockHandlers["starknet_getTransactionReceipt"] = function(_params)
-		return {
-			transaction_hash = "0xdeploy123",
-			actual_fee = { amount = "0x1234", unit = "WEI" },
-			execution_status = "SUCCEEDED",
-			finality_status = "ACCEPTED_ON_L2",
-			block_hash = "0xblock1",
-			block_number = 100,
-			events = {},
-		}
-	end
-
-	mockHandlers["starknet_getTransactionStatus"] = function(_params)
-		return {
-			finality_status = "ACCEPTED_ON_L2",
-			execution_status = "SUCCEEDED",
-		}
-	end
-end
-
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
-	end
 end
 
 local function createTestProvider(): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
-	}
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
+	return rpc.createTestProvider()
 end
 
 resetHandlers()

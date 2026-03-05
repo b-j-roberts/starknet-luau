@@ -6,128 +6,39 @@ local serde = require("@lune/serde")
 local RpcProvider = require("../../src/provider/RpcProvider")
 local RpcTypes = require("../../src/provider/RpcTypes")
 local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
--- Mock infrastructure
+-- Queue-specific test infrastructure
 --------------------------------------------------------------------------------
 
---- Create a mock HTTP that processes JSON-RPC requests (single or batch)
-local function createBatchMockHttp(handlers: { [string]: (params: any) -> any })
+--- Create a test provider with queue enabled, synchronous defer, and HTTP call tracking.
+local function createQueueProvider(overrides: { [string]: any }?)
+	local rpc = TestUtils.createMockRpcLayer()
+
+	-- Add extra handlers needed for batch tests
+	rpc.mockHandlers["starknet_blockNumber"] = function(_p)
+		return 123456
+	end
+	rpc.mockHandlers["starknet_specVersion"] = function(_p)
+		return "0.7.1"
+	end
+	rpc.mockHandlers["starknet_getEvents"] = function(_p)
+		return { events = {} }
+	end
+
+	-- Wrap mock HTTP to track call count and raw request bodies
 	local httpCallCount = 0
 	local lastBodies: { any } = {}
+	local innerHttp = rpc.createMockHttpRequest()
 
-	local function httpRequest(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
+	local function trackingHttp(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 		httpCallCount += 1
 		local body = serde.decode("json", request.Body or "{}") :: any
 		table.insert(lastBodies, body)
-
-		-- Batch request: body is an array
-		if type(body) == "table" and #body > 0 and type(body[1]) == "table" and body[1].jsonrpc then
-			local responses: { any } = {}
-			for _, req in body do
-				local handler = handlers[req.method]
-				if handler then
-					local ok, result = pcall(handler, req.params)
-					if ok then
-						table.insert(responses, {
-							jsonrpc = "2.0",
-							id = req.id,
-							result = result,
-						})
-					else
-						table.insert(responses, {
-							jsonrpc = "2.0",
-							id = req.id,
-							error = { code = -32000, message = tostring(result) },
-						})
-					end
-				else
-					table.insert(responses, {
-						jsonrpc = "2.0",
-						id = req.id,
-						error = { code = -32601, message = `Method not found: {req.method}` },
-					})
-				end
-			end
-			return {
-				StatusCode = 200,
-				Body = serde.encode("json", responses),
-				Success = true,
-			}
-		end
-
-		-- Single request
-		local handler = handlers[body.method]
-		if handler then
-			local ok, result = pcall(handler, body.params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = body.id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = body.id,
-						error = { code = -32000, message = tostring(result) },
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = body.id,
-				error = { code = -32601, message = `Method not found: {body.method}` },
-			}),
-			Success = true,
-		}
+		return innerHttp(request)
 	end
 
-	return httpRequest, function()
-		return httpCallCount
-	end, function()
-		return lastBodies
-	end
-end
-
---- Create a test provider with queue enabled and synchronous defer
-local function createQueueProvider(overrides: { [string]: any }?)
-	local handlers = {
-		["starknet_chainId"] = function(_p: any)
-			return "0x534e5f5345504f4c4941"
-		end,
-		["starknet_blockNumber"] = function(_p: any)
-			return 123456
-		end,
-		["starknet_specVersion"] = function(_p: any)
-			return "0.7.1"
-		end,
-		["starknet_getNonce"] = function(_p: any)
-			return "0x5"
-		end,
-		["starknet_getEvents"] = function(_p: any)
-			return { events = {} }
-		end,
-		["starknet_addInvokeTransaction"] = function(_p: any)
-			return { transaction_hash = "0xabc123" }
-		end,
-		["starknet_estimateFee"] = function(_p: any)
-			return { { overall_fee = "0x100000" } }
-		end,
-	}
-
-	local httpRequest, getCallCount, getBodies = createBatchMockHttp(handlers)
 	local deferFns: { () -> () } = {}
 
 	local config: any = {
@@ -135,7 +46,7 @@ local function createQueueProvider(overrides: { [string]: any }?)
 		retryAttempts = 1,
 		retryDelay = 0.001,
 		enableQueue = true,
-		_httpRequest = httpRequest,
+		_httpRequest = trackingHttp,
 		_sleep = function(_s: number) end,
 		_clock = os.clock,
 		_defer = function(fn: () -> ())
@@ -161,7 +72,11 @@ local function createQueueProvider(overrides: { [string]: any }?)
 		end
 	end
 
-	return provider, getCallCount, getBodies, drainDeferred
+	return provider, function()
+		return httpCallCount
+	end, function()
+		return lastBodies
+	end, drainDeferred
 end
 
 --------------------------------------------------------------------------------
@@ -302,14 +217,13 @@ describe("RequestBatcher - metrics tracking", function()
 	end)
 
 	it("increments totalFailed on batch RPC errors", function()
-		local failHandlers = {
-			["starknet_chainId"] = function(_p: any)
-				error("fail")
-			end,
-		}
-		local failHttp, _, _ = createBatchMockHttp(failHandlers)
+		local failRpc = TestUtils.createMockRpcLayer()
+		table.clear(failRpc.mockHandlers)
+		failRpc.mockHandlers["starknet_chainId"] = function(_p: any)
+			error("fail")
+		end
 		local provider, _, _, drainDeferred = createQueueProvider({
-			_httpRequest = failHttp,
+			_httpRequest = failRpc.createMockHttpRequest(),
 		})
 		local p = provider:getChainId()
 		drainDeferred()

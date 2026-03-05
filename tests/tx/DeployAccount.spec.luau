@@ -1,22 +1,19 @@
 --!strict
-local serde = require("@lune/serde")
-
 local TransactionBuilder = require("../../src/tx/TransactionBuilder")
 local TransactionHash = require("../../src/tx/TransactionHash")
 local BigInt = require("../../src/crypto/BigInt")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local Account = require("../../src/wallet/Account")
-local RpcProvider = require("../../src/provider/RpcProvider")
 local RpcTypes = require("../../src/provider/RpcTypes")
-local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test constants
 --------------------------------------------------------------------------------
 
-local TEST_PRIVATE_KEY = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
-local OZ_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
+local TEST_PRIVATE_KEY = TestUtils.TEST_PRIVATE_KEY
+local SN_SEPOLIA = TestUtils.SN_SEPOLIA
+local OZ_CLASS_HASH = TestUtils.OZ_CLASS_HASH
 
 -- Derive the public key and address for deploy tests
 local TEST_SIGNER = StarkSigner.new(TEST_PRIVATE_KEY)
@@ -30,116 +27,21 @@ local TEST_DEPLOY_ADDRESS = Account.computeAddress({
 -- Mock RPC layer
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
-local function clearRequestLog()
-	requestLog = {}
-end
-
+-- Override defaults with deploy-specific handlers
 local function resetHandlers()
-	mockHandlers = {}
-
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
+	rpc.resetHandlers()
 
 	mockHandlers["starknet_getNonce"] = function(_params)
 		-- Simulate CONTRACT_NOT_FOUND for non-deployed accounts
 		error("Contract not found")
 	end
 
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
-	end
-
 	mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
 		return { transaction_hash = "0xdeploy123", contract_address = TEST_DEPLOY_ADDRESS }
-	end
-
-	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
-		return { transaction_hash = "0xabc123" }
-	end
-
-	mockHandlers["starknet_getTransactionReceipt"] = function(_params)
-		return {
-			transaction_hash = "0xdeploy123",
-			actual_fee = { amount = "0x1234", unit = "WEI" },
-			execution_status = "SUCCEEDED",
-			finality_status = "ACCEPTED_ON_L2",
-			block_hash = "0xblock1",
-			block_number = 100,
-			events = {},
-		}
-	end
-
-	mockHandlers["starknet_getTransactionStatus"] = function(_params)
-		return {
-			finality_status = "ACCEPTED_ON_L2",
-			execution_status = "SUCCEEDED",
-		}
-	end
-end
-
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
 	end
 end
 
@@ -148,24 +50,7 @@ end
 --------------------------------------------------------------------------------
 
 local function createTestProvider(overrides: { [string]: any }?): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
-	}
-
-	if overrides then
-		for k, v in overrides do
-			config[k] = v
-		end
-	end
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
+	return rpc.createTestProvider(overrides)
 end
 
 local function createTestAccount(): TransactionBuilder.Account
@@ -194,7 +79,7 @@ resetHandlers()
 describe("TransactionBuilder - deployAccount full flow", function()
 	it("returns a transaction hash on successful deployment", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -206,7 +91,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("returns contract address on successful deployment", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -218,7 +103,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("fetches chain ID from provider", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -238,7 +123,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("estimates fees from provider", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -258,7 +143,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("submits a signed deploy account transaction", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -282,7 +167,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("submits transaction with correct type and version", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -302,7 +187,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("submits transaction with correct class hash", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -321,7 +206,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("submits transaction with correct constructor calldata", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -341,7 +226,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("submits transaction with correct salt", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -360,7 +245,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("uses nonce 0x0 by default for new account deployments", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -379,7 +264,7 @@ describe("TransactionBuilder - deployAccount full flow", function()
 
 	it("does NOT fetch nonce from provider (uses default 0x0)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -405,7 +290,7 @@ end)
 describe("TransactionBuilder - deployAccount fee estimation", function()
 	it("applies default fee multiplier (1.5x)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -427,7 +312,7 @@ describe("TransactionBuilder - deployAccount fee estimation", function()
 
 	it("applies custom fee multiplier", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -448,7 +333,7 @@ describe("TransactionBuilder - deployAccount fee estimation", function()
 
 	it("sends DEPLOY_ACCOUNT type in fee estimation", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -468,7 +353,7 @@ describe("TransactionBuilder - deployAccount fee estimation", function()
 
 	it("sends SKIP_VALIDATE flag for estimation", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -486,7 +371,7 @@ describe("TransactionBuilder - deployAccount fee estimation", function()
 
 	it("sends dummy signature for estimation", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -512,7 +397,7 @@ end)
 describe("TransactionBuilder - deployAccount resource bounds override", function()
 	it("uses provided resource bounds instead of estimating", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -539,7 +424,7 @@ describe("TransactionBuilder - deployAccount resource bounds override", function
 
 	it("submits transaction with override resource bounds", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -573,7 +458,7 @@ end)
 describe("TransactionBuilder - deployAccount nonce override", function()
 	it("uses provided nonce instead of default 0x0", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -598,7 +483,7 @@ end)
 describe("TransactionBuilder - deployAccount dryRun", function()
 	it("does not submit the transaction", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -618,7 +503,7 @@ describe("TransactionBuilder - deployAccount dryRun", function()
 
 	it("returns transaction hash, transaction object, and signature", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -634,7 +519,7 @@ describe("TransactionBuilder - deployAccount dryRun", function()
 
 	it("dryRun transaction matches what would be submitted", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -657,7 +542,7 @@ describe("TransactionBuilder - deployAccount dryRun", function()
 		}):expect()
 
 		-- Actual execution with same options
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local execResult = builder:deployAccount(account, params, {
 			nonce = opts.nonce,
 			resourceBounds = opts.resourceBounds,
@@ -817,7 +702,7 @@ end)
 describe("TransactionBuilder - deployAccount RPC call sequence", function()
 	it("calls RPCs in correct order: getChainId, estimateFee, addDeployAccountTransaction", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -858,7 +743,7 @@ end)
 describe("TransactionBuilder - estimateDeployAccountFee", function()
 	it("returns a fee estimate for deploy account", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -872,7 +757,7 @@ describe("TransactionBuilder - estimateDeployAccountFee", function()
 
 	it("sends DEPLOY_ACCOUNT tx type for estimation", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local builder = TransactionBuilder.new(provider)
 		local account = createTestAccount()
@@ -911,7 +796,7 @@ end)
 describe("Account - deployAccount", function()
 	it("deploys account via Account convenience method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -924,7 +809,7 @@ describe("Account - deployAccount", function()
 
 	it("submits deploy with correct class hash and calldata", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -946,7 +831,7 @@ describe("Account - deployAccount", function()
 
 	it("supports dryRun option", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -970,7 +855,7 @@ describe("Account - deployAccount", function()
 
 	it("supports resource bounds override", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -997,7 +882,7 @@ describe("Account - deployAccount", function()
 
 	it("works with Argent account type", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1027,7 +912,7 @@ end)
 describe("Account - estimateDeployAccountFee", function()
 	it("returns fee estimate for deployment", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1047,7 +932,7 @@ end)
 describe("RpcProvider - addDeployAccountTransaction", function()
 	it("submits deploy account tx and returns transaction hash and contract address", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 
 		local deployTx: RpcTypes.DeployAccountTransactionV3 = {
@@ -1075,7 +960,7 @@ describe("RpcProvider - addDeployAccountTransaction", function()
 
 	it("sends correct RPC method", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 
 		local deployTx: RpcTypes.DeployAccountTransactionV3 = {
@@ -1119,7 +1004,7 @@ end)
 describe("Account.deployAccount - idempotency check", function()
 	it("returns early with alreadyDeployed=true when account is already deployed", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		-- Override getNonce to succeed (simulating an already-deployed account)
 		mockHandlers["starknet_getNonce"] = function(_params)
 			return "0x5"
@@ -1138,7 +1023,7 @@ describe("Account.deployAccount - idempotency check", function()
 
 	it("does not call estimateFee or addDeployAccountTransaction when already deployed", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			return "0x0"
 		end
@@ -1166,8 +1051,8 @@ describe("Account.deployAccount - idempotency check", function()
 
 	it("proceeds with deployment when getNonce errors (contract not found)", function()
 		resetHandlers()
-		clearRequestLog()
-		-- Default mock: getNonce errors → contract not deployed
+		rpc.clearRequestLog()
+		-- Default mock: getNonce errors -> contract not deployed
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1182,7 +1067,7 @@ describe("Account.deployAccount - idempotency check", function()
 
 	it("idempotency check works with nonce 0x0 (freshly deployed)", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			return "0x0"
 		end
@@ -1204,7 +1089,7 @@ end)
 describe("Account.deployAccount - waitForConfirmation", function()
 	it("waits for transaction confirmation by default", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1225,7 +1110,7 @@ describe("Account.deployAccount - waitForConfirmation", function()
 
 	it("calls getTransactionReceipt after confirmation", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1246,7 +1131,7 @@ describe("Account.deployAccount - waitForConfirmation", function()
 
 	it("does not wait when waitForConfirmation=false", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1267,7 +1152,7 @@ describe("Account.deployAccount - waitForConfirmation", function()
 
 	it("does not wait when dryRun=true even with waitForConfirmation=true", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1312,7 +1197,7 @@ end)
 describe("Account.deployAccount - maxFee option", function()
 	it("caps resource bounds when maxFee is below estimated fee", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1342,7 +1227,7 @@ describe("Account.deployAccount - maxFee option", function()
 
 	it("does not cap when maxFee is above estimated fee", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1366,7 +1251,7 @@ describe("Account.deployAccount - maxFee option", function()
 
 	it("maxFee is ignored when resourceBounds is explicitly provided", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1404,7 +1289,7 @@ end)
 describe("Account.deployAccount - full orchestration flow", function()
 	it("executes complete flow: getNonce check, estimate, sign, submit, confirm", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1450,7 +1335,7 @@ describe("Account.deployAccount - full orchestration flow", function()
 
 	it("returns contractAddress in result", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1463,7 +1348,7 @@ describe("Account.deployAccount - full orchestration flow", function()
 
 	it("preserves dryRun result shape with contractAddress", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1479,7 +1364,7 @@ describe("Account.deployAccount - full orchestration flow", function()
 
 	it("works with Argent account type end-to-end", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1504,7 +1389,7 @@ describe("Account.deployAccount - full orchestration flow", function()
 
 	it("works with Braavos account type end-to-end", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,
@@ -1528,7 +1413,7 @@ describe("Account.deployAccount - full orchestration flow", function()
 
 	it("supports feeMultiplier option", function()
 		resetHandlers()
-		clearRequestLog()
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = TEST_PRIVATE_KEY,

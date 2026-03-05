@@ -1,145 +1,51 @@
 --!strict
-local serde = require("@lune/serde")
 
 local NonceManager = require("../../src/provider/NonceManager")
-local RpcProvider = require("../../src/provider/RpcProvider")
-local RpcTypes = require("../../src/provider/RpcTypes")
 local Account = require("../../src/wallet/Account")
 local StarkSigner = require("../../src/signer/StarkSigner")
-local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
+
+--------------------------------------------------------------------------------
+-- Mock RPC layer (shared TestUtils infrastructure)
+--------------------------------------------------------------------------------
+
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
 --------------------------------------------------------------------------------
 -- Test constants
 --------------------------------------------------------------------------------
 
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
-local TEST_ADDRESS = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+local TEST_ADDRESS = TestUtils.TEST_ADDRESS
 local TEST_ADDRESS_2 = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
--- Private key from StarkSigner tests (must be < curve order N)
-local PRIVKEY_1 = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
+local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
 
 --------------------------------------------------------------------------------
--- Mock infrastructure
+-- Spec-specific state
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
 local onChainNonce = "0x5"
 
 local function resetMocks()
-	mockHandlers = {}
-	requestLog = {}
+	rpc.resetHandlers()
 	onChainNonce = "0x5"
 
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
-
+	-- Override default getNonce to use mutable onChainNonce variable
 	mockHandlers["starknet_getNonce"] = function(_params)
 		return onChainNonce
-	end
-
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
-	end
-
-	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
-		return { transaction_hash = "0xabc123" }
-	end
-end
-
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
 	end
 end
 
 local function createTestProvider(enableNonceManager: boolean?, nmConfig: any?): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
+	return rpc.createTestProvider({
 		enableNonceManager = enableNonceManager or false,
 		nonceManagerConfig = nmConfig,
-	}
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
+	})
 end
 
 local function createTestCalls(): { any }
-	return {
-		{
-			contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-			entrypoint = "transfer",
-			calldata = {
-				"0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-				"0x3e8",
-				"0x0",
-			},
-		},
-	}
+	return TestUtils.createTestCalls()
 end
 
 resetMocks()
@@ -198,7 +104,6 @@ describe("NonceManager - reserve", function()
 		resetMocks()
 		onChainNonce = "0xa"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local result = nm:reserve(TEST_ADDRESS):expect()
@@ -210,7 +115,6 @@ describe("NonceManager - reserve", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -225,9 +129,8 @@ describe("NonceManager - reserve", function()
 	it("does not re-fetch nonce after initialization", function()
 		resetMocks()
 		onChainNonce = "0x5"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -256,7 +159,6 @@ describe("NonceManager - reserve", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -270,7 +172,6 @@ describe("NonceManager - reserve", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -284,7 +185,6 @@ describe("NonceManager - reserve", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local result = nm:reserve(TEST_ADDRESS):expect()
@@ -293,9 +193,8 @@ describe("NonceManager - reserve", function()
 
 	it("uses pending block tag for fetch", function()
 		resetMocks()
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -321,7 +220,6 @@ describe("NonceManager - confirm", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -335,7 +233,6 @@ describe("NonceManager - confirm", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -349,7 +246,6 @@ describe("NonceManager - confirm", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -363,7 +259,6 @@ describe("NonceManager - confirm", function()
 	it("handles confirm for unknown address gracefully", function()
 		resetMocks()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		-- Should not error
@@ -374,7 +269,6 @@ describe("NonceManager - confirm", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -403,7 +297,6 @@ describe("NonceManager - reject", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -417,7 +310,6 @@ describe("NonceManager - reject", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider, { autoResyncOnError = true })
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -430,7 +322,6 @@ describe("NonceManager - reject", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider, { autoResyncOnError = false })
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -443,7 +334,6 @@ describe("NonceManager - reject", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -457,7 +347,6 @@ describe("NonceManager - reject", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonce = nm:reserve(TEST_ADDRESS):expect()
@@ -471,7 +360,6 @@ describe("NonceManager - reject", function()
 	it("handles reject for unknown address gracefully", function()
 		resetMocks()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reject("0xunknown", "0x0")
@@ -487,7 +375,6 @@ describe("NonceManager - auto resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -508,7 +395,6 @@ describe("NonceManager - auto resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -529,7 +415,6 @@ describe("NonceManager - auto resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -550,7 +435,6 @@ describe("NonceManager - auto resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -573,7 +457,6 @@ describe("NonceManager - parallel reservation", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonces = {}
@@ -593,7 +476,6 @@ describe("NonceManager - parallel reservation", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local nonces = {}
@@ -614,7 +496,6 @@ describe("NonceManager - parallel reservation", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -641,7 +522,6 @@ describe("NonceManager - backpressure", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider, { maxPendingNonces = 3 })
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -657,7 +537,6 @@ describe("NonceManager - backpressure", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider, { maxPendingNonces = 2 })
 
 		local n1 = nm:reserve(TEST_ADDRESS):expect()
@@ -679,7 +558,6 @@ describe("NonceManager - backpressure", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		for _ = 1, 10 do
@@ -701,7 +579,6 @@ describe("NonceManager - resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -717,7 +594,6 @@ describe("NonceManager - resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		-- Reserve some nonces
@@ -738,7 +614,6 @@ describe("NonceManager - resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -753,7 +628,6 @@ describe("NonceManager - resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n = nm:reserve(TEST_ADDRESS):expect()
@@ -768,7 +642,6 @@ describe("NonceManager - resync", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -789,7 +662,6 @@ describe("NonceManager - reset", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -809,7 +681,6 @@ describe("NonceManager - reset", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -829,7 +700,6 @@ describe("NonceManager - reset", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -843,9 +713,8 @@ describe("NonceManager - reset", function()
 	it("causes next reserve to re-fetch from chain", function()
 		resetMocks()
 		onChainNonce = "0x5"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -867,7 +736,6 @@ describe("NonceManager - peekNextNonce", function()
 	it("returns nil for uninitialized address", function()
 		resetMocks()
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		expect(nm:peekNextNonce(TEST_ADDRESS)):toBe(nil)
@@ -877,7 +745,6 @@ describe("NonceManager - peekNextNonce", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -908,7 +775,6 @@ describe("NonceManager - error handling", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local p = nm:reserve(TEST_ADDRESS)
@@ -919,7 +785,6 @@ describe("NonceManager - error handling", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		nm:reserve(TEST_ADDRESS):expect()
@@ -945,7 +810,6 @@ describe("NonceManager - error handling", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		-- First reserve fails
@@ -980,7 +844,6 @@ describe("NonceManager - provider integration", function()
 	it("provider passes config to NonceManager", function()
 		resetMocks()
 		local provider = createTestProvider(true, { maxPendingNonces = 3 })
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local nm = provider:getNonceManager()
 		onChainNonce = "0x0"
@@ -999,7 +862,6 @@ describe("NonceManager - provider integration", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local nm = provider:getNonceManager()
 		local n = nm:reserve(TEST_ADDRESS):expect()
@@ -1032,9 +894,8 @@ describe("NonceManager - Account integration", function()
 	it("Account uses NonceManager when enabled on provider", function()
 		resetMocks()
 		onChainNonce = "0x5"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1056,9 +917,8 @@ describe("NonceManager - Account integration", function()
 	it("Account increments nonces for sequential transactions", function()
 		resetMocks()
 		onChainNonce = "0x0"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1099,9 +959,8 @@ describe("NonceManager - Account integration", function()
 	it("Account bypasses NonceManager when explicit nonce provided", function()
 		resetMocks()
 		onChainNonce = "0x5"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1133,7 +992,6 @@ describe("NonceManager - Account integration", function()
 			error("insufficient funds")
 		end
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1165,7 +1023,6 @@ describe("NonceManager - Account integration", function()
 		end
 
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1197,9 +1054,8 @@ describe("NonceManager - Account integration", function()
 	it("Account works normally without NonceManager", function()
 		resetMocks()
 		onChainNonce = "0x5"
-		requestLog = {}
+		rpc.clearRequestLog()
 		local provider = createTestProvider(false)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1224,7 +1080,6 @@ describe("NonceManager - Account integration", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider(true)
-		;(provider :: any)._PromiseModule = MockPromise
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1253,7 +1108,6 @@ describe("NonceManager - edge cases", function()
 		resetMocks()
 		onChainNonce = "0xfffff"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n = nm:reserve(TEST_ADDRESS):expect()
@@ -1267,7 +1121,6 @@ describe("NonceManager - edge cases", function()
 		resetMocks()
 		onChainNonce = "0x0"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n = nm:reserve(TEST_ADDRESS):expect()
@@ -1281,7 +1134,6 @@ describe("NonceManager - edge cases", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local oldNonce = nm:reserve(TEST_ADDRESS):expect()
@@ -1300,7 +1152,6 @@ describe("NonceManager - edge cases", function()
 		resetMocks()
 		onChainNonce = "0x5"
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider, { autoResyncOnError = false })
 
 		local oldNonce = nm:reserve(TEST_ADDRESS):expect()
@@ -1325,7 +1176,6 @@ describe("NonceManager - edge cases", function()
 		end
 
 		local provider = createTestProvider()
-		;(provider :: any)._PromiseModule = MockPromise
 		local nm = NonceManager.new(provider)
 
 		local n1a = nm:reserve(TEST_ADDRESS):expect()

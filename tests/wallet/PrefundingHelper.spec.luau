@@ -1,22 +1,17 @@
 --!strict
-local serde = require("@lune/serde")
-
 local Account = require("../../src/wallet/Account")
 local BigInt = require("../../src/crypto/BigInt")
 local Constants = require("../../src/constants")
-local RpcProvider = require("../../src/provider/RpcProvider")
-local RpcTypes = require("../../src/provider/RpcTypes")
-local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test constants
 --------------------------------------------------------------------------------
 
-local PRIVKEY_1 = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-local PUBKEY_1 = "0x499f65ae2f71d5298d2d88823b2e5e19596a71aac1984710479e406a002439"
-local OZ_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
-local ARGENT_CLASS_HASH = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
+local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
+local PUBKEY_1 = TestUtils.TEST_PUBLIC_KEY
+local OZ_CLASS_HASH = TestUtils.OZ_CLASS_HASH
+local ARGENT_CLASS_HASH = TestUtils.ARGENT_CLASS_HASH
 
 -- Pre-computed OZ address for PUBKEY_1 (from Account.spec.luau)
 local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d"
@@ -33,16 +28,13 @@ local ETH_TOKEN = Constants.ETH_TOKEN_ADDRESS
 -- Mock RPC layer
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
+-- Override defaults with prefunding-specific handlers
 local function resetHandlers()
-	mockHandlers = {}
-	requestLog = {}
-
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
+	rpc.resetHandlers()
 
 	mockHandlers["starknet_estimateFee"] = function(_params)
 		return {
@@ -63,72 +55,8 @@ local function resetHandlers()
 	end
 end
 
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
-	end
-end
-
 local function createTestProvider(): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
-	}
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
+	return rpc.createTestProvider()
 end
 
 resetHandlers()
@@ -194,7 +122,7 @@ describe("Account.getDeploymentFeeEstimate", function()
 	it("sends estimateFee RPC with DEPLOY_ACCOUNT transaction", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		requestLog = {}
+		rpc.clearRequestLog()
 
 		Account.getDeploymentFeeEstimate({
 			classHash = OZ_CLASS_HASH,
@@ -221,7 +149,7 @@ describe("Account.getDeploymentFeeEstimate", function()
 	it("includes class hash and constructor calldata in RPC request", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		requestLog = {}
+		rpc.clearRequestLog()
 
 		Account.getDeploymentFeeEstimate({
 			classHash = OZ_CLASS_HASH,
@@ -338,7 +266,7 @@ describe("Account.checkDeploymentBalance", function()
 		resetHandlers()
 		-- Balance: 0x200000 (low), 0x0 (high) = 0x200000
 		-- Fee: 0x100000 * 1.5 = 0x180000
-		-- 0x200000 > 0x180000 → sufficient
+		-- 0x200000 > 0x180000 -> sufficient
 		local provider = createTestProvider()
 
 		local result = Account.checkDeploymentBalance({
@@ -360,7 +288,7 @@ describe("Account.checkDeploymentBalance", function()
 		resetHandlers()
 		-- Balance: 0x1000 (low), 0x0 (high) = 0x1000
 		-- Fee: 0x100000 * 1.5 = 0x180000
-		-- 0x1000 < 0x180000 → insufficient
+		-- 0x1000 < 0x180000 -> insufficient
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x1000", "0x0" }
 		end
@@ -423,7 +351,7 @@ describe("Account.checkDeploymentBalance", function()
 
 	it("converts u256 high word correctly", function()
 		resetHandlers()
-		-- Balance: low=0x0, high=0x1 → 2^128 which is a huge number, certainly sufficient
+		-- Balance: low=0x0, high=0x1 -> 2^128 which is a huge number, certainly sufficient
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x0", "0x1" }
 		end
@@ -444,7 +372,7 @@ describe("Account.checkDeploymentBalance", function()
 
 	it("converts u256 with both low and high words", function()
 		resetHandlers()
-		-- Balance: low=0xff, high=0x1 → 2^128 + 0xff
+		-- Balance: low=0xff, high=0x1 -> 2^128 + 0xff
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0xff", "0x1" }
 		end
@@ -465,7 +393,7 @@ describe("Account.checkDeploymentBalance", function()
 	it("defaults to STRK token", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		requestLog = {}
+		rpc.clearRequestLog()
 
 		local result = Account.checkDeploymentBalance({
 			address = EXPECTED_ADDR_1_OZ,
@@ -491,7 +419,7 @@ describe("Account.checkDeploymentBalance", function()
 	it("supports ETH token selection", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		requestLog = {}
+		rpc.clearRequestLog()
 
 		local result = Account.checkDeploymentBalance({
 			address = EXPECTED_ADDR_1_OZ,
@@ -533,7 +461,7 @@ describe("Account.checkDeploymentBalance", function()
 
 	it("uses custom fee multiplier", function()
 		resetHandlers()
-		-- Balance: 0x190000 — between 1.5x (0x180000) and 2x (0x200000)
+		-- Balance: 0x190000 -- between 1.5x (0x180000) and 2x (0x200000)
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x190000", "0x0" }
 		end

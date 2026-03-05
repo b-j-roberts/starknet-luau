@@ -96,10 +96,7 @@ function MockPromise:expect(): any
 	if self._status == "Resolved" then
 		return self._value
 	elseif self._status == "Rejected" then
-		if type(self._value) == "table" and self._value.message then
-			error(self._value.message)
-		end
-		error(tostring(self._value))
+		error(self._value)
 	end
 	error("Promise is still pending")
 end

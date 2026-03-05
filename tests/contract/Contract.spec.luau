@@ -1,23 +1,13 @@
 --!strict
-local serde = require("@lune/serde")
-
 local Contract = require("../../src/contract/Contract")
-local RpcProvider = require("../../src/provider/RpcProvider")
-local RpcTypes = require("../../src/provider/RpcTypes")
-local StarkSigner = require("../../src/signer/StarkSigner")
 local Account = require("../../src/wallet/Account")
-local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test constants
 --------------------------------------------------------------------------------
 
 local CONTRACT_ADDR = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-
--- Private key for account (from StarkSigner tests, < curve order N)
-local PRIVKEY = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
-
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
 
 -- Sample ERC-20 ABI (simplified Cairo ABI format)
 local ERC20_ABI: Contract.Abi = {
@@ -163,125 +153,21 @@ local MULTI_OUTPUT_ABI: Contract.Abi = {
 }
 
 --------------------------------------------------------------------------------
--- Mock RPC layer
+-- Mock RPC layer (shared via TestUtils)
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
-
-local function resetHandlers()
-	mockHandlers = {}
-	requestLog = {}
-
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
-
-	mockHandlers["starknet_getNonce"] = function(_params)
-		return "0x5"
-	end
-
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
-	end
-
-	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
-		return { transaction_hash = "0xabc123" }
-	end
-
-	-- Default: return a single felt
-	mockHandlers["starknet_call"] = function(_params)
-		return { "0x1" }
-	end
-end
-
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
-	end
-end
-
-local function createTestProvider(): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
-	}
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
-end
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
 local function createTestAccount(): any
-	resetHandlers()
-	local provider = createTestProvider()
+	rpc.resetHandlers()
+	local provider = rpc.createTestProvider()
 	return Account.fromPrivateKey({
-		privateKey = PRIVKEY,
+		privateKey = TestUtils.TEST_PRIVATE_KEY,
 		provider = provider,
 	})
 end
-
-resetHandlers()
 
 --------------------------------------------------------------------------------
 -- Contract.new (constructor)
@@ -289,8 +175,8 @@ resetHandlers()
 
 describe("Contract.new - constructor validation", function()
 	it("creates a contract with abi, address, and provider", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local contract = Contract.new({
 			abi = ERC20_ABI,
@@ -302,9 +188,9 @@ describe("Contract.new - constructor validation", function()
 	end)
 
 	it("creates a contract with optional account", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 
 		local contract = Contract.new({
 			abi = ERC20_ABI,
@@ -316,8 +202,8 @@ describe("Contract.new - constructor validation", function()
 	end)
 
 	it("errors when abi is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Contract.new({
@@ -329,8 +215,8 @@ describe("Contract.new - constructor validation", function()
 	end)
 
 	it("errors when address is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Contract.new({
@@ -358,8 +244,8 @@ end)
 
 describe("Contract - ABI parsing", function()
 	it("parses function entries from ABI", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -371,8 +257,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("includes all function entries", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -389,8 +275,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("ignores non-function entries (events, structs)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -402,8 +288,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("stores correct state_mutability", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -420,8 +306,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("computes correct selectors for functions", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -435,8 +321,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("stores input/output parameter info", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -451,8 +337,8 @@ describe("Contract - ABI parsing", function()
 	end)
 
 	it("returns nil for non-existent function", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -469,11 +355,11 @@ end)
 
 describe("Contract:call - view functions", function()
 	it("calls a view function with no arguments", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x4574686572" } -- "Ether" as felt
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -485,11 +371,11 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("calls a view function with one argument", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x3e8", "0x0" } -- 1000 as u256 (low, high)
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -503,11 +389,11 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("calls a view function with multiple arguments", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x5f5e100", "0x0" } -- allowance as u256
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -519,9 +405,9 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("sends correct contract_address to provider", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -542,9 +428,9 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("sends correct entry_point_selector to provider", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -566,12 +452,12 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("encodes calldata for felt252 argument", function()
-		resetHandlers()
-		requestLog = {}
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x3e8", "0x0" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -594,8 +480,8 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("errors when calling a non-existent function", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -608,8 +494,8 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("errors when wrong number of arguments provided", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -622,8 +508,8 @@ describe("Contract:call - view functions", function()
 	end)
 
 	it("errors when too many arguments provided", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -642,8 +528,8 @@ end)
 
 describe("Contract:populate - build Call objects", function()
 	it("builds a Call for a function with no args", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -657,8 +543,8 @@ describe("Contract:populate - build Call objects", function()
 	end)
 
 	it("builds a Call for a function with felt252 arg", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -673,8 +559,8 @@ describe("Contract:populate - build Call objects", function()
 	end)
 
 	it("builds a Call for a function with u256 arg (expands to 2 felts)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -694,8 +580,8 @@ describe("Contract:populate - build Call objects", function()
 	end)
 
 	it("errors for non-existent function", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -708,8 +594,8 @@ describe("Contract:populate - build Call objects", function()
 	end)
 
 	it("errors for wrong argument count", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -722,8 +608,8 @@ describe("Contract:populate - build Call objects", function()
 	end)
 
 	it("can be used for multicall batching", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -747,9 +633,9 @@ end)
 
 describe("Contract:invoke - write transactions", function()
 	it("invokes a transaction and returns hash", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -763,9 +649,9 @@ describe("Contract:invoke - write transactions", function()
 	end)
 
 	it("supports dryRun option", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -780,8 +666,8 @@ describe("Contract:invoke - write transactions", function()
 	end)
 
 	it("errors when no account is set", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -795,9 +681,9 @@ describe("Contract:invoke - write transactions", function()
 	end)
 
 	it("errors when invoking a non-existent function", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -811,10 +697,10 @@ describe("Contract:invoke - write transactions", function()
 	end)
 
 	it("sends the correct contract address in the call", function()
-		resetHandlers()
-		requestLog = {}
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -835,9 +721,9 @@ describe("Contract:invoke - write transactions", function()
 	end)
 
 	it("invokes a function with no args", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MINIMAL_ABI,
 			address = CONTRACT_ADDR,
@@ -856,11 +742,11 @@ end)
 
 describe("Contract - dynamic method dispatch", function()
 	it("view function is callable as contract:method()", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x4574686572" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -872,11 +758,11 @@ describe("Contract - dynamic method dispatch", function()
 	end)
 
 	it("view function with args is callable dynamically", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x3e8", "0x0" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -888,9 +774,9 @@ describe("Contract - dynamic method dispatch", function()
 	end)
 
 	it("external function is callable as contract:method()", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		local account = createTestAccount()
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -903,11 +789,11 @@ describe("Contract - dynamic method dispatch", function()
 	end)
 
 	it("dynamic view returns correct parsed u256 result", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x5f5e100", "0x0" } -- total_supply
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -920,8 +806,8 @@ describe("Contract - dynamic method dispatch", function()
 	end)
 
 	it("class methods still accessible on dynamic dispatch instance", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -938,8 +824,8 @@ describe("Contract - dynamic method dispatch", function()
 	end)
 
 	it("non-existent dynamic method returns nil", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -956,11 +842,11 @@ end)
 
 describe("Contract - response parsing", function()
 	it("parses single felt252 output", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x12" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -972,11 +858,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("parses u256 output as { low, high }", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0xde0b6b3a7640000", "0x0" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -989,11 +875,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("parses multiple outputs into named table", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0xaaa", "0xbbb" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MULTI_OUTPUT_ABI,
 			address = CONTRACT_ADDR,
@@ -1006,11 +892,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("parses mixed output types (felt + u256 + bool)", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0xadd1", "0x3e8", "0x0", "0x1" } -- addr, u256(low,high), bool
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MULTI_OUTPUT_ABI,
 			address = CONTRACT_ADDR,
@@ -1025,11 +911,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("returns raw result array when no outputs defined", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x1", "0x2", "0x3" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MINIMAL_ABI,
 			address = CONTRACT_ADDR,
@@ -1045,11 +931,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("parses bool output correctly (true)", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x1" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 
 		local boolAbi: Contract.Abi = {
 			{
@@ -1071,11 +957,11 @@ describe("Contract - response parsing", function()
 	end)
 
 	it("parses bool output correctly (false)", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x0" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 
 		local boolAbi: Contract.Abi = {
 			{
@@ -1103,8 +989,8 @@ end)
 
 describe("Contract - type encoding in calldata", function()
 	it("encodes bool true as 0x1", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local boolAbi: Contract.Abi = {
 			{
@@ -1126,8 +1012,8 @@ describe("Contract - type encoding in calldata", function()
 	end)
 
 	it("encodes bool false as 0x0", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local boolAbi: Contract.Abi = {
 			{
@@ -1149,8 +1035,8 @@ describe("Contract - type encoding in calldata", function()
 	end)
 
 	it("encodes u256 as two felts (low, high)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1164,8 +1050,8 @@ describe("Contract - type encoding in calldata", function()
 	end)
 
 	it("encodes felt252 as normalized hex", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MINIMAL_ABI,
 			address = CONTRACT_ADDR,
@@ -1177,8 +1063,8 @@ describe("Contract - type encoding in calldata", function()
 	end)
 
 	it("encodes ContractAddress as felt", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1190,8 +1076,8 @@ describe("Contract - type encoding in calldata", function()
 	end)
 
 	it("handles short type names (felt252, u256, bool)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local shortAbi: Contract.Abi = {
 			{
@@ -1228,8 +1114,8 @@ end)
 
 describe("Contract - utility methods", function()
 	it("getFunctions returns sorted list", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1244,8 +1130,8 @@ describe("Contract - utility methods", function()
 	end)
 
 	it("getFunctions includes all 7 ERC20 functions", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1257,8 +1143,8 @@ describe("Contract - utility methods", function()
 	end)
 
 	it("hasFunction returns true for existing function", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1269,8 +1155,8 @@ describe("Contract - utility methods", function()
 	end)
 
 	it("hasFunction returns false for non-existent function", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = ERC20_ABI,
 			address = CONTRACT_ADDR,
@@ -1287,8 +1173,8 @@ end)
 
 describe("Contract - edge cases", function()
 	it("works with empty ABI", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = {},
 			address = CONTRACT_ADDR,
@@ -1299,8 +1185,8 @@ describe("Contract - edge cases", function()
 	end)
 
 	it("function without state_mutability defaults to external", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local abi: Contract.Abi = {
 			{
@@ -1322,8 +1208,8 @@ describe("Contract - edge cases", function()
 	end)
 
 	it("populate works for both view and external functions", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MINIMAL_ABI,
 			address = CONTRACT_ADDR,
@@ -1338,11 +1224,11 @@ describe("Contract - edge cases", function()
 	end)
 
 	it("call with nil args treated as empty", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x42" }
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local contract = Contract.new({
 			abi = MINIMAL_ABI,
 			address = CONTRACT_ADDR,

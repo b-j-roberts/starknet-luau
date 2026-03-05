@@ -1,29 +1,26 @@
 --!strict
-local serde = require("@lune/serde")
-
 local Account = require("../../src/wallet/Account")
 local StarkSigner = require("../../src/signer/StarkSigner")
-local RpcProvider = require("../../src/provider/RpcProvider")
-local RpcTypes = require("../../src/provider/RpcTypes")
 local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
 -- Test constants
 --------------------------------------------------------------------------------
 
 -- Private keys from StarkSigner test suite
-local PRIVKEY_1 = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c"
+local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
 local PRIVKEY_2 = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F"
 local PRIVKEY_3 = "0x1"
 
 -- Public keys (verified from StarkSigner tests)
-local PUBKEY_1 = "0x499f65ae2f71d5298d2d88823b2e5e19596a71aac1984710479e406a002439"
+local PUBKEY_1 = TestUtils.TEST_PUBLIC_KEY
 local PUBKEY_2 = "0x1895a6a77ae14e7987b9cb51329a5adfb17bd8e7c638f92d6892d76e51cebcf"
 local PUBKEY_3 = "0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca"
 
 -- OZ class hashes
-local OZ_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
-local OZ_CLASS_HASH_2 = "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003"
+local OZ_CLASS_HASH = TestUtils.OZ_CLASS_HASH
+local OZ_CLASS_HASH_2 = TestUtils.OZ_CLASS_HASH_2
 
 -- Expected OZ addresses (computed by starknet.js calculateContractAddressFromHash)
 local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d"
@@ -47,147 +44,17 @@ local EXPECTED_ADDR_1_BRAAVOS = "0x2270cb3dcd6ea9349c122cf2dc3e17ffe0d19130a524b
 local EXPECTED_ADDR_2_BRAAVOS = "0x13f206265ce80c4dd163a66cd826276329430b3a9b94fe1d67207ec6b722381"
 local EXPECTED_ADDR_3_BRAAVOS = "0x260565660443aa1bd7b49040bc600b36e3dd82c4dd8d06ee1a77b4dc595bae7"
 
-local SN_SEPOLIA = "0x534e5f5345504f4c4941"
-
 --------------------------------------------------------------------------------
--- Mock RPC layer (adapted from TransactionBuilder tests)
+-- Mock RPC layer (shared via TestUtils)
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
-local requestLog: { { method: string, params: any } } = {}
-
-local function resetHandlers()
-	mockHandlers = {}
-	requestLog = {}
-
-	mockHandlers["starknet_chainId"] = function(_params)
-		return SN_SEPOLIA
-	end
-
-	mockHandlers["starknet_getNonce"] = function(_params)
-		return "0x5"
-	end
-
-	mockHandlers["starknet_estimateFee"] = function(_params)
-		return {
-			{
-				gas_consumed = "0x1000",
-				gas_price = "0x100",
-				overall_fee = "0x100000",
-				data_gas_consumed = "0x200",
-				data_gas_price = "0x50",
-				unit = "WEI",
-			},
-		}
-	end
-
-	mockHandlers["starknet_addInvokeTransaction"] = function(_params)
-		return { transaction_hash = "0xabc123" }
-	end
-
-	mockHandlers["starknet_getTransactionReceipt"] = function(_params)
-		return {
-			transaction_hash = "0xabc123",
-			actual_fee = { amount = "0x1234", unit = "WEI" },
-			execution_status = "SUCCEEDED",
-			finality_status = "ACCEPTED_ON_L2",
-			block_hash = "0xblock1",
-			block_number = 100,
-			events = {},
-		}
-	end
-
-	mockHandlers["starknet_getTransactionStatus"] = function(_params)
-		return {
-			finality_status = "ACCEPTED_ON_L2",
-			execution_status = "SUCCEEDED",
-		}
-	end
-end
-
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-		local body = serde.decode("json", request.Body or "{}") :: any
-		local method: string = body.method or ""
-		local params: any = body.params
-		local id: number = body.id or 0
-
-		table.insert(requestLog, { method = method, params = params })
-
-		local handler = mockHandlers[method]
-		if handler then
-			local ok, result = pcall(handler, params)
-			if ok then
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						result = result,
-					}),
-					Success = true,
-				}
-			else
-				return {
-					StatusCode = 200,
-					Body = serde.encode("json", {
-						jsonrpc = "2.0",
-						id = id,
-						error = {
-							code = -32000,
-							message = tostring(result),
-						},
-					}),
-					Success = true,
-				}
-			end
-		end
-
-		return {
-			StatusCode = 200,
-			Body = serde.encode("json", {
-				jsonrpc = "2.0",
-				id = id,
-				error = {
-					code = -32601,
-					message = `Method not found: {method}`,
-				},
-			}),
-			Success = true,
-		}
-	end
-end
-
-local function createTestProvider(): any
-	local config: any = {
-		nodeUrl = "http://mock-rpc.test",
-		retryAttempts = 1,
-		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
-		_sleep = function(_seconds: number) end,
-		_clock = os.clock,
-	}
-
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
-	return provider
-end
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
+local requestLog = rpc.requestLog
 
 local function createTestCalls(): { any }
-	return {
-		{
-			contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-			entrypoint = "transfer",
-			calldata = {
-				"0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-				"0x3e8",
-				"0x0",
-			},
-		},
-	}
+	return TestUtils.createTestCalls()
 end
-
-resetHandlers()
 
 --------------------------------------------------------------------------------
 -- computeAddress - OZ
@@ -401,8 +268,8 @@ end)
 
 describe("Account.new", function()
 	it("creates an account with address, signer, and provider", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local signer = StarkSigner.new(PRIVKEY_1)
 
 		local account = Account.new({
@@ -415,8 +282,8 @@ describe("Account.new", function()
 	end)
 
 	it("errors when address is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local signer = StarkSigner.new(PRIVKEY_1)
 
 		expect(function()
@@ -429,8 +296,8 @@ describe("Account.new", function()
 	end)
 
 	it("errors when signer is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.new({
@@ -460,8 +327,8 @@ end)
 
 describe("Account.fromPrivateKey - OZ (default)", function()
 	it("derives correct address for privkey_1 with default OZ class hash", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -471,8 +338,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("derives correct address for privkey_2 with default OZ class hash", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_2,
@@ -482,8 +349,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("derives correct address for privkey_3 with default OZ class hash", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_3,
@@ -493,8 +360,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("uses custom class hash when provided", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -505,8 +372,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("explicit accountType='oz' matches default", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -517,8 +384,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("errors when privateKey is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.fromPrivateKey({
@@ -538,8 +405,8 @@ describe("Account.fromPrivateKey - OZ (default)", function()
 	end)
 
 	it("stores the signer for later use", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -555,8 +422,8 @@ end)
 
 describe("Account.fromPrivateKey - Argent X", function()
 	it("derives correct Argent address for privkey_1", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -567,8 +434,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("derives correct Argent address for privkey_2", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_2,
@@ -579,8 +446,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("derives correct Argent address for privkey_3", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_3,
@@ -591,8 +458,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("derives correct Argent address with guardian", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -604,8 +471,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("Argent address differs from OZ address (same key)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local ozAccount = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -620,8 +487,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("supports custom class hash override for Argent", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		-- Use a custom Argent class hash — address should differ from default
 		local account = Account.fromPrivateKey({
@@ -634,8 +501,8 @@ describe("Account.fromPrivateKey - Argent X", function()
 	end)
 
 	it("errors when guardian is used with non-Argent account", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.fromPrivateKey({
@@ -654,8 +521,8 @@ end)
 
 describe("Account.fromPrivateKey - Braavos", function()
 	it("derives correct Braavos address for privkey_1", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -666,8 +533,8 @@ describe("Account.fromPrivateKey - Braavos", function()
 	end)
 
 	it("derives correct Braavos address for privkey_2", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_2,
@@ -678,8 +545,8 @@ describe("Account.fromPrivateKey - Braavos", function()
 	end)
 
 	it("derives correct Braavos address for privkey_3", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_3,
@@ -690,8 +557,8 @@ describe("Account.fromPrivateKey - Braavos", function()
 	end)
 
 	it("Braavos address differs from OZ and Argent addresses", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local ozAccount = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -712,8 +579,8 @@ describe("Account.fromPrivateKey - Braavos", function()
 	end)
 
 	it("errors when guardian is used with Braavos account", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.fromPrivateKey({
@@ -732,8 +599,8 @@ end)
 
 describe("Account.fromPrivateKey - accountType validation", function()
 	it("errors on unsupported accountType", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.fromPrivateKey({
@@ -745,8 +612,8 @@ describe("Account.fromPrivateKey - accountType validation", function()
 	end)
 
 	it("errors on empty string accountType", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		expect(function()
 			Account.fromPrivateKey({
@@ -891,8 +758,8 @@ end)
 
 describe("Account:getPublicKeyHex", function()
 	it("returns the correct public key for privkey_1", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -902,8 +769,8 @@ describe("Account:getPublicKeyHex", function()
 	end)
 
 	it("returns the correct public key for privkey_2", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_2,
@@ -919,8 +786,8 @@ end)
 
 describe("Account:getNonce", function()
 	it("fetches nonce from provider", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -932,9 +799,9 @@ describe("Account:getNonce", function()
 	end)
 
 	it("passes correct address to provider", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -961,8 +828,8 @@ end)
 
 describe("Account:estimateFee", function()
 	it("returns a fee estimate for calls", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -983,8 +850,8 @@ end)
 
 describe("Account:execute", function()
 	it("executes a transaction and returns hash", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -998,8 +865,8 @@ describe("Account:execute", function()
 	end)
 
 	it("passes options through to builder", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1015,8 +882,8 @@ describe("Account:execute", function()
 	end)
 
 	it("supports dryRun mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1031,9 +898,9 @@ describe("Account:execute", function()
 	end)
 
 	it("uses the derived address as sender", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1055,9 +922,9 @@ describe("Account:execute", function()
 	end)
 
 	it("works with Argent account type", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1079,9 +946,9 @@ describe("Account:execute", function()
 	end)
 
 	it("works with Braavos account type", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -1109,8 +976,8 @@ end)
 
 describe("Account.new - explicit address", function()
 	it("uses the provided address (not derived)", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local signer = StarkSigner.new(PRIVKEY_1)
 		local customAddress = "0xdeadbeef"
 
@@ -1124,9 +991,9 @@ describe("Account.new - explicit address", function()
 	end)
 
 	it("can execute transactions with explicit address", function()
-		resetHandlers()
-		requestLog = {}
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
 		local signer = StarkSigner.new(PRIVKEY_1)
 		local customAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
@@ -1281,8 +1148,8 @@ end
 
 describe("Account:estimatePaymasterFee - validation", function()
 	it("rejects when paymaster is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		expect(function()
@@ -1293,8 +1160,8 @@ describe("Account:estimatePaymasterFee - validation", function()
 	end)
 
 	it("rejects when feeMode is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1306,8 +1173,8 @@ describe("Account:estimatePaymasterFee - validation", function()
 	end)
 
 	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1320,8 +1187,8 @@ describe("Account:estimatePaymasterFee - validation", function()
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1340,8 +1207,8 @@ end)
 
 describe("Account:estimatePaymasterFee - sponsored mode", function()
 	it("returns fee estimate for sponsored mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1357,8 +1224,8 @@ describe("Account:estimatePaymasterFee - sponsored mode", function()
 	end)
 
 	it("returns typed data alongside fee estimate", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1374,8 +1241,8 @@ describe("Account:estimatePaymasterFee - sponsored mode", function()
 	end)
 
 	it("passes '0x0' as gasTokenAddress for sponsored mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1391,8 +1258,8 @@ describe("Account:estimatePaymasterFee - sponsored mode", function()
 	end)
 
 	it("passes correct user address to paymaster", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1413,8 +1280,8 @@ end)
 
 describe("Account:estimatePaymasterFee - gasToken mode", function()
 	it("returns fee estimate for default/gasToken mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1431,8 +1298,8 @@ describe("Account:estimatePaymasterFee - gasToken mode", function()
 	end)
 
 	it("passes gasToken address to paymaster", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1454,8 +1321,8 @@ end)
 
 describe("Account:estimatePaymasterFee - deploymentData", function()
 	it("passes deployment data when provided", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1483,8 +1350,8 @@ end)
 
 describe("Account:estimatePaymasterFee - error propagation", function()
 	it("propagates buildTypedData errors", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster({
 			buildError = "paymaster unavailable",
@@ -1509,8 +1376,8 @@ end)
 
 describe("Account:executePaymaster - validation", function()
 	it("rejects when paymaster is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		expect(function()
@@ -1521,8 +1388,8 @@ describe("Account:executePaymaster - validation", function()
 	end)
 
 	it("rejects when feeMode is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1534,8 +1401,8 @@ describe("Account:executePaymaster - validation", function()
 	end)
 
 	it("rejects when calls is empty", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1548,8 +1415,8 @@ describe("Account:executePaymaster - validation", function()
 	end)
 
 	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1562,8 +1429,8 @@ describe("Account:executePaymaster - validation", function()
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1582,8 +1449,8 @@ end)
 
 describe("Account:executePaymaster - sponsored mode", function()
 	it("full flow: buildTypedData -> validate -> sign -> execute", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1599,8 +1466,8 @@ describe("Account:executePaymaster - sponsored mode", function()
 	end)
 
 	it("passes '0x0' as gasTokenAddress for sponsored mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1615,8 +1482,8 @@ describe("Account:executePaymaster - sponsored mode", function()
 	end)
 
 	it("passes correct user address to paymaster", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1632,8 +1499,8 @@ describe("Account:executePaymaster - sponsored mode", function()
 	end)
 
 	it("signs typed data with account signer", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1659,8 +1526,8 @@ end)
 
 describe("Account:executePaymaster - gasToken mode", function()
 	it("full flow with gasToken mode", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1683,8 +1550,8 @@ end)
 
 describe("Account:executePaymaster - deploymentData", function()
 	it("passes deployment data for deploy-via-paymaster", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1712,8 +1579,8 @@ end)
 
 describe("Account:executePaymaster - call validation", function()
 	it("succeeds when returned calls match submitted calls", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		-- Default mock returns matching calls
 		local paymaster = createMockPaymaster()
@@ -1729,8 +1596,8 @@ describe("Account:executePaymaster - call validation", function()
 	end)
 
 	it("succeeds when returned calls = submitted + 1 appended fee transfer", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- The paymaster returns the submitted call + an extra fee transfer call
@@ -1761,8 +1628,8 @@ describe("Account:executePaymaster - call validation", function()
 	end)
 
 	it("rejects when returned calls don't match submitted calls", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- Paymaster returns a completely different call
@@ -1789,8 +1656,8 @@ describe("Account:executePaymaster - call validation", function()
 	end)
 
 	it("rejects when returned calls have modified calldata", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		local calls = createTestCalls()
@@ -1818,8 +1685,8 @@ describe("Account:executePaymaster - call validation", function()
 	end)
 
 	it("rejects when paymaster drops a submitted call", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- Paymaster returns empty calls
@@ -1843,8 +1710,8 @@ end)
 
 describe("Account:executePaymaster - error propagation", function()
 	it("propagates buildTypedData errors", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster({
 			buildError = "paymaster service unavailable",
@@ -1863,8 +1730,8 @@ describe("Account:executePaymaster - error propagation", function()
 	end)
 
 	it("propagates executeTransaction errors", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster({
 			executeError = "execution failed on paymaster",
@@ -1889,8 +1756,8 @@ end)
 
 describe("Account:executePaymaster - interface compatibility", function()
 	it("works with any paymaster implementing buildTypedData + executeTransaction", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- Another mock that mimics AvnuPaymaster (same interface)
@@ -1919,8 +1786,8 @@ end)
 
 describe("Account:executePaymaster - multiple calls", function()
 	it("handles multiple calls in a batch", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -1955,8 +1822,8 @@ end)
 
 describe("Account:getDeploymentData", function()
 	it("returns correct deployment data for OZ account", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		local dd = account:getDeploymentData()
@@ -1969,8 +1836,8 @@ describe("Account:getDeploymentData", function()
 	end)
 
 	it("returns correct deployment data for Argent account", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
 			provider = provider,
@@ -1988,8 +1855,8 @@ describe("Account:getDeploymentData", function()
 	end)
 
 	it("returns correct deployment data for Argent account with guardian", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
 			provider = provider,
@@ -2008,8 +1875,8 @@ describe("Account:getDeploymentData", function()
 	end)
 
 	it("returns correct deployment data for Braavos account", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
 			provider = provider,
@@ -2024,8 +1891,8 @@ describe("Account:getDeploymentData", function()
 	end)
 
 	it("uses custom classHash when provided", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local customClassHash = "0xcustom_class_hash_abc123"
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
@@ -2044,8 +1911,8 @@ end)
 
 describe("Account:deployWithPaymaster - validation", function()
 	it("rejects when paymaster is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		expect(function()
@@ -2056,8 +1923,8 @@ describe("Account:deployWithPaymaster - validation", function()
 	end)
 
 	it("rejects when feeMode is missing", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2069,8 +1936,8 @@ describe("Account:deployWithPaymaster - validation", function()
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2083,8 +1950,8 @@ describe("Account:deployWithPaymaster - validation", function()
 	end)
 
 	it("rejects when default mode is missing gasToken", function()
-		resetHandlers()
-		local provider = createTestProvider()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2103,9 +1970,9 @@ end)
 
 describe("Account:deployWithPaymaster - idempotency", function()
 	it("returns alreadyDeployed when getNonce succeeds", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		-- Default mock returns nonce successfully (account exists)
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2125,12 +1992,12 @@ describe("Account:deployWithPaymaster - idempotency", function()
 	end)
 
 	it("proceeds with deployment when getNonce fails (undeployed account)", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		-- Override getNonce to fail (account not deployed)
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2157,11 +2024,11 @@ end)
 
 describe("Account:deployWithPaymaster - sponsored mode (deploy only)", function()
 	it("deploys with correct deploymentData and zero gas token", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2199,11 +2066,11 @@ describe("Account:deployWithPaymaster - sponsored mode (deploy only)", function(
 	end)
 
 	it("signs the typed data from the paymaster", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2229,11 +2096,11 @@ end)
 
 describe("Account:deployWithPaymaster - default mode", function()
 	it("deploys with specified gas token", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2257,11 +2124,11 @@ end)
 
 describe("Account:deployWithPaymaster - combined deploy + calls", function()
 	it("bundles initial calls with deployment in a single atomic call", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2287,11 +2154,11 @@ describe("Account:deployWithPaymaster - combined deploy + calls", function()
 	end)
 
 	it("validates returned calls match submitted calls", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- Create paymaster that returns mismatched calls
@@ -2323,11 +2190,11 @@ describe("Account:deployWithPaymaster - combined deploy + calls", function()
 	end)
 
 	it("skips call validation when no calls are provided", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 
 		-- Even with returnedCalls set, deploy-only should succeed (no validation)
@@ -2353,11 +2220,11 @@ describe("Account:deployWithPaymaster - combined deploy + calls", function()
 	end)
 
 	it("handles multiple initial calls", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2394,7 +2261,7 @@ end)
 
 describe("Account:deployWithPaymaster - waitForConfirmation", function()
 	it("waits for confirmation when requested", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
@@ -2406,7 +2273,7 @@ describe("Account:deployWithPaymaster - waitForConfirmation", function()
 			return originalHandler(params)
 		end
 
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2424,7 +2291,7 @@ describe("Account:deployWithPaymaster - waitForConfirmation", function()
 	end)
 
 	it("does not wait for confirmation by default", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
@@ -2436,7 +2303,7 @@ describe("Account:deployWithPaymaster - waitForConfirmation", function()
 			return originalHandler(params)
 		end
 
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2451,7 +2318,7 @@ describe("Account:deployWithPaymaster - waitForConfirmation", function()
 	end)
 
 	it("rejects when waitForTransaction fails", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
@@ -2462,7 +2329,7 @@ describe("Account:deployWithPaymaster - waitForConfirmation", function()
 			}
 		end
 
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 
@@ -2487,11 +2354,11 @@ end)
 
 describe("Account:deployWithPaymaster - error propagation", function()
 	it("propagates buildTypedData errors", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster({ buildError = "paymaster build failed" })
 
@@ -2509,11 +2376,11 @@ describe("Account:deployWithPaymaster - error propagation", function()
 	end)
 
 	it("propagates executeTransaction errors", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster({ executeError = "paymaster execute failed" })
 
@@ -2537,11 +2404,11 @@ end)
 
 describe("Account:deployWithPaymaster - Argent account", function()
 	it("passes correct Argent deploymentData", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({
 			privateKey = PRIVKEY_1,
 			provider = provider,
@@ -2571,11 +2438,11 @@ end)
 
 describe("Account:deployWithPaymaster - getDeploymentData integration", function()
 	it("getDeploymentData output matches what deployWithPaymaster sends", function()
-		resetHandlers()
+		rpc.resetHandlers()
 		mockHandlers["starknet_getNonce"] = function(_params)
 			error("Contract not found")
 		end
-		local provider = createTestProvider()
+		local provider = rpc.createTestProvider()
 		local account = Account.fromPrivateKey({ privateKey = PRIVKEY_1, provider = provider })
 		local paymaster = createMockPaymaster()
 

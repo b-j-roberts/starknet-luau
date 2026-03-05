@@ -2,18 +2,22 @@
 local serde = require("@lune/serde")
 
 local AvnuPaymaster = require("../../src/paymaster/AvnuPaymaster")
-local PaymasterRpc = require("../../src/paymaster/PaymasterRpc")
-local RpcTypes = require("../../src/provider/RpcTypes")
 local MockPromise = require("../helpers/MockPromise")
+local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
--- Mock RPC layer (same pattern as PaymasterRpc tests)
+-- Shared mock RPC layer
 --------------------------------------------------------------------------------
 
-local mockHandlers: { [string]: (params: any) -> any } = {}
+local rpc = TestUtils.createMockRpcLayer()
+local mockHandlers = rpc.mockHandlers
 
-local function resetHandlers()
-	mockHandlers = {}
+--------------------------------------------------------------------------------
+-- Paymaster-specific handler defaults
+--------------------------------------------------------------------------------
+
+local function resetPaymasterHandlers()
+	rpc.resetHandlers()
 
 	mockHandlers["paymaster_isAvailable"] = function(_params)
 		return true
@@ -102,22 +106,18 @@ local function resetHandlers()
 	end
 end
 
---- Track all requests
-local requestLog: { { method: string, params: any, headers: { [string]: string }? } } = {}
+--------------------------------------------------------------------------------
+-- Paymaster-specific mock HTTP (captures headers in requestLog)
+--------------------------------------------------------------------------------
 
-local function clearRequestLog()
-	requestLog = {}
-end
-
---- Create mock HTTP function
-local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
-	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
+local function createMockPaymasterHttpRequest(): (request: any) -> any
+	return function(request: any): any
 		local body = serde.decode("json", request.Body or "{}") :: any
 		local method: string = body.method or ""
 		local params: any = body.params
 		local id: number = body.id or 0
 
-		table.insert(requestLog, { method = method, params = params, headers = request.Headers })
+		table.insert(rpc.requestLog, { method = method, params = params, headers = request.Headers })
 
 		local handler = mockHandlers[method]
 		if handler then
@@ -164,21 +164,6 @@ local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTy
 end
 
 --------------------------------------------------------------------------------
--- Helper: simulated clock for cache TTL testing
---------------------------------------------------------------------------------
-
-local function createMockClock(): (() -> number, (number) -> ())
-	local currentTime = 0
-	local function clock(): number
-		return currentTime
-	end
-	local function advance(seconds: number)
-		currentTime += seconds
-	end
-	return clock, advance
-end
-
---------------------------------------------------------------------------------
 -- Helper: create a test AvnuPaymaster
 --------------------------------------------------------------------------------
 
@@ -187,7 +172,7 @@ local function createTestAvnuPaymaster(overrides: { [string]: any }?): any
 		network = "sepolia",
 		retryAttempts = 1,
 		retryDelay = 0.01,
-		_httpRequest = createMockHttpRequest(),
+		_httpRequest = createMockPaymasterHttpRequest(),
 		_sleep = function(_seconds: number) end,
 		_clock = os.clock,
 	}
@@ -207,7 +192,7 @@ end
 -- Initialize
 --------------------------------------------------------------------------------
 
-resetHandlers()
+resetPaymasterHandlers()
 
 --------------------------------------------------------------------------------
 -- Tests
@@ -215,57 +200,57 @@ resetHandlers()
 
 describe("AvnuPaymaster - constructor", function()
 	it("creates an AVNU paymaster with sepolia network", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		expect(pm):toBeTruthy()
 		expect(pm:getNetwork()):toBe("sepolia")
 	end)
 
 	it("creates an AVNU paymaster with mainnet network", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		expect(pm):toBeTruthy()
 		expect(pm:getNetwork()):toBe("mainnet")
 	end)
 
 	it("auto-selects sepolia endpoint URL", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		expect(pm:getNodeUrl()):toBe("https://sepolia.paymaster.avnu.fi")
 	end)
 
 	it("auto-selects mainnet endpoint URL", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		expect(pm:getNodeUrl()):toBe("https://starknet.paymaster.avnu.fi")
 	end)
 
 	it("allows custom nodeUrl override", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ nodeUrl = "https://custom-paymaster.example.com" })
 		expect(pm:getNodeUrl()):toBe("https://custom-paymaster.example.com")
 	end)
 
 	it("errors on missing network", function()
 		expect(function()
-			AvnuPaymaster.new({ _httpRequest = createMockHttpRequest() } :: any)
+			AvnuPaymaster.new({ _httpRequest = createMockPaymasterHttpRequest() } :: any)
 		end):toThrowType("ValidationError")
 	end)
 
 	it("errors on empty network", function()
 		expect(function()
-			AvnuPaymaster.new({ network = "", _httpRequest = createMockHttpRequest() } :: any)
+			AvnuPaymaster.new({ network = "", _httpRequest = createMockPaymasterHttpRequest() } :: any)
 		end):toThrowType("ValidationError")
 	end)
 
 	it("errors on unknown network without custom nodeUrl", function()
 		expect(function()
-			AvnuPaymaster.new({ network = "goerli", _httpRequest = createMockHttpRequest() } :: any)
+			AvnuPaymaster.new({ network = "goerli", _httpRequest = createMockPaymasterHttpRequest() } :: any)
 		end):toThrowType("ValidationError")
 	end)
 
 	it("allows unknown network with custom nodeUrl", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			network = "custom-devnet",
 			nodeUrl = "http://localhost:5050/paymaster",
@@ -277,58 +262,58 @@ end)
 
 describe("AvnuPaymaster - API key and sponsored mode", function()
 	it("is not sponsored without apiKey", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		expect(pm:isSponsored()):toBe(false)
 	end)
 
 	it("is sponsored with apiKey", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ apiKey = "my-avnu-api-key" })
 		expect(pm:isSponsored()):toBe(true)
 	end)
 
 	it("is not sponsored with empty apiKey", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ apiKey = "" })
 		expect(pm:isSponsored()):toBe(false)
 	end)
 
 	it("sends x-paymaster-api-key header when apiKey is set", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster({ apiKey = "secret-key-123" })
 		pm:isAvailable():expect()
 
-		expect(#requestLog >= 1):toBe(true)
-		local lastHeaders = requestLog[#requestLog].headers
+		expect(#rpc.requestLog >= 1):toBe(true)
+		local lastHeaders = rpc.requestLog[#rpc.requestLog].headers
 		expect(lastHeaders["x-paymaster-api-key"]):toBe("secret-key-123")
 	end)
 
 	it("does not send x-paymaster-api-key header without apiKey", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster()
 		pm:isAvailable():expect()
 
-		local lastHeaders = requestLog[#requestLog].headers
+		local lastHeaders = rpc.requestLog[#rpc.requestLog].headers
 		expect(lastHeaders["x-paymaster-api-key"]):toBe(nil)
 	end)
 
 	it("always includes Content-Type header", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster({ apiKey = "key" })
 		pm:isAvailable():expect()
 
-		local lastHeaders = requestLog[#requestLog].headers
+		local lastHeaders = rpc.requestLog[#rpc.requestLog].headers
 		expect(lastHeaders["Content-Type"]):toBe("application/json")
 	end)
 end)
 
 describe("AvnuPaymaster - known token addresses", function()
 	it("returns known mainnet tokens", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.ETH):toBeTruthy()
@@ -338,7 +323,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns known sepolia tokens", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "sepolia" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.ETH):toBeTruthy()
@@ -346,7 +331,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("sepolia does not have USDC/USDT", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "sepolia" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.USDC):toBe(nil)
@@ -354,7 +339,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns correct ETH address", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.ETH.address):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
@@ -363,7 +348,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns correct STRK address", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.STRK.address):toBe("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
@@ -371,7 +356,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns correct USDC address", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.USDC.address):toBe("0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8")
@@ -379,7 +364,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns correct USDT address", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens = pm:getKnownTokens()
 		expect(tokens.USDT.address):toBe("0x068f5c6a61780768455de69077e07e89787839bf8166decfbf92b645209c0fb8")
@@ -387,7 +372,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returns empty table for unknown network", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			network = "custom-devnet",
 			nodeUrl = "http://localhost:5050",
@@ -397,7 +382,7 @@ describe("AvnuPaymaster - known token addresses", function()
 	end)
 
 	it("returned table is a copy (not mutable)", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local tokens1 = pm:getKnownTokens()
 		tokens1.ETH = nil :: any
@@ -408,42 +393,42 @@ end)
 
 describe("AvnuPaymaster - getTokenAddress", function()
 	it("returns ETH address for 'ETH'", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local addr = pm:getTokenAddress("ETH")
 		expect(addr):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 
 	it("returns STRK address for 'STRK'", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "sepolia" })
 		local addr = pm:getTokenAddress("STRK")
 		expect(addr):toBe("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
 	end)
 
 	it("returns USDC address for mainnet", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local addr = pm:getTokenAddress("USDC")
 		expect(addr):toBe("0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8")
 	end)
 
 	it("returns nil for unknown symbol", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local addr = pm:getTokenAddress("DOGE")
 		expect(addr):toBe(nil)
 	end)
 
 	it("returns nil for USDC on sepolia", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({ network = "sepolia" })
 		local addr = pm:getTokenAddress("USDC")
 		expect(addr):toBe(nil)
 	end)
 
 	it("returns nil for unknown network", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			network = "devnet",
 			nodeUrl = "http://localhost:5050",
@@ -455,14 +440,14 @@ end)
 
 describe("AvnuPaymaster - delegated methods", function()
 	it("isAvailable delegates to inner PaymasterRpc", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		local result = pm:isAvailable():expect()
 		expect(result):toBe(true)
 	end)
 
 	it("isAvailable returns false when unavailable", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		mockHandlers["paymaster_isAvailable"] = function(_params)
 			return false
 		end
@@ -472,8 +457,8 @@ describe("AvnuPaymaster - delegated methods", function()
 	end)
 
 	it("buildTypedData delegates correctly", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster()
 		local result = pm:buildTypedData(
 			"0xuser",
@@ -488,7 +473,7 @@ describe("AvnuPaymaster - delegated methods", function()
 	end)
 
 	it("executeTransaction delegates correctly", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		local result = pm:executeTransaction(
 			"0xuser",
@@ -501,7 +486,7 @@ describe("AvnuPaymaster - delegated methods", function()
 	end)
 
 	it("trackingIdToLatestHash delegates correctly", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster()
 		local result = pm:trackingIdToLatestHash("track-avnu-123"):expect()
 		expect(result.transactionHash):toBe("0xavnu456")
@@ -509,7 +494,7 @@ describe("AvnuPaymaster - delegated methods", function()
 	end)
 
 	it("fetch delegates correctly", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		mockHandlers["paymaster_customMethod"] = function(_params)
 			return { custom = "avnu-result" }
 		end
@@ -519,8 +504,8 @@ describe("AvnuPaymaster - delegated methods", function()
 	end)
 
 	it("buildTypedData passes deployment data through", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster()
 		pm:buildTypedData(
 			"0xuser",
@@ -535,14 +520,14 @@ describe("AvnuPaymaster - delegated methods", function()
 			}
 		):expect()
 
-		local params = requestLog[#requestLog].params
+		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
 		expect(params[1].deploy_and_invoke.deployment_data.class_hash):toBe("0xclass")
 	end)
 
 	it("executeTransaction passes deployment data through", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster()
 		pm:executeTransaction(
 			"0xuser",
@@ -557,15 +542,15 @@ describe("AvnuPaymaster - delegated methods", function()
 			}
 		):expect()
 
-		local params = requestLog[#requestLog].params
+		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
 	end)
 end)
 
 describe("AvnuPaymaster - getSupportedTokens caching", function()
 	it("returns tokens from network on first call", function()
-		resetHandlers()
-		local clock, _advance = createMockClock()
+		resetPaymasterHandlers()
+		local clock, _setClock = TestUtils.makeClock(0)
 		local pm = createTestAvnuPaymaster({ _clock = clock })
 		local tokens = pm:getSupportedTokens():expect()
 		expect(type(tokens)):toBe("table")
@@ -573,9 +558,9 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 	end)
 
 	it("returns cached tokens on second call within TTL", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
-		local clock, advance = createMockClock()
+		local clock, setClock = TestUtils.makeClock(0)
 
 		local originalHandler = mockHandlers["paymaster_getSupportedTokens"]
 		mockHandlers["paymaster_getSupportedTokens"] = function(params)
@@ -591,7 +576,7 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 		expect(callCount):toBe(1)
 
 		-- Advance 60 seconds (within default 300s TTL)
-		advance(60)
+		setClock(60)
 
 		-- Second call: should be cached
 		local tokens2 = pm:getSupportedTokens():expect()
@@ -600,9 +585,9 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 	end)
 
 	it("refetches after cache TTL expires", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
-		local clock, advance = createMockClock()
+		local clock, setClock = TestUtils.makeClock(0)
 
 		local originalHandler = mockHandlers["paymaster_getSupportedTokens"]
 		mockHandlers["paymaster_getSupportedTokens"] = function(params)
@@ -617,7 +602,7 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 		expect(callCount):toBe(1)
 
 		-- Advance past TTL
-		advance(61)
+		setClock(61)
 
 		-- Second call: should refetch
 		pm:getSupportedTokens():expect()
@@ -625,9 +610,9 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 	end)
 
 	it("uses custom tokenCacheTtl", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
-		local clock, advance = createMockClock()
+		local clock, setClock = TestUtils.makeClock(0)
 
 		local originalHandler = mockHandlers["paymaster_getSupportedTokens"]
 		mockHandlers["paymaster_getSupportedTokens"] = function(params)
@@ -641,20 +626,20 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 		expect(callCount):toBe(1)
 
 		-- Within TTL
-		advance(5)
+		setClock(5)
 		pm:getSupportedTokens():expect()
 		expect(callCount):toBe(1)
 
 		-- Past TTL
-		advance(6)
+		setClock(11)
 		pm:getSupportedTokens():expect()
 		expect(callCount):toBe(2)
 	end)
 
 	it("clearTokenCache forces refetch", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
-		local clock, _advance = createMockClock()
+		local clock, _setClock = TestUtils.makeClock(0)
 
 		local originalHandler = mockHandlers["paymaster_getSupportedTokens"]
 		mockHandlers["paymaster_getSupportedTokens"] = function(params)
@@ -677,9 +662,9 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 	end)
 
 	it("default tokenCacheTtl is 300 seconds", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
-		local clock, advance = createMockClock()
+		local clock, setClock = TestUtils.makeClock(0)
 
 		local originalHandler = mockHandlers["paymaster_getSupportedTokens"]
 		mockHandlers["paymaster_getSupportedTokens"] = function(params)
@@ -693,25 +678,25 @@ describe("AvnuPaymaster - getSupportedTokens caching", function()
 		expect(callCount):toBe(1)
 
 		-- 299 seconds: still cached
-		advance(299)
+		setClock(299)
 		pm:getSupportedTokens():expect()
 		expect(callCount):toBe(1)
 
 		-- 301 seconds total: expired
-		advance(2)
+		setClock(301)
 		pm:getSupportedTokens():expect()
 		expect(callCount):toBe(2)
 	end)
 
 	it("cached result has correct data", function()
-		resetHandlers()
-		local clock, advance = createMockClock()
+		resetPaymasterHandlers()
+		local clock, setClock = TestUtils.makeClock(0)
 		local pm = createTestAvnuPaymaster({ _clock = clock })
 
 		-- Fetch and cache
 		local tokens1 = pm:getSupportedTokens():expect()
 
-		advance(10)
+		setClock(10)
 
 		-- Get from cache
 		local tokens2 = pm:getSupportedTokens():expect()
@@ -782,7 +767,7 @@ end)
 
 describe("AvnuPaymaster - error propagation", function()
 	it("propagates RPC errors from inner paymaster", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			_httpRequest = function(_request: any)
 				return {
@@ -805,7 +790,7 @@ describe("AvnuPaymaster - error propagation", function()
 	end)
 
 	it("propagates network errors from inner paymaster", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			_httpRequest = function(_request: any)
 				return {
@@ -824,7 +809,7 @@ describe("AvnuPaymaster - error propagation", function()
 	end)
 
 	it("isAvailable returns false on error (does not throw)", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local pm = createTestAvnuPaymaster({
 			_httpRequest = function(_request: any)
 				return {
@@ -840,10 +825,10 @@ describe("AvnuPaymaster - error propagation", function()
 	end)
 
 	it("does not cache failed getSupportedTokens results", function()
-		resetHandlers()
+		resetPaymasterHandlers()
 		local callCount = 0
 		local shouldFail = true
-		local clock, _advance = createMockClock()
+		local clock, _setClock = TestUtils.makeClock(0)
 
 		local pm = createTestAvnuPaymaster({
 			_clock = clock,
@@ -892,8 +877,8 @@ end)
 
 describe("AvnuPaymaster - integration with fee modes", function()
 	it("sponsored mode with apiKey uses 0x0 gas token", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster({ apiKey = "game-dev-key" })
 		pm:buildTypedData(
 			"0xuser",
@@ -901,13 +886,13 @@ describe("AvnuPaymaster - integration with fee modes", function()
 			"0x0" -- sponsored
 		):expect()
 
-		local params = requestLog[#requestLog].params
+		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[2].fee_mode.mode):toBe("sponsored")
 	end)
 
 	it("gasless mode without apiKey uses token address", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster() -- no apiKey
 		local ethAddr = pm:getTokenAddress("ETH")
 		pm:buildTypedData(
@@ -916,14 +901,14 @@ describe("AvnuPaymaster - integration with fee modes", function()
 			ethAddr :: string
 		):expect()
 
-		local params = requestLog[#requestLog].params
+		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[2].fee_mode.mode):toBe("default")
 		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 
 	it("can use getTokenAddress to resolve symbol for buildTypedData", function()
-		resetHandlers()
-		clearRequestLog()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster({ network = "mainnet" })
 		local usdcAddr = pm:getTokenAddress("USDC")
 		expect(usdcAddr):toBeTruthy()
@@ -934,7 +919,7 @@ describe("AvnuPaymaster - integration with fee modes", function()
 			usdcAddr :: string
 		):expect()
 
-		local params = requestLog[#requestLog].params
+		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[2].fee_mode.mode):toBe("default")
 		expect(params[2].fee_mode.gas_token):toBe("0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8")
 	end)
