@@ -131,10 +131,7 @@ end
 
 --- Validate that returned calls from a paymaster match the submitted calls.
 --- Throws a PaymasterError if validation fails.
-local function validatePaymasterCalls(
-	submittedCalls: { any },
-	typedData: { [string]: any }
-): ()
+local function validatePaymasterCalls(submittedCalls: { any }, typedData: { [string]: any }): ()
 	local submittedOutsideCalls: { { [string]: any } } = {}
 	for _, call in submittedCalls do
 		table.insert(submittedOutsideCalls, OutsideExecution.getOutsideCall(call))
@@ -594,10 +591,7 @@ end
 --- Execute a function with NonceManager reserve/confirm/reject lifecycle.
 --- If NonceManager is unavailable or an explicit nonce is provided, calls fn(opts) directly.
 --- Otherwise: reserve → fn(optsWithNonce) → confirm on success / reject on failure.
-function Account:_withNonceManager(
-	options: any?,
-	fn: (opts: any) -> any
-): any
+function Account:_withNonceManager(options: any?, fn: (opts: any) -> any): any
 	local nm = self._provider._nonceManager
 	local hasExplicitNonce = options and (options :: any).nonce
 
@@ -905,9 +899,7 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Build typed data via paymaster
 		local buildOk, buildResult = pcall(function()
-			return validated.paymaster
-				:buildTypedData(self.address, calls, validated.gasTokenAddress, options)
-				:expect()
+			return validated.paymaster:buildTypedData(self.address, calls, validated.gasTokenAddress, options):expect()
 		end)
 		if not buildOk then
 			reject(buildResult)

@@ -1,5 +1,5 @@
 --!strict
--- TransactionBuilder: High-level transaction orchestration for Starknet V3 INVOKE transactions
+-- TransactionBuilder: High-level transaction orchestration for Starknet V3 transactions
 -- Coordinates nonce fetching, fee estimation, hash computation, signing, and submission
 -- All async operations return Promises for Roblox compatibility
 
@@ -22,18 +22,21 @@ export type Account = {
 
 export type Call = CallData.Call
 
-export type ExecuteOptions = {
+export type BaseTransactionOptions = {
 	nonce: string?, -- Override automatic nonce fetching
-	maxFee: string?, -- Override fee estimation with explicit max fee
+	maxFee: string?, -- Cap overall fee (reduces l1Gas.maxAmount so maxAmount * maxPricePerUnit <= maxFee)
 	resourceBounds: TransactionHash.ResourceBounds?, -- Override computed resource bounds
 	feeMultiplier: number?, -- Fee buffer multiplier (default 1.5)
 	tip: string?, -- Tip for priority (default "0x0")
 	paymasterData: { string }?, -- Paymaster data
-	accountDeploymentData: { string }?, -- Account deployment data
 	nonceDataAvailabilityMode: number?, -- DA mode for nonce (default 0)
 	feeDataAvailabilityMode: number?, -- DA mode for fee (default 0)
 	dryRun: boolean?, -- Build and sign but don't submit
 	skipValidate: boolean?, -- Use SKIP_VALIDATE flag for fee estimation
+}
+
+export type ExecuteOptions = BaseTransactionOptions & {
+	accountDeploymentData: { string }?, -- Account deployment data
 }
 
 export type DeployAccountParams = {
@@ -43,17 +46,7 @@ export type DeployAccountParams = {
 	contractAddress: string, -- Pre-computed counterfactual address
 }
 
-export type DeployAccountOptions = {
-	nonce: string?, -- Override automatic nonce fetching (default "0x0" for new accounts)
-	maxFee: string?, -- Cap overall fee (reduces l1Gas.maxAmount so maxAmount * maxPricePerUnit <= maxFee)
-	resourceBounds: TransactionHash.ResourceBounds?, -- Override computed resource bounds (takes precedence over maxFee)
-	feeMultiplier: number?, -- Fee buffer multiplier (default 1.5)
-	tip: string?, -- Tip for priority (default "0x0")
-	paymasterData: { string }?, -- Paymaster data
-	nonceDataAvailabilityMode: number?, -- DA mode for nonce (default 0)
-	feeDataAvailabilityMode: number?, -- DA mode for fee (default 0)
-	dryRun: boolean?, -- Build and sign but don't submit
-	skipValidate: boolean?, -- Use SKIP_VALIDATE flag for fee estimation
+export type DeployAccountOptions = BaseTransactionOptions & {
 	waitForConfirmation: boolean?, -- Account-level: wait for receipt after submission (default true)
 }
 
@@ -80,6 +73,11 @@ local DEFAULT_FEE_MULTIPLIER = 1.5
 local ZERO_RESOURCE_BOUND: TransactionHash.ResourceBound = {
 	maxAmount = "0x0",
 	maxPricePerUnit = "0x0",
+}
+local ZERO_RESOURCE_BOUNDS: TransactionHash.ResourceBounds = {
+	l1Gas = ZERO_RESOURCE_BOUND,
+	l2Gas = ZERO_RESOURCE_BOUND,
+	l1DataGas = ZERO_RESOURCE_BOUND,
 }
 
 --------------------------------------------------------------------------------
@@ -142,6 +140,14 @@ local function toRpcResourceBounds(bounds: TransactionHash.ResourceBounds): any
 	}
 end
 
+--- Extract the first fee estimate from a result that may be an array or single object.
+local function extractFirstEstimate(feeResult: any): any
+	if type(feeResult) == "table" and #feeResult > 0 then
+		return feeResult[1]
+	end
+	return feeResult
+end
+
 --- Build an unsigned InvokeTransactionV3 object for RPC submission or fee estimation.
 local function buildInvokeTransaction(params: {
 	senderAddress: string,
@@ -200,6 +206,135 @@ local function buildDeployAccountTransaction(params: {
 	}
 end
 
+--- Shared internal fee estimation logic.
+--- @param provider -- RpcProvider instance
+--- @param resolveNonce -- returns nonce (may throw)
+--- @param buildUnsignedTx -- builds unsigned tx with zero bounds + dummy sig for given nonce
+local function _estimateInternal(
+	provider: any,
+	resolveNonce: () -> string,
+	buildUnsignedTx: (nonce: string) -> any
+): any
+	local Promise = provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		local nonceOk, nonce = pcall(resolveNonce)
+		if not nonceOk then
+			reject(nonce)
+			return
+		end
+
+		local unsignedTx = buildUnsignedTx(nonce)
+
+		local feeOk, feeResult = pcall(function()
+			return provider:estimateFee({ unsignedTx }, { "SKIP_VALIDATE" }):expect()
+		end)
+		if not feeOk then
+			reject(feeResult)
+			return
+		end
+
+		resolve(extractFirstEstimate(feeResult))
+	end)
+end
+
+--- Shared execution pipeline parameterized by transaction-specific behavior.
+--- Both execute() and deployAccount() delegate to this function.
+local function _executePipeline(
+	provider: any,
+	account: Account,
+	config: {
+		resolveNonce: () -> string,
+		buildEstimationTx: (nonce: string) -> any,
+		computeHash: (string, string, TransactionHash.ResourceBounds, string, { string }, number, number) -> string,
+		buildSignedTx: (string, TransactionHash.ResourceBounds, { string }, string, { string }, number, number) -> any,
+		submit: (any) -> any,
+		formatResult: (any) -> any,
+		applyPostEstimate: ((TransactionHash.ResourceBounds) -> TransactionHash.ResourceBounds)?,
+	},
+	opts: BaseTransactionOptions
+): any
+	local Promise = provider:_getPromise()
+
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		-- Step 1: Resolve nonce
+		local nonceOk, nonce = pcall(config.resolveNonce)
+		if not nonceOk then
+			reject(nonce)
+			return
+		end
+
+		-- Step 2: Fetch chain ID
+		local chainIdOk, chainId = pcall(function()
+			return provider:getChainId():expect()
+		end)
+		if not chainIdOk then
+			reject(chainId)
+			return
+		end
+
+		-- Step 3: Determine resource bounds (estimate or use override)
+		local resourceBounds: TransactionHash.ResourceBounds
+		if opts.resourceBounds then
+			resourceBounds = opts.resourceBounds
+		else
+			local multiplier = opts.feeMultiplier or DEFAULT_FEE_MULTIPLIER
+			local unsignedTx = config.buildEstimationTx(nonce)
+			local simFlags = if opts.skipValidate ~= false then { "SKIP_VALIDATE" } else {}
+
+			local feeOk, feeResult = pcall(function()
+				return provider:estimateFee({ unsignedTx }, simFlags):expect()
+			end)
+			if not feeOk then
+				reject(feeResult)
+				return
+			end
+
+			local estimate = extractFirstEstimate(feeResult)
+			resourceBounds = resourceBoundsFromEstimate(estimate, multiplier)
+
+			if config.applyPostEstimate then
+				resourceBounds = config.applyPostEstimate(resourceBounds)
+			end
+		end
+
+		-- Step 4: Extract common options
+		local tip = opts.tip or "0x0"
+		local paymasterData = opts.paymasterData or {}
+		local nonceDAMode = opts.nonceDataAvailabilityMode or 0
+		local feeDAMode = opts.feeDataAvailabilityMode or 0
+
+		-- Step 5: Compute transaction hash
+		local txHash = config.computeHash(chainId, nonce, resourceBounds, tip, paymasterData, nonceDAMode, feeDAMode)
+
+		-- Step 6: Sign the transaction hash
+		local txHashBuf = BigInt.fromHex(txHash)
+		local signature = account.signer:signTransaction(txHashBuf)
+
+		-- Step 7: Build the final signed transaction
+		local signedTx =
+			config.buildSignedTx(nonce, resourceBounds, signature, tip, paymasterData, nonceDAMode, feeDAMode)
+
+		-- Step 8: Handle dryRun
+		if opts.dryRun then
+			resolve({
+				transactionHash = txHash,
+				transaction = signedTx,
+				signature = signature,
+			})
+			return
+		end
+
+		-- Step 9: Submit
+		local submitOk, submitResult = pcall(config.submit, signedTx)
+		if not submitOk then
+			reject(submitResult)
+			return
+		end
+
+		resolve(config.formatResult(submitResult))
+	end)
+end
+
 --------------------------------------------------------------------------------
 -- TransactionBuilder class
 --------------------------------------------------------------------------------
@@ -225,49 +360,18 @@ end
 --- Returns a Promise resolving to the fee estimate.
 function TransactionBuilder:estimateFee(account: Account, calls: { Call }): any
 	local provider = self._provider
-	local Promise = provider:_getPromise()
+	local calldata = CallData.encodeMulticall(calls)
 
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Step 1: Fetch nonce and chain ID in sequence (synchronous in test, async in Roblox)
-		local nonceOk, nonce = pcall(function()
-			return provider:getNonce(account.address):expect()
-		end)
-		if not nonceOk then
-			reject(nonce)
-			return
-		end
-
-		-- Step 2: Encode calldata
-		local calldata = CallData.encodeMulticall(calls)
-
-		-- Step 3: Build unsigned transaction with zero resource bounds and dummy signature
-		local unsignedTx = buildInvokeTransaction({
+	return _estimateInternal(provider, function(): string
+		return provider:getNonce(account.address):expect()
+	end, function(nonce: string): any
+		return buildInvokeTransaction({
 			senderAddress = account.address,
 			calldata = calldata,
 			nonce = nonce,
-			resourceBounds = {
-				l1Gas = ZERO_RESOURCE_BOUND,
-				l2Gas = ZERO_RESOURCE_BOUND,
-				l1DataGas = ZERO_RESOURCE_BOUND,
-			},
-			signature = { "0x0", "0x0" }, -- Dummy signature for estimation
+			resourceBounds = ZERO_RESOURCE_BOUNDS,
+			signature = { "0x0", "0x0" },
 		})
-
-		-- Step 4: Call estimateFee with SKIP_VALIDATE
-		local feeOk, feeResult = pcall(function()
-			return provider:estimateFee({ unsignedTx }, { "SKIP_VALIDATE" }):expect()
-		end)
-		if not feeOk then
-			reject(feeResult)
-			return
-		end
-
-		-- Return the first estimate (single transaction)
-		if type(feeResult) == "table" and #feeResult > 0 then
-			resolve(feeResult[1])
-		else
-			resolve(feeResult)
-		end
 	end)
 end
 
@@ -275,170 +379,95 @@ end
 --- Returns a Promise resolving to the transaction hash (or DryRunResult if dryRun=true).
 function TransactionBuilder:execute(account: Account, calls: { Call }, options: ExecuteOptions?): any
 	local provider = self._provider
-	local Promise = provider:_getPromise()
 	local opts = options or {} :: ExecuteOptions
+	local calldata = CallData.encodeMulticall(calls)
+	local accountDeploymentData = opts.accountDeploymentData or {}
 
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Step 1: Fetch nonce (or use override)
-		local nonce: string
-		if opts.nonce then
-			nonce = opts.nonce
-		else
-			local nonceOk, nonceResult = pcall(function()
-				return provider:getNonce(account.address):expect()
-			end)
-			if not nonceOk then
-				reject(nonceResult)
-				return
+	return _executePipeline(provider, account, {
+		resolveNonce = function(): string
+			if opts.nonce then
+				return opts.nonce :: string
 			end
-			nonce = nonceResult
-		end
-
-		-- Step 2: Fetch chain ID
-		local chainIdOk, chainId = pcall(function()
-			return provider:getChainId():expect()
-		end)
-		if not chainIdOk then
-			reject(chainId)
-			return
-		end
-
-		-- Step 3: Encode calldata (multicall format)
-		local calldata = CallData.encodeMulticall(calls)
-
-		-- Step 4: Determine resource bounds (estimate or use override)
-		local resourceBounds: TransactionHash.ResourceBounds
-		if opts.resourceBounds then
-			resourceBounds = opts.resourceBounds
-		else
-			local multiplier = opts.feeMultiplier or DEFAULT_FEE_MULTIPLIER
-
-			-- Build unsigned tx for fee estimation
-			local unsignedTx = buildInvokeTransaction({
+			return provider:getNonce(account.address):expect()
+		end,
+		buildEstimationTx = function(nonce: string): any
+			return buildInvokeTransaction({
 				senderAddress = account.address,
 				calldata = calldata,
 				nonce = nonce,
-				resourceBounds = {
-					l1Gas = ZERO_RESOURCE_BOUND,
-					l2Gas = ZERO_RESOURCE_BOUND,
-					l1DataGas = ZERO_RESOURCE_BOUND,
-				},
+				resourceBounds = ZERO_RESOURCE_BOUNDS,
 				signature = { "0x0", "0x0" },
 			})
-
-			local simFlags = if opts.skipValidate ~= false then { "SKIP_VALIDATE" } else {}
-
-			local feeOk, feeResult = pcall(function()
-				return provider:estimateFee({ unsignedTx }, simFlags):expect()
-			end)
-			if not feeOk then
-				reject(feeResult)
-				return
-			end
-
-			local estimate = if type(feeResult) == "table" and #feeResult > 0 then feeResult[1] else feeResult
-			resourceBounds = resourceBoundsFromEstimate(estimate, multiplier)
-		end
-
-		-- Step 5: Compute transaction hash (Poseidon)
-		local tip = opts.tip or "0x0"
-		local paymasterData = opts.paymasterData or {}
-		local accountDeploymentData = opts.accountDeploymentData or {}
-		local nonceDAMode = opts.nonceDataAvailabilityMode or 0
-		local feeDAMode = opts.feeDataAvailabilityMode or 0
-
-		local txHash = TransactionHash.calculateInvokeTransactionHash({
-			senderAddress = account.address,
-			compiledCalldata = calldata,
-			chainId = chainId,
-			nonce = nonce,
-			resourceBounds = resourceBounds,
-			tip = tip,
-			paymasterData = paymasterData,
-			accountDeploymentData = accountDeploymentData,
-			nonceDataAvailabilityMode = nonceDAMode,
-			feeDataAvailabilityMode = feeDAMode,
-		})
-
-		-- Step 6: Sign the transaction hash
-		local txHashBuf = BigInt.fromHex(txHash)
-		local signature = account.signer:signTransaction(txHashBuf)
-
-		-- Step 7: Build the final signed transaction
-		local signedTx = buildInvokeTransaction({
-			senderAddress = account.address,
-			calldata = calldata,
-			nonce = nonce,
-			resourceBounds = resourceBounds,
-			signature = signature,
-			tip = tip,
-			paymasterData = paymasterData,
-			accountDeploymentData = accountDeploymentData,
-			nonceDataAvailabilityMode = nonceDAMode,
-			feeDataAvailabilityMode = feeDAMode,
-		})
-
-		-- Step 7b: If dryRun, return without submitting
-		if opts.dryRun then
-			resolve({
-				transactionHash = txHash,
-				transaction = signedTx,
-				signature = signature,
+		end,
+		computeHash = function(
+			chainId: string,
+			nonce: string,
+			resourceBounds: TransactionHash.ResourceBounds,
+			tip: string,
+			paymasterData: { string },
+			nonceDAMode: number,
+			feeDAMode: number
+		): string
+			return TransactionHash.calculateInvokeTransactionHash({
+				senderAddress = account.address,
+				compiledCalldata = calldata,
+				chainId = chainId,
+				nonce = nonce,
+				resourceBounds = resourceBounds,
+				tip = tip,
+				paymasterData = paymasterData,
+				accountDeploymentData = accountDeploymentData,
+				nonceDataAvailabilityMode = nonceDAMode,
+				feeDataAvailabilityMode = feeDAMode,
 			})
-			return
-		end
-
-		-- Step 8: Submit the transaction
-		local submitOk, submitResult = pcall(function()
+		end,
+		buildSignedTx = function(
+			nonce: string,
+			resourceBounds: TransactionHash.ResourceBounds,
+			signature: { string },
+			tip: string,
+			paymasterData: { string },
+			nonceDAMode: number,
+			feeDAMode: number
+		): any
+			return buildInvokeTransaction({
+				senderAddress = account.address,
+				calldata = calldata,
+				nonce = nonce,
+				resourceBounds = resourceBounds,
+				signature = signature,
+				tip = tip,
+				paymasterData = paymasterData,
+				accountDeploymentData = accountDeploymentData,
+				nonceDataAvailabilityMode = nonceDAMode,
+				feeDataAvailabilityMode = feeDAMode,
+			})
+		end,
+		submit = function(signedTx: any): any
 			return provider:addInvokeTransaction(signedTx):expect()
-		end)
-		if not submitOk then
-			reject(submitResult)
-			return
-		end
-
-		resolve({
-			transactionHash = submitResult,
-		})
-	end)
+		end,
+		formatResult = function(submitResult: any): any
+			return { transactionHash = submitResult }
+		end,
+	}, opts)
 end
 
 --- Estimate the fee for a deploy account transaction without submitting.
 --- Returns a Promise resolving to the fee estimate.
 function TransactionBuilder:estimateDeployAccountFee(_account: Account, params: DeployAccountParams): any
 	local provider = self._provider
-	local Promise = provider:_getPromise()
 
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Build unsigned transaction with zero resource bounds and dummy signature
-		local unsignedTx = buildDeployAccountTransaction({
+	return _estimateInternal(provider, function(): string
+		return "0x0"
+	end, function(nonce: string): any
+		return buildDeployAccountTransaction({
 			classHash = params.classHash,
 			constructorCalldata = params.constructorCalldata,
 			contractAddressSalt = params.addressSalt,
-			nonce = "0x0",
-			resourceBounds = {
-				l1Gas = ZERO_RESOURCE_BOUND,
-				l2Gas = ZERO_RESOURCE_BOUND,
-				l1DataGas = ZERO_RESOURCE_BOUND,
-			},
-			signature = { "0x0", "0x0" }, -- Dummy signature for estimation
+			nonce = nonce,
+			resourceBounds = ZERO_RESOURCE_BOUNDS,
+			signature = { "0x0", "0x0" },
 		})
-
-		-- Call estimateFee with SKIP_VALIDATE
-		local feeOk, feeResult = pcall(function()
-			return provider:estimateFee({ unsignedTx }, { "SKIP_VALIDATE" }):expect()
-		end)
-		if not feeOk then
-			reject(feeResult)
-			return
-		end
-
-		-- Return the first estimate (single transaction)
-		if type(feeResult) == "table" and #feeResult > 0 then
-			resolve(feeResult[1])
-		else
-			resolve(feeResult)
-		end
 	end)
 end
 
@@ -450,65 +479,85 @@ function TransactionBuilder:deployAccount(
 	options: DeployAccountOptions?
 ): any
 	local provider = self._provider
-	local Promise = provider:_getPromise()
 	local opts = options or {} :: DeployAccountOptions
 
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Step 1: Nonce (default "0x0" for new account deployments)
-		local nonce: string = opts.nonce or "0x0"
-
-		-- Step 2: Fetch chain ID
-		local chainIdOk, chainId = pcall(function()
-			return provider:getChainId():expect()
-		end)
-		if not chainIdOk then
-			reject(chainId)
-			return
-		end
-
-		-- Step 3: Determine resource bounds (estimate or use override)
-		local resourceBounds: TransactionHash.ResourceBounds
-		if opts.resourceBounds then
-			resourceBounds = opts.resourceBounds
-		else
-			local multiplier = opts.feeMultiplier or DEFAULT_FEE_MULTIPLIER
-
-			-- Build unsigned tx for fee estimation
-			local unsignedTx = buildDeployAccountTransaction({
+	return _executePipeline(provider, account, {
+		resolveNonce = function(): string
+			return opts.nonce or "0x0"
+		end,
+		buildEstimationTx = function(nonce: string): any
+			return buildDeployAccountTransaction({
 				classHash = params.classHash,
 				constructorCalldata = params.constructorCalldata,
 				contractAddressSalt = params.addressSalt,
 				nonce = nonce,
-				resourceBounds = {
-					l1Gas = ZERO_RESOURCE_BOUND,
-					l2Gas = ZERO_RESOURCE_BOUND,
-					l1DataGas = ZERO_RESOURCE_BOUND,
-				},
+				resourceBounds = ZERO_RESOURCE_BOUNDS,
 				signature = { "0x0", "0x0" },
 			})
-
-			local simFlags = if opts.skipValidate ~= false then { "SKIP_VALIDATE" } else {}
-
-			local feeOk, feeResult = pcall(function()
-				return provider:estimateFee({ unsignedTx }, simFlags):expect()
-			end)
-			if not feeOk then
-				reject(feeResult)
-				return
-			end
-
-			local estimate = if type(feeResult) == "table" and #feeResult > 0 then feeResult[1] else feeResult
-			resourceBounds = resourceBoundsFromEstimate(estimate, multiplier)
-
-			-- Apply maxFee cap: reduce l1Gas.maxAmount so maxAmount * maxPricePerUnit <= maxFee
-			if opts.maxFee then
-				local maxFeeBig = BigInt.fromHex(opts.maxFee)
+		end,
+		computeHash = function(
+			chainId: string,
+			nonce: string,
+			resourceBounds: TransactionHash.ResourceBounds,
+			tip: string,
+			paymasterData: { string },
+			nonceDAMode: number,
+			feeDAMode: number
+		): string
+			return TransactionHash.calculateDeployAccountTransactionHash({
+				classHash = params.classHash,
+				constructorCalldata = params.constructorCalldata,
+				contractAddress = params.contractAddress,
+				salt = params.addressSalt,
+				chainId = chainId,
+				nonce = nonce,
+				resourceBounds = resourceBounds,
+				tip = tip,
+				paymasterData = paymasterData,
+				nonceDataAvailabilityMode = nonceDAMode,
+				feeDataAvailabilityMode = feeDAMode,
+			})
+		end,
+		buildSignedTx = function(
+			nonce: string,
+			resourceBounds: TransactionHash.ResourceBounds,
+			signature: { string },
+			tip: string,
+			paymasterData: { string },
+			nonceDAMode: number,
+			feeDAMode: number
+		): any
+			return buildDeployAccountTransaction({
+				classHash = params.classHash,
+				constructorCalldata = params.constructorCalldata,
+				contractAddressSalt = params.addressSalt,
+				nonce = nonce,
+				resourceBounds = resourceBounds,
+				signature = signature,
+				tip = tip,
+				paymasterData = paymasterData,
+				nonceDataAvailabilityMode = nonceDAMode,
+				feeDataAvailabilityMode = feeDAMode,
+			})
+		end,
+		submit = function(signedTx: any): any
+			return provider:addDeployAccountTransaction(signedTx):expect()
+		end,
+		formatResult = function(submitResult: any): any
+			return {
+				transactionHash = submitResult.transaction_hash,
+				contractAddress = submitResult.contract_address,
+			}
+		end,
+		applyPostEstimate = if opts.maxFee
+			then function(resourceBounds: TransactionHash.ResourceBounds): TransactionHash.ResourceBounds
+				local maxFeeBig = BigInt.fromHex(opts.maxFee :: string)
 				local priceBig = BigInt.fromHex(resourceBounds.l1Gas.maxPricePerUnit)
 				if not BigInt.isZero(priceBig) then
 					local cappedMaxAmount = BigInt.div(maxFeeBig, priceBig)
 					local currentMaxAmount = BigInt.fromHex(resourceBounds.l1Gas.maxAmount)
 					if BigInt.cmp(currentMaxAmount, cappedMaxAmount) > 0 then
-						resourceBounds = {
+						return {
 							l1Gas = {
 								maxAmount = BigInt.toHex(cappedMaxAmount),
 								maxPricePerUnit = resourceBounds.l1Gas.maxPricePerUnit,
@@ -518,71 +567,10 @@ function TransactionBuilder:deployAccount(
 						}
 					end
 				end
+				return resourceBounds
 			end
-		end
-
-		-- Step 4: Compute deploy account transaction hash (Poseidon)
-		local tip = opts.tip or "0x0"
-		local paymasterData = opts.paymasterData or {}
-		local nonceDAMode = opts.nonceDataAvailabilityMode or 0
-		local feeDAMode = opts.feeDataAvailabilityMode or 0
-
-		local txHash = TransactionHash.calculateDeployAccountTransactionHash({
-			classHash = params.classHash,
-			constructorCalldata = params.constructorCalldata,
-			contractAddress = params.contractAddress,
-			salt = params.addressSalt,
-			chainId = chainId,
-			nonce = nonce,
-			resourceBounds = resourceBounds,
-			tip = tip,
-			paymasterData = paymasterData,
-			nonceDataAvailabilityMode = nonceDAMode,
-			feeDataAvailabilityMode = feeDAMode,
-		})
-
-		-- Step 5: Sign the transaction hash
-		local txHashBuf = BigInt.fromHex(txHash)
-		local signature = account.signer:signTransaction(txHashBuf)
-
-		-- Step 6: Build the final signed transaction
-		local signedTx = buildDeployAccountTransaction({
-			classHash = params.classHash,
-			constructorCalldata = params.constructorCalldata,
-			contractAddressSalt = params.addressSalt,
-			nonce = nonce,
-			resourceBounds = resourceBounds,
-			signature = signature,
-			tip = tip,
-			paymasterData = paymasterData,
-			nonceDataAvailabilityMode = nonceDAMode,
-			feeDataAvailabilityMode = feeDAMode,
-		})
-
-		-- Step 6b: If dryRun, return without submitting
-		if opts.dryRun then
-			resolve({
-				transactionHash = txHash,
-				transaction = signedTx,
-				signature = signature,
-			})
-			return
-		end
-
-		-- Step 7: Submit the deploy account transaction
-		local submitOk, submitResult = pcall(function()
-			return provider:addDeployAccountTransaction(signedTx):expect()
-		end)
-		if not submitOk then
-			reject(submitResult)
-			return
-		end
-
-		resolve({
-			transactionHash = submitResult.transaction_hash,
-			contractAddress = submitResult.contract_address,
-		})
-	end)
+			else nil,
+	}, opts)
 end
 
 --- Wait for a transaction receipt by polling the provider.
