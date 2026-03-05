@@ -20,11 +20,18 @@ _Issues that span multiple modules. Reference specific files where relevant._
 - `[refactor]` **`ResourceBounds` type exists in 2 incompatible shapes.** `tx/TransactionHash.luau:18-27` defines camelCase with 3 fields (`l1Gas`, `l2Gas`, `l1DataGas`). `provider/RpcTypes.luau:207-210` defines snake_case with 2 fields (`l1_gas`, `l2_gas`). The `l1DataGas`→`l1_data_gas` mapping is handled by `TransactionBuilder.toRpcResourceBounds()` which silently drops `l1DataGas`. This should be documented or unified.
 - `[fix]` **DA modes hardcoded in `TransactionBuilder.buildInvokeTransaction()` and `buildDeployAccountTransaction()`.** Despite accepting `nonceDataAvailabilityMode`/`feeDataAvailabilityMode` parameters, both builder functions output `"0x0"`. This causes a hash/transaction mismatch for non-L1 DA modes. See [tx/ section](./05-tx.md) for details.
 
+- `[refactor]` **`computeHashOnElements()` / `hashPedersen()` — same Pedersen chain-hash in 2 modules.** `wallet/Account.luau:77-84` operates on `Felt` buffers, `wallet/TypedData.luau:83-90` operates on hex strings with identical logic. Extract to `Pedersen.hashMany()` or a shared utility. See [wallet/ section](./06-wallet.md).
+- `[refactor]` **`u256ToBigInt()` utility trapped in Account.luau.** `wallet/Account.luau:106-114` converts `{low, high}` u256 to single BigInt. This is a general-purpose operation useful in AbiCodec, Contract, and ERC20 modules. Should live in `BigInt.fromU256()` or a shared utility.
+- `[refactor]` **`CONTRACT_ADDRESS_PREFIX` duplicated.** `wallet/Account.luau:26` and `constants.luau:37` define the same hex constant. Account should import from constants.
+- `[refactor]` **Class hash constants defined in 3 places.** `constants.luau:21-30`, `wallet/Account.luau:44-53`, and `wallet/AccountType.luau:22-25` all define the same OZ/Argent/Braavos class hashes independently. See [wallet/ section](./06-wallet.md) for consolidation plan.
+- `[refactor]` **Test mock infrastructure duplicated across 4 wallet test files.** ~450 lines of identical `createMockHttpRequest()`, `createTestProvider()`, `resetHandlers()`, and test constants in Account.spec, AccountFactory.spec, PrefundingHelper.spec, BatchDeploy.spec. Extract to `tests/helpers/MockRpc.luau`.
+
 ### Private method coupling
 
 - `[refactor]` **`_getPromise()` called by 3 external modules despite being private.** Account.luau, NonceManager.luau (×2) call `provider:_getPromise()`. Either make public or inject the Promise module at construction time.
 - `[refactor]` **`_requestWithRetry()` called by EventPoller despite being private.** EventPoller.luau lines 68 and 109 bypass the public API. Add a public `fetchSync()` method to RpcProvider.
 - `[refactor]` **`_nonceManager` accessed directly by Account.** Account.luau accesses `provider._nonceManager` as a private field. Use `provider:getNonceManager()` (which exists at RpcProvider:636 but is not in the exported type).
+- `[refactor]` **`_PromiseModule` accessed inconsistently.** `AccountFactory.luau:287` accesses `provider._PromiseModule` (field), while `Account.luau` uses `provider:_getPromise()` (method). Same private access intent, different patterns. Align on a single public accessor.
 - `[refactor]` **`provider: any` used in 8+ constructor signatures.** Account, TransactionBuilder, Contract, ERC20, ERC721, AccountFactory, NonceManager, EventPoller all accept `provider: any`. Define a `ProviderInterface` type or use the `RpcProvider` export type.
 
 ### Require patterns (Roblox vs Lune)
@@ -47,6 +54,7 @@ _Issues that span multiple modules. Reference specific files where relevant._
 - `[refactor]` **`:is()` method and `isStarknetError()` are never used in production** — only in tests. The 2 production error-type checks use raw `._type == "RpcError"`. Either dogfood the hierarchy API internally or acknowledge it's consumer-facing only.
 - `[api]` **Missing `PaymasterError` subtype.** 15 error codes across 4+ files have no dedicated factory or hierarchy entry. Paymaster errors are thrown as untyped `StarknetError.new()`, `rpc()`, or `validation()` — inconsistent and hard to discriminate programmatically.
 - `[refactor]` **Error code numeric ranges don't always match error subtypes.** `TRANSACTION_REVERTED` (2004) and `TRANSACTION_REJECTED` (2005) are in the 2000 RPC range but used with `StarknetError.transaction()`. `MATH_ERROR` (3010) is in the 3000 signing range but used with both `validation()` and `new()`. No enforcement that code ranges and `_type` subtypes are aligned.
+- `[refactor]` **Account.luau uses `StarknetError.new(..., "PaymasterError")` for paymaster errors** (lines 874, 1077) instead of a dedicated `StarknetError.paymaster()` factory. Related to the missing PaymasterError subtype noted above. See [wallet/ section](./06-wallet.md).
 
 ### API naming consistency
 
