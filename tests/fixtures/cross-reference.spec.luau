@@ -11,6 +11,7 @@ local StarkCurve = require("../../src/crypto/StarkCurve")
 local ECDSA = require("../../src/crypto/ECDSA")
 local TransactionHash = require("../../src/tx/TransactionHash")
 local Account = require("../../src/wallet/Account")
+local Constants = require("../../src/constants")
 
 local TV = require("./test-vectors")
 
@@ -347,11 +348,11 @@ end)
 
 describe("Cross-ref: Constants - chain IDs", function()
 	it("SN_MAIN matches", function()
-		expect(TransactionHash.SN_MAIN):toBe(TV.Constants.SN_MAIN)
+		expect(Constants.SN_MAIN):toBe(TV.Constants.SN_MAIN)
 	end)
 
 	it("SN_SEPOLIA matches", function()
-		expect(TransactionHash.SN_SEPOLIA):toBe(TV.Constants.SN_SEPOLIA)
+		expect(Constants.SN_SEPOLIA):toBe(TV.Constants.SN_SEPOLIA)
 	end)
 end)
 
@@ -376,7 +377,7 @@ describe("Cross-ref: Constants - curve parameters", function()
 end)
 
 describe("Cross-ref: Constants - OZ class hash", function()
-	it("Account.OZ_CLASS_HASH matches test vectors", function()
-		expect(Account.OZ_CLASS_HASH):toBe(TV.Account.ozClassHash)
+	it("Constants.OZ_ACCOUNT_CLASS_HASH matches test vectors", function()
+		expect(Constants.OZ_ACCOUNT_CLASS_HASH):toBe(TV.Account.ozClassHash)
 	end)
 end)

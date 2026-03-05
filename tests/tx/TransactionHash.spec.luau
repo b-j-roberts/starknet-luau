@@ -1,5 +1,6 @@
 --!strict
 local TransactionHash = require("../../src/tx/TransactionHash")
+local Constants = require("../../src/constants")
 
 -- Default zero resource bounds for convenience
 local ZERO_BOUNDS: TransactionHash.ResourceBounds = {
@@ -121,13 +122,13 @@ end)
 -- Chain ID constants
 --------------------------------------------------------------------------------
 
-describe("TransactionHash - chain ID constants", function()
+describe("Constants - chain ID constants", function()
 	it("SN_MAIN is correct ASCII encoding", function()
-		expect(TransactionHash.SN_MAIN):toBe("0x534e5f4d41494e")
+		expect(Constants.SN_MAIN):toBe("0x534e5f4d41494e")
 	end)
 
 	it("SN_SEPOLIA is correct ASCII encoding", function()
-		expect(TransactionHash.SN_SEPOLIA):toBe("0x534e5f5345504f4c4941")
+		expect(Constants.SN_SEPOLIA):toBe("0x534e5f5345504f4c4941")
 	end)
 end)
 

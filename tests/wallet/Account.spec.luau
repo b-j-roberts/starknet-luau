@@ -1,5 +1,6 @@
 --!strict
 local Account = require("../../src/wallet/Account")
+local Constants = require("../../src/constants")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local MockPromise = require("../helpers/MockPromise")
 local TestUtils = require("../helpers/TestUtils")
@@ -171,7 +172,7 @@ end)
 describe("Account.computeAddress - Argent X", function()
 	it("computes correct Argent address for pubkey_1 (no guardian)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.ARGENT_CLASS_HASH,
+			classHash = Constants.ARGENT_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_1,
 			constructorCalldata = { "0x0", PUBKEY_1, "0x0" },
 		})
@@ -180,7 +181,7 @@ describe("Account.computeAddress - Argent X", function()
 
 	it("computes correct Argent address for pubkey_2 (no guardian)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.ARGENT_CLASS_HASH,
+			classHash = Constants.ARGENT_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_2,
 			constructorCalldata = { "0x0", PUBKEY_2, "0x0" },
 		})
@@ -189,7 +190,7 @@ describe("Account.computeAddress - Argent X", function()
 
 	it("computes correct Argent address for pubkey_3 (no guardian)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.ARGENT_CLASS_HASH,
+			classHash = Constants.ARGENT_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_3,
 			constructorCalldata = { "0x0", PUBKEY_3, "0x0" },
 		})
@@ -199,7 +200,7 @@ describe("Account.computeAddress - Argent X", function()
 	it("computes correct Argent address with guardian", function()
 		local guardianKey = "0xdeadbeef"
 		local addr = Account.computeAddress({
-			classHash = Account.ARGENT_CLASS_HASH,
+			classHash = Constants.ARGENT_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_1,
 			constructorCalldata = { "0x0", PUBKEY_1, "0x1", "0x0", guardianKey },
 		})
@@ -224,7 +225,7 @@ end)
 describe("Account.computeAddress - Braavos", function()
 	it("computes correct Braavos address for pubkey_1 (base class hash)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.BRAAVOS_BASE_CLASS_HASH,
+			classHash = Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_1,
 			constructorCalldata = { PUBKEY_1 },
 		})
@@ -233,7 +234,7 @@ describe("Account.computeAddress - Braavos", function()
 
 	it("computes correct Braavos address for pubkey_2 (base class hash)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.BRAAVOS_BASE_CLASS_HASH,
+			classHash = Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_2,
 			constructorCalldata = { PUBKEY_2 },
 		})
@@ -242,7 +243,7 @@ describe("Account.computeAddress - Braavos", function()
 
 	it("computes correct Braavos address for pubkey_3 (base class hash)", function()
 		local addr = Account.computeAddress({
-			classHash = Account.BRAAVOS_BASE_CLASS_HASH,
+			classHash = Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH,
 			publicKey = PUBKEY_3,
 			constructorCalldata = { PUBKEY_3 },
 		})
@@ -631,7 +632,7 @@ end)
 
 describe("Account.detectAccountType", function()
 	it("detects OZ class hash", function()
-		expect(Account.detectAccountType(Account.OZ_CLASS_HASH)):toBe("oz")
+		expect(Account.detectAccountType(Constants.OZ_ACCOUNT_CLASS_HASH)):toBe("oz")
 	end)
 
 	it("detects OZ v0.14 class hash", function()
@@ -640,7 +641,7 @@ describe("Account.detectAccountType", function()
 	end)
 
 	it("detects Argent X class hash (v0.4.0)", function()
-		expect(Account.detectAccountType(Account.ARGENT_CLASS_HASH)):toBe("argent")
+		expect(Account.detectAccountType(Constants.ARGENT_ACCOUNT_CLASS_HASH)):toBe("argent")
 	end)
 
 	it("detects Argent X class hash (v0.3.1)", function()
@@ -650,11 +651,11 @@ describe("Account.detectAccountType", function()
 	end)
 
 	it("detects Braavos base class hash", function()
-		expect(Account.detectAccountType(Account.BRAAVOS_BASE_CLASS_HASH)):toBe("braavos")
+		expect(Account.detectAccountType(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH)):toBe("braavos")
 	end)
 
 	it("detects Braavos implementation class hash", function()
-		expect(Account.detectAccountType(Account.BRAAVOS_CLASS_HASH)):toBe("braavos")
+		expect(Account.detectAccountType(Constants.BRAAVOS_ACCOUNT_CLASS_HASH)):toBe("braavos")
 	end)
 
 	it("returns nil for unknown class hash", function()
@@ -711,44 +712,44 @@ end)
 -- Account constants
 --------------------------------------------------------------------------------
 
-describe("Account constants", function()
-	it("exposes OZ_CLASS_HASH", function()
-		expect(Account.OZ_CLASS_HASH):toBe(OZ_CLASS_HASH)
+describe("Constants class hashes", function()
+	it("OZ_ACCOUNT_CLASS_HASH matches test vector", function()
+		expect(Constants.OZ_ACCOUNT_CLASS_HASH):toBe(OZ_CLASS_HASH)
 	end)
 
-	it("OZ_CLASS_HASH is a valid hex string", function()
-		expect(string.sub(Account.OZ_CLASS_HASH, 1, 2)):toBe("0x")
-		expect(#Account.OZ_CLASS_HASH > 2):toBe(true)
+	it("OZ_ACCOUNT_CLASS_HASH is a valid hex string", function()
+		expect(string.sub(Constants.OZ_ACCOUNT_CLASS_HASH, 1, 2)):toBe("0x")
+		expect(#Constants.OZ_ACCOUNT_CLASS_HASH > 2):toBe(true)
 	end)
 
-	it("exposes ARGENT_CLASS_HASH", function()
-		expect(Account.ARGENT_CLASS_HASH):toBeTruthy()
-		expect(string.sub(Account.ARGENT_CLASS_HASH, 1, 2)):toBe("0x")
+	it("ARGENT_ACCOUNT_CLASS_HASH is a valid hex string", function()
+		expect(Constants.ARGENT_ACCOUNT_CLASS_HASH):toBeTruthy()
+		expect(string.sub(Constants.ARGENT_ACCOUNT_CLASS_HASH, 1, 2)):toBe("0x")
 	end)
 
-	it("exposes BRAAVOS_CLASS_HASH", function()
-		expect(Account.BRAAVOS_CLASS_HASH):toBeTruthy()
-		expect(string.sub(Account.BRAAVOS_CLASS_HASH, 1, 2)):toBe("0x")
+	it("BRAAVOS_ACCOUNT_CLASS_HASH is a valid hex string", function()
+		expect(Constants.BRAAVOS_ACCOUNT_CLASS_HASH):toBeTruthy()
+		expect(string.sub(Constants.BRAAVOS_ACCOUNT_CLASS_HASH, 1, 2)):toBe("0x")
 	end)
 
-	it("exposes BRAAVOS_BASE_CLASS_HASH", function()
-		expect(Account.BRAAVOS_BASE_CLASS_HASH):toBeTruthy()
-		expect(string.sub(Account.BRAAVOS_BASE_CLASS_HASH, 1, 2)):toBe("0x")
+	it("BRAAVOS_BASE_ACCOUNT_CLASS_HASH is a valid hex string", function()
+		expect(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH):toBeTruthy()
+		expect(string.sub(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH, 1, 2)):toBe("0x")
 	end)
 
-	it("exposes account type constants", function()
+	it("Account exposes account type constants", function()
 		expect(Account.ACCOUNT_TYPE_OZ):toBe("oz")
 		expect(Account.ACCOUNT_TYPE_ARGENT):toBe("argent")
 		expect(Account.ACCOUNT_TYPE_BRAAVOS):toBe("braavos")
 	end)
 
 	it("all class hashes are distinct", function()
-		expect(Account.OZ_CLASS_HASH ~= Account.ARGENT_CLASS_HASH):toBe(true)
-		expect(Account.OZ_CLASS_HASH ~= Account.BRAAVOS_CLASS_HASH):toBe(true)
-		expect(Account.OZ_CLASS_HASH ~= Account.BRAAVOS_BASE_CLASS_HASH):toBe(true)
-		expect(Account.ARGENT_CLASS_HASH ~= Account.BRAAVOS_CLASS_HASH):toBe(true)
-		expect(Account.ARGENT_CLASS_HASH ~= Account.BRAAVOS_BASE_CLASS_HASH):toBe(true)
-		expect(Account.BRAAVOS_CLASS_HASH ~= Account.BRAAVOS_BASE_CLASS_HASH):toBe(true)
+		expect(Constants.OZ_ACCOUNT_CLASS_HASH ~= Constants.ARGENT_ACCOUNT_CLASS_HASH):toBe(true)
+		expect(Constants.OZ_ACCOUNT_CLASS_HASH ~= Constants.BRAAVOS_ACCOUNT_CLASS_HASH):toBe(true)
+		expect(Constants.OZ_ACCOUNT_CLASS_HASH ~= Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH):toBe(true)
+		expect(Constants.ARGENT_ACCOUNT_CLASS_HASH ~= Constants.BRAAVOS_ACCOUNT_CLASS_HASH):toBe(true)
+		expect(Constants.ARGENT_ACCOUNT_CLASS_HASH ~= Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH):toBe(true)
+		expect(Constants.BRAAVOS_ACCOUNT_CLASS_HASH ~= Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH):toBe(true)
 	end)
 end)
 
@@ -1845,7 +1846,7 @@ describe("Account:getDeploymentData", function()
 		})
 
 		local dd = account:getDeploymentData()
-		expect(dd.classHash):toBe(Account.ARGENT_CLASS_HASH)
+		expect(dd.classHash):toBe(Constants.ARGENT_ACCOUNT_CLASS_HASH)
 		expect(dd.salt):toBe(PUBKEY_1)
 		-- Argent calldata: [0, publicKey, 0] (no guardian)
 		expect(#dd.calldata):toBe(3)
@@ -1884,7 +1885,7 @@ describe("Account:getDeploymentData", function()
 		})
 
 		local dd = account:getDeploymentData()
-		expect(dd.classHash):toBe(Account.BRAAVOS_BASE_CLASS_HASH)
+		expect(dd.classHash):toBe(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH)
 		expect(dd.salt):toBe(PUBKEY_1)
 		expect(dd.calldata[1]):toBe(PUBKEY_1)
 		expect(#dd.calldata):toBe(1)
@@ -2424,7 +2425,7 @@ describe("Account:deployWithPaymaster - Argent account", function()
 			:expect()
 
 		local dd = paymaster._buildCalls[1].options.deploymentData
-		expect(dd.classHash):toBe(Account.ARGENT_CLASS_HASH)
+		expect(dd.classHash):toBe(Constants.ARGENT_ACCOUNT_CLASS_HASH)
 		expect(#dd.calldata):toBe(3)
 		expect(dd.calldata[1]):toBe("0x0")
 		expect(dd.calldata[2]):toBe(PUBKEY_1)

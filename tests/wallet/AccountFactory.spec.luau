@@ -2,6 +2,7 @@
 local AccountType = require("../../src/wallet/AccountType")
 local AccountFactory = require("../../src/wallet/AccountFactory")
 local Account = require("../../src/wallet/Account")
+local Constants = require("../../src/constants")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local TestUtils = require("../helpers/TestUtils")
 
@@ -64,29 +65,29 @@ resetHandlers()
 -- AccountType - class hash constants
 --------------------------------------------------------------------------------
 
-describe("AccountType - class hash constants", function()
-	it("exposes OZ_CLASS_HASH matching Account constant", function()
-		expect(AccountType.OZ_CLASS_HASH):toBe(Account.OZ_CLASS_HASH)
+describe("AccountType - class hash constants from Constants", function()
+	it("OZ classHash matches Constants.OZ_ACCOUNT_CLASS_HASH", function()
+		expect(AccountType.OZ.classHash):toBe(Constants.OZ_ACCOUNT_CLASS_HASH)
 	end)
 
-	it("exposes ARGENT_CLASS_HASH matching Account constant", function()
-		expect(AccountType.ARGENT_CLASS_HASH):toBe(Account.ARGENT_CLASS_HASH)
+	it("Argent classHash matches Constants.ARGENT_ACCOUNT_CLASS_HASH", function()
+		expect(AccountType.Argent.classHash):toBe(Constants.ARGENT_ACCOUNT_CLASS_HASH)
+	end)
+
+	it("Braavos classHash matches Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH", function()
+		expect(AccountType.Braavos.classHash):toBe(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH)
 	end)
 
 	it("OZ config has correct type", function()
 		expect(AccountType.OZ.type):toBe("oz")
 	end)
 
-	it("OZ config has correct classHash", function()
-		expect(AccountType.OZ.classHash):toBe(AccountType.OZ_CLASS_HASH)
-	end)
-
 	it("Argent config has correct type", function()
 		expect(AccountType.Argent.type):toBe("argent")
 	end)
 
-	it("Argent config has correct classHash", function()
-		expect(AccountType.Argent.classHash):toBe(AccountType.ARGENT_CLASS_HASH)
+	it("Braavos config has correct type", function()
+		expect(AccountType.Braavos.type):toBe("braavos")
 	end)
 end)
 
@@ -638,13 +639,13 @@ end)
 
 describe("AccountFactory - class hash versioning", function()
 	it("OZ class hash matches expected v0.8.1 value", function()
-		expect(AccountType.OZ_CLASS_HASH):toBe(
+		expect(AccountType.OZ.classHash):toBe(
 			"0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
 		)
 	end)
 
 	it("Argent class hash matches expected v0.4.0 value", function()
-		expect(AccountType.ARGENT_CLASS_HASH):toBe(
+		expect(AccountType.Argent.classHash):toBe(
 			"0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
 		)
 	end)

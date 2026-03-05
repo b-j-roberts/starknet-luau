@@ -9,6 +9,7 @@ local StarkField = require("../crypto/StarkField")
 local Pedersen = require("../crypto/Pedersen")
 local StarkSigner = require("../signer/StarkSigner")
 local TransactionBuilder = require("../tx/TransactionBuilder")
+local AccountType = require("./AccountType")
 local TypedData = require("./TypedData")
 local OutsideExecution = require("./OutsideExecution")
 local ERC20 = require("../contract/ERC20")
@@ -21,9 +22,6 @@ type Felt = StarkField.Felt
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
-
--- "STARKNET_CONTRACT_ADDRESS" as felt (ASCII encoding)
-local CONTRACT_ADDRESS_PREFIX = "0x535441524b4e45545f434f4e54524143545f41444452455353"
 
 -- 2^251 - 1 mask for address computation
 local MASK_251 = BigInt.sub(BigInt.shl(BigInt.one(), 251), BigInt.one())
@@ -39,18 +37,6 @@ Account.__index = Account
 Account.ACCOUNT_TYPE_OZ = "oz"
 Account.ACCOUNT_TYPE_ARGENT = "argent"
 Account.ACCOUNT_TYPE_BRAAVOS = "braavos"
-
--- OpenZeppelin Account class hash (Cairo 1)
-Account.OZ_CLASS_HASH = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
-
--- Argent X Account class hash (Cairo 1, v0.4.0)
-Account.ARGENT_CLASS_HASH = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
-
--- Braavos Account implementation class hash (v1.2.0)
-Account.BRAAVOS_CLASS_HASH = "0x03957f9f5a1cbfe918cedc2015c85200ca51a5f7506ecb6de98a5207b759bf8a"
-
--- Braavos Base Account class hash (used for address computation, v1.2.0)
-Account.BRAAVOS_BASE_CLASS_HASH = "0x03d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201"
 
 -- Lookup table: normalized class hash -> account type (includes historical versions)
 -- Keys are normalized (no leading zeros after 0x) to match BigInt.toHex output
@@ -83,24 +69,6 @@ local function computeHashOnElements(elements: { Felt }): Felt
 	return result
 end
 
---- Build constructor calldata for a given account type.
---- OZ/Braavos: [publicKey]
---- Argent (v0.4.0+): [0, publicKey, 0] without guardian, [0, publicKey, 1, 0, guardianKey] with guardian
---- The format uses Cairo enum serialization: Signer::Starknet(pubkey) = [0, pubkey], Option::None = [0], Option::Some(signer) = [1, 0, guardianKey]
-local function buildConstructorCalldata(accountType: string, publicKey: string, guardian: string?): { string }
-	if accountType == "argent" then
-		if guardian then
-			-- [Signer::Starknet variant=0, publicKey, Option::Some variant=1, Signer::Starknet variant=0, guardianKey]
-			return { "0x0", publicKey, "0x1", "0x0", guardian }
-		else
-			-- [Signer::Starknet variant=0, publicKey, Option::None variant=0]
-			return { "0x0", publicKey, "0x0" }
-		end
-	end
-	-- OZ and Braavos both use [publicKey]
-	return { publicKey }
-end
-
 --- Convert a u256 value {low: string, high: string} from ERC-20 balance_of to a single BigInt.
 --- Formula: high * 2^128 + low
 local function u256ToBigInt(u256: { low: string, high: string }): buffer
@@ -113,15 +81,22 @@ local function u256ToBigInt(u256: { low: string, high: string }): buffer
 	return BigInt.add(BigInt.mul(high, TWO_128), low)
 end
 
---- Get the default class hash for an account type.
---- Braavos uses the base class hash for address computation.
+--- Get the default class hash for an account type via AccountType registry.
 local function getDefaultClassHash(accountType: string): string
-	if accountType == "argent" then
-		return Account.ARGENT_CLASS_HASH
-	elseif accountType == "braavos" then
-		return Account.BRAAVOS_BASE_CLASS_HASH
+	local typeObj = AccountType.get(accountType)
+	if typeObj then
+		return typeObj.classHash
 	end
-	return Account.OZ_CLASS_HASH
+	return AccountType.OZ.classHash
+end
+
+--- Build constructor calldata for a given account type via AccountType registry.
+local function buildConstructorCalldata(accountType: string, publicKey: string, guardian: string?): { string }
+	local typeObj = AccountType.get(accountType)
+	if typeObj then
+		return typeObj(publicKey, guardian)
+	end
+	return AccountType.OZ(publicKey)
 end
 
 --------------------------------------------------------------------------------
@@ -158,7 +133,7 @@ function Account.computeAddress(config: {
 	local calldataHash = computeHashOnElements(calldataFelts)
 
 	local addressHash = computeHashOnElements({
-		StarkField.fromHex(CONTRACT_ADDRESS_PREFIX),
+		StarkField.fromHex(Constants.CONTRACT_ADDRESS_PREFIX),
 		deployerFelt,
 		saltFelt,
 		classHashFelt,

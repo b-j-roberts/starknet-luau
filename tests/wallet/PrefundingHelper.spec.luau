@@ -623,7 +623,7 @@ describe("Account.getDeploymentFundingInfo", function()
 			provider = provider,
 		}):expect()
 
-		expect(result.classHash):toBe(Account.OZ_CLASS_HASH)
+		expect(result.classHash):toBe(Constants.OZ_ACCOUNT_CLASS_HASH)
 	end)
 
 	it("supports Argent account type", function()
@@ -636,7 +636,7 @@ describe("Account.getDeploymentFundingInfo", function()
 			accountType = "argent",
 		}):expect()
 
-		expect(result.classHash):toBe(Account.ARGENT_CLASS_HASH)
+		expect(result.classHash):toBe(Constants.ARGENT_ACCOUNT_CLASS_HASH)
 		-- Argent constructor calldata (no guardian) = [0x0, publicKey, 0x0]
 		expect(#result.constructorCalldata):toBe(3)
 		expect(result.constructorCalldata[1]):toBe("0x0")

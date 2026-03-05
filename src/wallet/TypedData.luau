@@ -21,8 +21,8 @@ type Felt = StarkField.Felt
 local REVISION_LEGACY = "0"
 local REVISION_ACTIVE = "1"
 
--- Stark prime P for i128 negative handling (raw BigInt, NOT field-reduced)
-local STARK_PRIME = BigInt.fromHex("0x800000000000011000000000000000000000000000000000000000000000001")
+-- Stark prime P for i128 negative handling (raw BigInt from StarkField, NOT field-reduced)
+local STARK_PRIME = StarkField.P
 
 -- Preset types (ACTIVE revision only)
 local PRESET_TYPES: { [string]: { { name: string, type: string } } } = {
