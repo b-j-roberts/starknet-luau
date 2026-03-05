@@ -5,6 +5,7 @@
 -- No persistence — all tracking is in-memory and composable with PaymasterBudget
 
 local BigInt = require("../crypto/BigInt")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = require("../errors/ErrorCodes")
 
@@ -32,18 +33,7 @@ export type ValidationResult = {
 -- Helpers
 --------------------------------------------------------------------------------
 
---- Normalize a hex address for consistent comparison (lowercase, no leading zeros)
-local function normalizeHex(hex: string): string
-	local s = hex:lower()
-	if s:sub(1, 2) == "0x" then
-		s = s:sub(3)
-	end
-	s = s:gsub("^0+", "")
-	if s == "" then
-		s = "0"
-	end
-	return "0x" .. s
-end
+local normalizeHex = HexUtils.normalizeHex
 
 --------------------------------------------------------------------------------
 -- PaymasterPolicy

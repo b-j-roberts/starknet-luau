@@ -6,6 +6,7 @@
 local BigInt = require("../crypto/BigInt")
 local StarkField = require("../crypto/StarkField")
 local Keccak = require("../crypto/Keccak")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -32,10 +33,7 @@ local MASK_128 = BigInt.sub(BigInt.shl(BigInt.one(), 128), BigInt.one())
 -- Internal helpers
 --------------------------------------------------------------------------------
 
--- Normalize a hex string through BigInt for consistent format (strips leading zeros, adds 0x prefix)
-local function normalizeHex(hex: string): string
-	return BigInt.toHex(BigInt.fromHex(hex))
-end
+local normalizeHex = HexUtils.normalizeHex
 
 --------------------------------------------------------------------------------
 -- Single value encoders
@@ -66,11 +64,7 @@ function CallData.encodeShortString(str: string): { string }
 			error(StarknetError.validation("CallData: short string must be ASCII only", ErrorCodes.INVALID_FORMAT.code))
 		end
 	end
-	local hexParts = {}
-	for i = 1, #str do
-		table.insert(hexParts, string.format("%02x", string.byte(str, i)))
-	end
-	return { "0x" .. table.concat(hexParts) }
+	return { HexUtils.asciiToHex(str) }
 end
 
 --------------------------------------------------------------------------------

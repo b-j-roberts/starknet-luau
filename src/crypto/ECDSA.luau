@@ -10,6 +10,7 @@ local BigInt = require("./BigInt")
 local StarkScalarField = require("./StarkScalarField")
 local StarkCurve = require("./StarkCurve")
 local SHA256 = require("./SHA256")
+local BufferUtils = require("../shared/BufferUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -37,22 +38,7 @@ export type Signature = {
 -- Internal helpers
 --------------------------------------------------------------------------------
 
--- Convert a BigInt to exactly 32 bytes (big-endian, zero-padded on the left)
-local function toBytes32(x: buffer): buffer
-	local bytes = BigInt.toBytes(x)
-	local len = buffer.len(bytes)
-	if len == BYTE_LENGTH then
-		return bytes
-	end
-	local out = buffer.create(BYTE_LENGTH)
-	if len < BYTE_LENGTH then
-		buffer.copy(out, BYTE_LENGTH - len, bytes, 0, len)
-	else
-		-- Truncate from the left (shouldn't happen for valid field elements)
-		buffer.copy(out, 0, bytes, len - BYTE_LENGTH, BYTE_LENGTH)
-	end
-	return out
-end
+local toBytes32 = BigInt.toBytes32
 
 -- bits2int: convert byte string to integer, truncating to N_BIT_LENGTH bits
 -- Matches @scure/starknet: strips leading zero bytes before computing delta
@@ -117,29 +103,8 @@ local function bits2octets(bytes: buffer): buffer
 	return toBytes32(bits2intModN(bytes))
 end
 
--- Concatenate multiple buffers into one
-local function concatBuffers(...: buffer): buffer
-	local args = { ... }
-	local totalLen = 0
-	for _, buf in args do
-		totalLen += buffer.len(buf)
-	end
-	local out = buffer.create(totalLen)
-	local offset = 0
-	for _, buf in args do
-		local len = buffer.len(buf)
-		buffer.copy(out, offset, buf, 0, len)
-		offset += len
-	end
-	return out
-end
-
--- Create a single-byte buffer
-local function singleByte(v: number): buffer
-	local b = buffer.create(1)
-	buffer.writeu8(b, 0, v)
-	return b
-end
+local concatBuffers = BufferUtils.concatBuffers
+local singleByte = BufferUtils.singleByte
 
 --------------------------------------------------------------------------------
 -- RFC 6979: Deterministic K generation

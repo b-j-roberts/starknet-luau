@@ -6,6 +6,8 @@
 -- 64 rounds with precomputed K constants, 512-bit (64-byte) blocks
 -- Reference: https://csrc.nist.gov/publications/detail/fips/180/4/final
 
+local BufferUtils = require("../shared/BufferUtils")
+
 local SHA256 = {}
 
 --------------------------------------------------------------------------------
@@ -107,21 +109,8 @@ local function rotr(x: number, n: number): number
 	return bit32.bor(bit32.rshift(x, n), bit32.lshift(x, 32 - n))
 end
 
--- Read a 32-bit big-endian value from buffer
-local function readBE32(buf: buffer, offset: number): number
-	return buffer.readu8(buf, offset) * 0x1000000
-		+ buffer.readu8(buf, offset + 1) * 0x10000
-		+ buffer.readu8(buf, offset + 2) * 0x100
-		+ buffer.readu8(buf, offset + 3)
-end
-
--- Write a 32-bit value as 4 big-endian bytes into buffer
-local function writeBE32(buf: buffer, offset: number, value: number)
-	buffer.writeu8(buf, offset, bit32.band(bit32.rshift(value, 24), 0xFF))
-	buffer.writeu8(buf, offset + 1, bit32.band(bit32.rshift(value, 16), 0xFF))
-	buffer.writeu8(buf, offset + 2, bit32.band(bit32.rshift(value, 8), 0xFF))
-	buffer.writeu8(buf, offset + 3, bit32.band(value, 0xFF))
-end
+local readBE32 = BufferUtils.readBE32
+local writeBE32 = BufferUtils.writeBE32
 
 --------------------------------------------------------------------------------
 -- SHA-256 hash (FIPS 180-4)
@@ -283,23 +272,6 @@ function SHA256.hmac(key: buffer, message: buffer): buffer
 	buffer.copy(outerInput, BLOCK_SIZE, innerHash, 0, 32)
 
 	return SHA256.hash(outerInput)
-end
-
---------------------------------------------------------------------------------
--- Utility: bufferToHex (exposed for testing/debugging)
---------------------------------------------------------------------------------
-
-local HEX_CHARS = "0123456789abcdef"
-
-function SHA256.bufferToHex(buf: buffer): string
-	local parts = table.create(buffer.len(buf))
-	for i = 0, buffer.len(buf) - 1 do
-		local byte = buffer.readu8(buf, i)
-		local hi = math.floor(byte / 16) + 1
-		local lo = (byte % 16) + 1
-		parts[i + 1] = string.sub(HEX_CHARS, hi, hi) .. string.sub(HEX_CHARS, lo, lo)
-	end
-	return table.concat(parts)
 end
 
 return SHA256

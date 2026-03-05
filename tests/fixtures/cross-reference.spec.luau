@@ -9,6 +9,7 @@ local Pedersen = require("../../src/crypto/Pedersen")
 local Keccak = require("../../src/crypto/Keccak")
 local StarkCurve = require("../../src/crypto/StarkCurve")
 local ECDSA = require("../../src/crypto/ECDSA")
+local BufferUtils = require("../../src/shared/BufferUtils")
 local TransactionHash = require("../../src/tx/TransactionHash")
 local Account = require("../../src/wallet/Account")
 local Constants = require("../../src/constants")
@@ -208,7 +209,7 @@ describe("Cross-ref: Keccak - keccak256", function()
 				end
 			end
 			local hash = Keccak.keccak256(input)
-			local hex = Keccak.bufferToHex(hash)
+			local hex = BufferUtils.bufferToHex(hash)
 			expect(hex):toBe(vec[2])
 		end)
 	end

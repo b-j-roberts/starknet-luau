@@ -5,6 +5,7 @@
 -- Reference: starknet.js CallData.compile / CallData.parse
 
 local CallData = require("../tx/CallData")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -267,21 +268,13 @@ function AbiCodec.encodeByteArray(str: string): { string }
 	-- Encode each full chunk
 	for i = 0, numFullChunks - 1 do
 		local chunk = string.sub(str, i * CHUNK_SIZE + 1, (i + 1) * CHUNK_SIZE)
-		local hexParts = {}
-		for j = 1, #chunk do
-			table.insert(hexParts, string.format("%02x", string.byte(chunk, j)))
-		end
-		table.insert(result, "0x" .. table.concat(hexParts))
+		table.insert(result, HexUtils.asciiToHex(chunk))
 	end
 
 	-- Pending word (remaining bytes < 31)
 	if pendingLen > 0 then
 		local pending = string.sub(str, numFullChunks * CHUNK_SIZE + 1)
-		local hexParts = {}
-		for j = 1, #pending do
-			table.insert(hexParts, string.format("%02x", string.byte(pending, j)))
-		end
-		table.insert(result, "0x" .. table.concat(hexParts))
+		table.insert(result, HexUtils.asciiToHex(pending))
 	else
 		table.insert(result, "0x0")
 	end
@@ -297,7 +290,7 @@ end
 function AbiCodec.decodeByteArray(results: { string }, offset: number): (string, number)
 	-- Read number of full chunks
 	local numChunksHex = results[offset]
-	local numChunks = tonumber(numChunksHex, 16) or tonumber(string.sub(numChunksHex, 3), 16) or 0
+	local numChunks = HexUtils.parseHexToNumber(numChunksHex)
 	local consumed = 1
 
 	local parts: { string } = {}
@@ -327,7 +320,7 @@ function AbiCodec.decodeByteArray(results: { string }, offset: number): (string,
 	-- Read pending word length
 	local pendingLenHex = results[offset + consumed]
 	consumed += 1
-	local pendingLen = tonumber(pendingLenHex, 16) or tonumber(string.sub(pendingLenHex, 3), 16) or 0
+	local pendingLen = HexUtils.parseHexToNumber(pendingLenHex)
 
 	-- Decode pending bytes
 	if pendingLen > 0 then
@@ -548,7 +541,7 @@ function AbiCodec.decode(results: { string }, offset: number, typeName: string, 
 		local elementType = typeDef.elementType or "core::felt252"
 		-- Read length
 		local lenHex = results[offset]
-		local len = tonumber(lenHex, 16) or tonumber(string.sub(lenHex, 3), 16) or 0
+		local len = HexUtils.parseHexToNumber(lenHex)
 		local totalConsumed = 1
 
 		local arr: { any } = {}
@@ -584,7 +577,7 @@ function AbiCodec.decodeEnum(
 ): (any, number)
 	-- Read variant index
 	local idxHex = results[offset]
-	local idx = tonumber(idxHex, 16) or tonumber(string.sub(idxHex, 3), 16) or 0
+	local idx = HexUtils.parseHexToNumber(idxHex)
 	local totalConsumed = 1
 
 	local variant = variants[idx + 1] -- 1-indexed

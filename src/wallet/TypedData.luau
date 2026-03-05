@@ -9,6 +9,7 @@ local StarkField = require("../crypto/StarkField")
 local Pedersen = require("../crypto/Pedersen")
 local Poseidon = require("../crypto/Poseidon")
 local Keccak = require("../crypto/Keccak")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -41,17 +42,7 @@ local PRESET_TYPES: { [string]: { { name: string, type: string } } } = {
 -- Internal helpers
 --------------------------------------------------------------------------------
 
---- Encode a short ASCII string (max 31 chars) as a hex felt value.
-local function encodeShortString(str: string): string
-	if #str == 0 then
-		return "0x0"
-	end
-	local hexParts = {}
-	for i = 1, #str do
-		table.insert(hexParts, string.format("%02x", string.byte(str, i)))
-	end
-	return "0x" .. table.concat(hexParts)
-end
+local encodeShortString = HexUtils.asciiToHex
 
 --- Normalize a value to a hex string.
 --- Handles: hex strings, numbers, short strings (non-hex strings).
@@ -166,11 +157,7 @@ local function encodeByteArray(str: string): { string }
 		numFullChunks = #chunks - 1
 		local lastChunk = chunks[#chunks]
 		pendingLen = #lastChunk
-		local hexParts = {}
-		for j = 1, #lastChunk do
-			table.insert(hexParts, string.format("%02x", string.byte(lastChunk, j)))
-		end
-		pendingWord = "0x" .. table.concat(hexParts)
+		pendingWord = encodeShortString(lastChunk)
 		table.remove(chunks)
 	end
 

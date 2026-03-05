@@ -4,9 +4,9 @@
 -- Supports V1 (SNIP-9 rev 0/Pedersen), V2 (rev 1/Poseidon), and V3-RC (with fee modes)
 -- Reference: https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-9.md
 
-local BigInt = require("../crypto/BigInt")
 local Keccak = require("../crypto/Keccak")
 local StarkField = require("../crypto/StarkField")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 local Constants = require("../constants")
@@ -130,10 +130,7 @@ OutsideExecution.TYPES_V3 = TYPES_V3
 -- Internal helpers
 --------------------------------------------------------------------------------
 
---- Normalize a hex string for comparison (strip leading zeros).
-local function normalizeHex(hex: string): string
-	return BigInt.toHex(BigInt.fromHex(hex))
-end
+local normalizeHex = HexUtils.normalizeHex
 
 --------------------------------------------------------------------------------
 -- Public API

@@ -275,6 +275,29 @@ function BigInt.toBytes(a: BigInt): buffer
 	return out
 end
 
+--- Convert a BigInt to exactly `n` bytes (big-endian, zero-padded on the left).
+--- If the value exceeds `n` bytes, truncates from the left.
+function BigInt.toBytesFixed(a: BigInt, n: number): buffer
+	local bytes = BigInt.toBytes(a)
+	local len = buffer.len(bytes)
+	if len == n then
+		return bytes
+	end
+	local out = buffer.create(n)
+	if len < n then
+		buffer.copy(out, n - len, bytes, 0, len)
+	else
+		buffer.copy(out, 0, bytes, len - n, n)
+	end
+	return out
+end
+
+--- Convert a BigInt to exactly 32 bytes (big-endian, zero-padded on the left).
+--- Convenience wrapper around toBytesFixed(a, 32).
+function BigInt.toBytes32(a: BigInt): buffer
+	return BigInt.toBytesFixed(a, 32)
+end
+
 function BigInt.toNumber(a: BigInt): number
 	local result = 0
 	local base = 1

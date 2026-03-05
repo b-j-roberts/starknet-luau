@@ -1,6 +1,7 @@
 --!strict
 local Keccak = require("../../src/crypto/Keccak")
 local StarkField = require("../../src/crypto/StarkField")
+local BufferUtils = require("../../src/shared/BufferUtils")
 
 -- Test vectors from Ethereum/Keccak spec and starknet.js
 
@@ -8,7 +9,7 @@ describe("Keccak - keccak256 raw hash", function()
 	it("keccak256('') matches empty string vector", function()
 		local input = buffer.create(0)
 		local hash = Keccak.keccak256(input)
-		local hex = Keccak.bufferToHex(hash)
+		local hex = BufferUtils.bufferToHex(hash)
 		expect(hex):toBe("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
 	end)
 
@@ -18,7 +19,7 @@ describe("Keccak - keccak256 raw hash", function()
 		buffer.writeu8(input, 1, 0x62) -- 'b'
 		buffer.writeu8(input, 2, 0x63) -- 'c'
 		local hash = Keccak.keccak256(input)
-		local hex = Keccak.bufferToHex(hash)
+		local hex = BufferUtils.bufferToHex(hash)
 		expect(hex):toBe("4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45")
 	end)
 
@@ -29,7 +30,7 @@ describe("Keccak - keccak256 raw hash", function()
 			buffer.writeu8(input, i - 1, string.byte(msg, i))
 		end
 		local hash = Keccak.keccak256(input)
-		local hex = Keccak.bufferToHex(hash)
+		local hex = BufferUtils.bufferToHex(hash)
 		expect(hex):toBe("45d3b367a6904e6e8d502ee04999a7c27647f91fa845d456525fd352ae3d7371")
 	end)
 
@@ -37,7 +38,7 @@ describe("Keccak - keccak256 raw hash", function()
 		local input = buffer.create(1)
 		buffer.writeu8(input, 0, 0x00)
 		local hash = Keccak.keccak256(input)
-		local hex = Keccak.bufferToHex(hash)
+		local hex = BufferUtils.bufferToHex(hash)
 		expect(hex):toBe("bc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a")
 	end)
 
@@ -55,7 +56,7 @@ describe("Keccak - keccak256 raw hash", function()
 		buffer.writeu8(input, 1, 0x62)
 		buffer.writeu8(input, 2, 0x63)
 		local hash = Keccak.keccak256(input)
-		local hex = Keccak.bufferToHex(hash)
+		local hex = BufferUtils.bufferToHex(hash)
 		-- Verify we are NOT producing SHA-3 output
 		expect(hex):toBe("4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45")
 		local isSha3 = hex == "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
@@ -192,24 +193,3 @@ describe("Keccak - edge cases", function()
 	end)
 end)
 
-describe("Keccak - bufferToHex utility", function()
-	it("converts empty buffer to empty string", function()
-		local buf = buffer.create(0)
-		expect(Keccak.bufferToHex(buf)):toBe("")
-	end)
-
-	it("converts single byte correctly", function()
-		local buf = buffer.create(1)
-		buffer.writeu8(buf, 0, 0xAB)
-		expect(Keccak.bufferToHex(buf)):toBe("ab")
-	end)
-
-	it("converts multi-byte buffer correctly", function()
-		local buf = buffer.create(4)
-		buffer.writeu8(buf, 0, 0xDE)
-		buffer.writeu8(buf, 1, 0xAD)
-		buffer.writeu8(buf, 2, 0xBE)
-		buffer.writeu8(buf, 3, 0xEF)
-		expect(Keccak.bufferToHex(buf)):toBe("deadbeef")
-	end)
-end)

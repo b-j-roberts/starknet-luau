@@ -355,18 +355,8 @@ end
 -- Starknet sn_keccak and selector functions
 --------------------------------------------------------------------------------
 
--- Convert a 32-byte hash buffer to a hex string (no prefix)
-local HEX_CHARS = "0123456789abcdef"
-local function bufferToHex(buf: buffer): string
-	local parts = table.create(buffer.len(buf))
-	for i = 0, buffer.len(buf) - 1 do
-		local byte = buffer.readu8(buf, i)
-		local hi = math.floor(byte / 16) + 1
-		local lo = (byte % 16) + 1
-		parts[i + 1] = string.sub(HEX_CHARS, hi, hi) .. string.sub(HEX_CHARS, lo, lo)
-	end
-	return table.concat(parts)
-end
+local BufferUtils = require("../shared/BufferUtils")
+local bufferToHex = BufferUtils.bufferToHex
 
 -- snKeccak: keccak256 masked to 250 bits, returned as a StarkField Felt
 function Keccak.snKeccak(input: buffer): Felt
@@ -390,14 +380,6 @@ function Keccak.getSelectorFromName(name: string): Felt
 		buffer.writeu8(buf, i - 1, string.byte(name, i))
 	end
 	return Keccak.snKeccak(buf)
-end
-
---------------------------------------------------------------------------------
--- Utility: bufferToHex (exposed for testing/debugging)
---------------------------------------------------------------------------------
-
-function Keccak.bufferToHex(buf: buffer): string
-	return bufferToHex(buf)
 end
 
 return Keccak
