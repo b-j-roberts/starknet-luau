@@ -79,6 +79,89 @@ local function buildConstructorCalldata(accountType: string, publicKey: string, 
 	return AccountType.OZ(publicKey)
 end
 
+--- Validate paymaster details and resolve gas token address.
+--- Returns { paymaster, gasTokenAddress, feeMode } or throws a ValidationError.
+local function validatePaymasterDetails(
+	methodName: string,
+	paymasterDetails: { [string]: any }
+): { paymaster: any, gasTokenAddress: string, feeMode: { [string]: any } }
+	if not paymasterDetails or not paymasterDetails.paymaster then
+		error(
+			StarknetError.validation(
+				`{methodName}: paymaster is required in paymasterDetails`,
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not paymasterDetails.feeMode then
+		error(
+			StarknetError.validation(
+				`{methodName}: feeMode is required in paymasterDetails`,
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+
+	local feeMode = paymasterDetails.feeMode
+	if feeMode.mode ~= "sponsored" and feeMode.mode ~= "default" then
+		error(
+			StarknetError.validation(
+				`{methodName}: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
+				ErrorCodes.INVALID_ARGUMENT.code
+			)
+		)
+	end
+	if feeMode.mode == "default" and not feeMode.gasToken then
+		error(
+			StarknetError.validation(
+				`{methodName}: gasToken is required for 'default' feeMode`,
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+
+	local gasTokenAddress = if feeMode.mode == "sponsored" then "0x0" else feeMode.gasToken
+
+	return {
+		paymaster = paymasterDetails.paymaster,
+		gasTokenAddress = gasTokenAddress,
+		feeMode = feeMode,
+	}
+end
+
+--- Validate that returned calls from a paymaster match the submitted calls.
+--- Throws a PaymasterError if validation fails.
+local function validatePaymasterCalls(
+	submittedCalls: { any },
+	typedData: { [string]: any }
+): ()
+	local submittedOutsideCalls: { { [string]: any } } = {}
+	for _, call in submittedCalls do
+		table.insert(submittedOutsideCalls, OutsideExecution.getOutsideCall(call))
+	end
+
+	local rawReturnedCalls = typedData.message.Calls or typedData.message.calls or {}
+	local returnedCalls: { { [string]: any } } = {}
+	for _, rc in rawReturnedCalls do
+		table.insert(returnedCalls, {
+			to = rc.To or rc.to or rc.contractAddress,
+			selector = rc.Selector or rc.selector,
+			calldata = rc.Calldata or rc.calldata or {},
+		})
+	end
+
+	local valid = OutsideExecution.validateCalls(submittedOutsideCalls, returnedCalls)
+	if not valid then
+		error(
+			StarknetError.new(
+				"returned calls from paymaster do not match submitted calls",
+				ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code,
+				"PaymasterError"
+			)
+		)
+	end
+end
+
 --------------------------------------------------------------------------------
 -- Static methods
 --------------------------------------------------------------------------------
@@ -468,6 +551,93 @@ function Account.fromPrivateKey(config: {
 end
 
 --------------------------------------------------------------------------------
+-- Internal instance helpers
+--------------------------------------------------------------------------------
+
+--- Build DeployAccountParams from stored account config.
+--- Shared by deployAccount, estimateDeployAccountFee, getDeploymentData.
+function Account:_buildDeployParams(): TransactionBuilder.DeployAccountParams
+	local accountType = self._accountType or "oz"
+	local publicKeyHex = self.signer:getPublicKeyHex()
+	local classHash = self._classHash or getDefaultClassHash(accountType)
+	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
+
+	return {
+		classHash = classHash,
+		constructorCalldata = constructorCalldata,
+		addressSalt = publicKeyHex,
+		contractAddress = self.address,
+	}
+end
+
+--- Check if this account is already deployed (idempotency guard).
+--- Returns a Promise resolving to the early-return result table, or nil if not deployed.
+function Account:_checkAlreadyDeployed(): any
+	local Promise = self._provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), _reject: (any) -> ())
+		local nonceOk, _ = pcall(function()
+			return self._provider:getNonce(self.address):expect()
+		end)
+
+		if nonceOk then
+			resolve({
+				transactionHash = "0x0",
+				contractAddress = self.address,
+				alreadyDeployed = true,
+			})
+		else
+			resolve(nil)
+		end
+	end)
+end
+
+--- Execute a function with NonceManager reserve/confirm/reject lifecycle.
+--- If NonceManager is unavailable or an explicit nonce is provided, calls fn(opts) directly.
+--- Otherwise: reserve → fn(optsWithNonce) → confirm on success / reject on failure.
+function Account:_withNonceManager(
+	options: any?,
+	fn: (opts: any) -> any
+): any
+	local nm = self._provider._nonceManager
+	local hasExplicitNonce = options and (options :: any).nonce
+
+	if not nm or hasExplicitNonce then
+		return fn(options)
+	end
+
+	local Promise = self._provider:_getPromise()
+	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
+		local reserveOk, reservedNonce = pcall(function()
+			return nm:reserve(self.address):expect()
+		end)
+		if not reserveOk then
+			reject(reservedNonce)
+			return
+		end
+
+		local opts: any
+		if options then
+			opts = table.clone(options :: any)
+		else
+			opts = {}
+		end
+		opts.nonce = reservedNonce
+
+		local execOk, execResult = pcall(function()
+			return fn(opts):expect()
+		end)
+
+		if execOk then
+			nm:confirm(self.address, reservedNonce)
+			resolve(execResult)
+		else
+			nm:reject(self.address, reservedNonce)
+			reject(execResult)
+		end
+	end)
+end
+
+--------------------------------------------------------------------------------
 -- Instance methods
 --------------------------------------------------------------------------------
 
@@ -476,55 +646,12 @@ end
 --- When the provider has a NonceManager enabled and no explicit nonce is provided,
 --- automatically reserves a nonce, confirms on success, and rejects on failure.
 function Account:execute(calls: { TransactionBuilder.Call }, options: TransactionBuilder.ExecuteOptions?): any
-	local nm = self._provider._nonceManager
-	local hasExplicitNonce = options and options.nonce
-
-	-- If NonceManager is available and no explicit nonce override, use managed nonces
-	if nm and not hasExplicitNonce then
-		local Promise = self._provider:_getPromise()
-		return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-			-- Reserve a nonce
-			local reserveOk, reservedNonce = pcall(function()
-				return nm:reserve(self.address):expect()
-			end)
-			if not reserveOk then
-				reject(reservedNonce)
-				return
-			end
-
-			-- Build options with reserved nonce
-			local opts: TransactionBuilder.ExecuteOptions
-			if options then
-				opts = table.clone(options) :: TransactionBuilder.ExecuteOptions
-			else
-				opts = {} :: TransactionBuilder.ExecuteOptions
-			end
-			opts.nonce = reservedNonce
-
-			-- Execute with the reserved nonce
-			local execOk, execResult = pcall(function()
-				return self._builder
-					:execute({
-						address = self.address,
-						signer = self.signer,
-					}, calls, opts)
-					:expect()
-			end)
-
-			if execOk then
-				nm:confirm(self.address, reservedNonce)
-				resolve(execResult)
-			else
-				nm:reject(self.address, reservedNonce)
-				reject(execResult)
-			end
-		end)
-	end
-
-	return self._builder:execute({
-		address = self.address,
-		signer = self.signer,
-	}, calls, options)
+	return self:_withNonceManager(options, function(opts: any)
+		return self._builder:execute({
+			address = self.address,
+			signer = self.signer,
+		}, calls, opts)
+	end)
 end
 
 --- Deploy this account on-chain.
@@ -537,84 +664,28 @@ function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?
 	local Promise = self._provider:_getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Step 1: Idempotency check — if getNonce succeeds, account is already deployed
-		local nonceOk, _ = pcall(function()
-			return self._provider:getNonce(self.address):expect()
-		end)
-
-		if nonceOk then
-			resolve({
-				transactionHash = "0x0",
-				contractAddress = self.address,
-				alreadyDeployed = true,
-			})
+		-- Step 1: Idempotency check
+		local alreadyDeployed = self:_checkAlreadyDeployed():expect()
+		if alreadyDeployed then
+			resolve(alreadyDeployed)
 			return
 		end
 
 		-- Step 2: Build deploy params from stored account config
-		local accountType = self._accountType or "oz"
-		local publicKeyHex = self.signer:getPublicKeyHex()
-		local classHash = self._classHash or getDefaultClassHash(accountType)
-		local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
-
-		local params: TransactionBuilder.DeployAccountParams = {
-			classHash = classHash,
-			constructorCalldata = constructorCalldata,
-			addressSalt = publicKeyHex,
-			contractAddress = self.address,
-		}
+		local params = self:_buildDeployParams()
 
 		-- Step 3: Execute deploy via builder (with NonceManager if available)
-		local nm = self._provider._nonceManager
-		local hasExplicitNonce = opts.nonce ~= nil
-
-		local deployResult: any
-		if nm and not hasExplicitNonce then
-			-- NonceManager path: reserve → deploy → confirm/reject
-			local reserveOk, reservedNonce = pcall(function()
-				return nm:reserve(self.address):expect()
-			end)
-			if not reserveOk then
-				reject(reservedNonce)
-				return
-			end
-
-			local builderOpts: TransactionBuilder.DeployAccountOptions =
-				table.clone(opts) :: TransactionBuilder.DeployAccountOptions
-			builderOpts.nonce = reservedNonce
-
-			local execOk, execResult = pcall(function()
-				return self._builder
-					:deployAccount({
-						address = self.address,
-						signer = self.signer,
-					}, params, builderOpts)
-					:expect()
-			end)
-
-			if execOk then
-				nm:confirm(self.address, reservedNonce)
-				deployResult = execResult
-			else
-				nm:reject(self.address, reservedNonce)
-				reject(execResult)
-				return
-			end
-		else
-			-- Direct path (no NonceManager)
-			local execOk, execResult = pcall(function()
-				return self._builder
-					:deployAccount({
-						address = self.address,
-						signer = self.signer,
-					}, params, opts)
-					:expect()
-			end)
-			if not execOk then
-				reject(execResult)
-				return
-			end
-			deployResult = execResult
+		local deployOk, deployResult = pcall(function()
+			return self:_withNonceManager(opts, function(nmOpts: any)
+				return self._builder:deployAccount({
+					address = self.address,
+					signer = self.signer,
+				}, params, nmOpts)
+			end):expect()
+		end)
+		if not deployOk then
+			reject(deployResult)
+			return
 		end
 
 		-- Step 4: Wait for confirmation (default true, skip for dryRun)
@@ -638,18 +709,7 @@ end
 --- Estimate the fee for deploying this account.
 --- Returns a Promise resolving to the fee estimate.
 function Account:estimateDeployAccountFee(): any
-	local accountType = self._accountType or "oz"
-	local publicKeyHex = self.signer:getPublicKeyHex()
-	local classHash = self._classHash or getDefaultClassHash(accountType)
-	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
-
-	local params: TransactionBuilder.DeployAccountParams = {
-		classHash = classHash,
-		constructorCalldata = constructorCalldata,
-		addressSalt = publicKeyHex,
-		contractAddress = self.address,
-	}
-
+	local params = self:_buildDeployParams()
 	return self._builder:estimateDeployAccountFee({
 		address = self.address,
 		signer = self.signer,
@@ -701,15 +761,11 @@ end
 --- Useful for passing to SponsoredExecutor or building paymaster requests manually.
 --- Returns a table matching the PaymasterRpc.DeploymentData shape.
 function Account:getDeploymentData(): { [string]: any }
-	local accountType = self._accountType or "oz"
-	local publicKeyHex = self.signer:getPublicKeyHex()
-	local classHash = self._classHash or getDefaultClassHash(accountType)
-	local constructorCalldata = self._constructorCalldata or buildConstructorCalldata(accountType, publicKeyHex)
-
+	local params = self:_buildDeployParams()
 	return {
-		classHash = classHash,
-		calldata = constructorCalldata,
-		salt = publicKeyHex,
+		classHash = params.classHash,
+		calldata = params.constructorCalldata,
+		salt = params.addressSalt,
 		unique = false,
 		version = 1,
 	}
@@ -723,79 +779,28 @@ function Account:deployWithPaymaster(
 	paymasterDetails: { [string]: any },
 	options: { calls: { any }?, waitForConfirmation: boolean? }?
 ): any
-	-- Validation
-	if not paymasterDetails or not paymasterDetails.paymaster then
-		error(
-			StarknetError.validation(
-				"deployWithPaymaster: paymaster is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
-	if not paymasterDetails.feeMode then
-		error(
-			StarknetError.validation(
-				"deployWithPaymaster: feeMode is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
-
-	local feeMode = paymasterDetails.feeMode
-	if feeMode.mode ~= "sponsored" and feeMode.mode ~= "default" then
-		error(
-			StarknetError.validation(
-				`deployWithPaymaster: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
-				ErrorCodes.INVALID_ARGUMENT.code
-			)
-		)
-	end
-	if feeMode.mode == "default" and not feeMode.gasToken then
-		error(
-			StarknetError.validation(
-				"deployWithPaymaster: gasToken is required for 'default' feeMode",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
+	local validated = validatePaymasterDetails("deployWithPaymaster", paymasterDetails)
 
 	local opts = options or {}
 	local calls = opts.calls or {}
-	local paymaster = paymasterDetails.paymaster
 	local waitForConfirmation = if opts.waitForConfirmation ~= nil then opts.waitForConfirmation else false
 
-	-- Build deployment data from stored account config
 	local deploymentData = self:getDeploymentData()
-
-	-- Determine gas token address
-	local gasTokenAddress: string
-	if feeMode.mode == "sponsored" then
-		gasTokenAddress = "0x0"
-	else
-		gasTokenAddress = feeMode.gasToken
-	end
 
 	local Promise = self._provider:_getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Step 1: Idempotency check — if getNonce succeeds, account is already deployed
-		local nonceOk, _ = pcall(function()
-			return self._provider:getNonce(self.address):expect()
-		end)
-
-		if nonceOk then
-			resolve({
-				transactionHash = "0x0",
-				contractAddress = self.address,
-				alreadyDeployed = true,
-			})
+		-- Step 1: Idempotency check
+		local alreadyDeployed = self:_checkAlreadyDeployed():expect()
+		if alreadyDeployed then
+			resolve(alreadyDeployed)
 			return
 		end
 
 		-- Step 2: Build typed data via paymaster (DEPLOY_AND_INVOKE)
-		local buildOptions: { [string]: any } = { deploymentData = deploymentData }
-
 		local buildOk, buildResult = pcall(function()
-			return paymaster:buildTypedData(self.address, calls, gasTokenAddress, buildOptions):expect()
+			return validated.paymaster
+				:buildTypedData(self.address, calls, validated.gasTokenAddress, { deploymentData = deploymentData })
+				:expect()
 		end)
 		if not buildOk then
 			reject(buildResult)
@@ -806,30 +811,11 @@ function Account:deployWithPaymaster(
 
 		-- Step 3: Validate returned calls match submitted calls (if any)
 		if #calls > 0 then
-			local submittedOutsideCalls: { { [string]: any } } = {}
-			for _, call in calls do
-				table.insert(submittedOutsideCalls, OutsideExecution.getOutsideCall(call))
-			end
-
-			local rawReturnedCalls = typedData.message.Calls or typedData.message.calls or {}
-			local returnedCalls: { { [string]: any } } = {}
-			for _, rc in rawReturnedCalls do
-				table.insert(returnedCalls, {
-					to = rc.To or rc.to or rc.contractAddress,
-					selector = rc.Selector or rc.selector,
-					calldata = rc.Calldata or rc.calldata or {},
-				})
-			end
-
-			local valid = OutsideExecution.validateCalls(submittedOutsideCalls, returnedCalls)
-			if not valid then
-				reject(
-					StarknetError.new(
-						"deployWithPaymaster: returned calls from paymaster do not match submitted calls",
-						ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code,
-						"PaymasterError"
-					)
-				)
+			local valOk, valErr = pcall(function()
+				validatePaymasterCalls(calls, typedData)
+			end)
+			if not valOk then
+				reject(valErr)
 				return
 			end
 		end
@@ -844,10 +830,10 @@ function Account:deployWithPaymaster(
 		end
 
 		-- Step 5: Execute via paymaster
-		local execOptions: { [string]: any } = { deploymentData = deploymentData }
-
 		local execOk, execResult = pcall(function()
-			return paymaster:executeTransaction(self.address, typedData, signature, execOptions):expect()
+			return validated.paymaster
+				:executeTransaction(self.address, typedData, signature, { deploymentData = deploymentData })
+				:expect()
 		end)
 		if not execOk then
 			reject(execResult)
@@ -877,61 +863,21 @@ end
 --- Returns a Promise resolving to { feeEstimate, typedData } from the paymaster's buildTypedData response.
 --- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
 function Account:estimatePaymasterFee(calls: { any }, paymasterDetails: { [string]: any }): any
-	if not paymasterDetails or not paymasterDetails.paymaster then
-		error(
-			StarknetError.validation(
-				"estimatePaymasterFee: paymaster is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
-	if not paymasterDetails.feeMode then
-		error(
-			StarknetError.validation(
-				"estimatePaymasterFee: feeMode is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
+	local validated = validatePaymasterDetails("estimatePaymasterFee", paymasterDetails)
 
-	local paymaster = paymasterDetails.paymaster
-	local feeMode = paymasterDetails.feeMode
-
-	-- Determine gas token address
-	local gasTokenAddress: string
-	if feeMode.mode == "sponsored" then
-		gasTokenAddress = "0x0"
-	elseif feeMode.mode == "default" then
-		if not feeMode.gasToken then
-			error(
-				StarknetError.validation(
-					"estimatePaymasterFee: gasToken is required for 'default' feeMode",
-					ErrorCodes.REQUIRED_FIELD.code
-				)
-			)
-		end
-		gasTokenAddress = feeMode.gasToken
-	else
-		error(
-			StarknetError.validation(
-				`estimatePaymasterFee: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
-				ErrorCodes.INVALID_ARGUMENT.code
-			)
-		)
-	end
-
-	-- Build options
 	local options: { [string]: any } = {}
 	if paymasterDetails.deploymentData then
 		options.deploymentData = paymasterDetails.deploymentData
 	end
 
-	return paymaster:buildTypedData(self.address, calls, gasTokenAddress, options):andThen(function(buildResult: any)
-		return {
-			feeEstimate = buildResult.feeEstimate,
-			typedData = buildResult.typedData,
-		}
-	end)
+	return validated.paymaster
+		:buildTypedData(self.address, calls, validated.gasTokenAddress, options)
+		:andThen(function(buildResult: any)
+			return {
+				feeEstimate = buildResult.feeEstimate,
+				typedData = buildResult.typedData,
+			}
+		end)
 end
 
 --- Execute calls through a paymaster (SNIP-29) for gasless/sponsored transactions.
@@ -939,22 +885,8 @@ end
 --- Returns a Promise resolving to { transactionHash, trackingId }.
 --- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
 function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: any }): any
-	if not paymasterDetails or not paymasterDetails.paymaster then
-		error(
-			StarknetError.validation(
-				"executePaymaster: paymaster is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
-	if not paymasterDetails.feeMode then
-		error(
-			StarknetError.validation(
-				"executePaymaster: feeMode is required in paymasterDetails",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
-		)
-	end
+	local validated = validatePaymasterDetails("executePaymaster", paymasterDetails)
+
 	if not calls or #calls == 0 then
 		error(
 			StarknetError.validation(
@@ -964,49 +896,18 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: 
 		)
 	end
 
-	local paymaster = paymasterDetails.paymaster
-	local feeMode = paymasterDetails.feeMode
-
-	-- Determine gas token address
-	local gasTokenAddress: string
-	if feeMode.mode == "sponsored" then
-		gasTokenAddress = "0x0"
-	elseif feeMode.mode == "default" then
-		if not feeMode.gasToken then
-			error(
-				StarknetError.validation(
-					"executePaymaster: gasToken is required for 'default' feeMode",
-					ErrorCodes.REQUIRED_FIELD.code
-				)
-			)
-		end
-		gasTokenAddress = feeMode.gasToken
-	else
-		error(
-			StarknetError.validation(
-				`executePaymaster: invalid feeMode.mode "{feeMode.mode}", expected "sponsored" or "default"`,
-				ErrorCodes.INVALID_ARGUMENT.code
-			)
-		)
-	end
-
-	-- Build options
 	local options: { [string]: any } = {}
 	if paymasterDetails.deploymentData then
 		options.deploymentData = paymasterDetails.deploymentData
-	end
-
-	-- Convert submitted calls to outside call format for validation comparison
-	local submittedOutsideCalls: { { [string]: any } } = {}
-	for _, call in calls do
-		table.insert(submittedOutsideCalls, OutsideExecution.getOutsideCall(call))
 	end
 
 	local Promise = self._provider:_getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Build typed data via paymaster
 		local buildOk, buildResult = pcall(function()
-			return paymaster:buildTypedData(self.address, calls, gasTokenAddress, options):expect()
+			return validated.paymaster
+				:buildTypedData(self.address, calls, validated.gasTokenAddress, options)
+				:expect()
 		end)
 		if not buildOk then
 			reject(buildResult)
@@ -1016,25 +917,11 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: 
 		local typedData = buildResult.typedData
 
 		-- Step 2: Security validation — ensure returned calls match submitted calls
-		-- Normalize returned calls to lowercase keys (typed data may use capitalized V2 keys)
-		local rawReturnedCalls = typedData.message.Calls or typedData.message.calls or {}
-		local returnedCalls: { { [string]: any } } = {}
-		for _, rc in rawReturnedCalls do
-			table.insert(returnedCalls, {
-				to = rc.To or rc.to or rc.contractAddress,
-				selector = rc.Selector or rc.selector,
-				calldata = rc.Calldata or rc.calldata or {},
-			})
-		end
-		local valid = OutsideExecution.validateCalls(submittedOutsideCalls, returnedCalls)
-		if not valid then
-			reject(
-				StarknetError.new(
-					"executePaymaster: returned calls from paymaster do not match submitted calls",
-					ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code,
-					"PaymasterError"
-				)
-			)
+		local valOk, valErr = pcall(function()
+			validatePaymasterCalls(calls, typedData)
+		end)
+		if not valOk then
+			reject(valErr)
 			return
 		end
 
@@ -1049,7 +936,7 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: 
 
 		-- Step 4: Execute via paymaster
 		local execOk, execResult = pcall(function()
-			return paymaster:executeTransaction(self.address, typedData, signature, options):expect()
+			return validated.paymaster:executeTransaction(self.address, typedData, signature, options):expect()
 		end)
 		if not execOk then
 			reject(execResult)
