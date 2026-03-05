@@ -2,100 +2,73 @@
 -- RpcProvider: JSON-RPC client for Starknet using Roblox HttpService with Promise-based API
 -- Features: rate limiting, retry with exponential backoff, configurable endpoints
 -- All public methods return Promises for async operation
+-- Delegates core JSON-RPC transport to JsonRpcClient
 
 local RpcTypes = require("./RpcTypes")
+local JsonRpcClient = require("./JsonRpcClient")
 local RequestQueue = require("./RequestQueue")
 local ResponseCache = require("./ResponseCache")
 local NonceManager = require("./NonceManager")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
---- Promise-like type for return annotations
---- In Roblox runtime, this is evaera/promise; in tests, a compatible mock is injected
-export type Promise<T> = {
-	andThen: (self: Promise<T>, onResolve: (value: T) -> any) -> Promise<any>,
-	catch: (self: Promise<T>, onReject: (err: any) -> any) -> Promise<any>,
-	expect: (self: Promise<T>) -> T,
-}
-
 export type RpcProvider = {
-	getChainId: (self: RpcProvider) -> Promise<string>,
-	getBlockNumber: (self: RpcProvider) -> Promise<number>,
-	getSpecVersion: (self: RpcProvider) -> Promise<string>,
-	getNonce: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<string>,
-	call: (self: RpcProvider, request: RpcTypes.CallRequest, blockId: string?) -> Promise<{ string }>,
+	getChainId: (self: RpcProvider) -> RpcTypes.Promise<string>,
+	getBlockNumber: (self: RpcProvider) -> RpcTypes.Promise<number>,
+	getSpecVersion: (self: RpcProvider) -> RpcTypes.Promise<string>,
+	getNonce: (self: RpcProvider, contractAddress: string, blockId: string?) -> RpcTypes.Promise<string>,
+	call: (self: RpcProvider, request: RpcTypes.CallRequest, blockId: string?) -> RpcTypes.Promise<{ string }>,
 	estimateFee: (
 		self: RpcProvider,
 		transactions: { RpcTypes.InvokeTransactionV3 },
 		simulationFlags: { string }?
-	) -> Promise<{ RpcTypes.FeeEstimate }>,
-	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> Promise<string>,
+	) -> RpcTypes.Promise<{ RpcTypes.FeeEstimate }>,
+	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> RpcTypes.Promise<string>,
 	addDeployAccountTransaction: (
 		self: RpcProvider,
 		deployTx: RpcTypes.DeployAccountTransactionV3
-	) -> Promise<RpcTypes.DeployAccountResult>,
-	getTransactionReceipt: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionReceipt>,
-	getTransactionStatus: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.TransactionStatus>,
-	getBlockWithTxHashes: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.Block>,
-	getBlockWithTxs: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.BlockWithTxs>,
-	getBlockWithReceipts: (self: RpcProvider, blockId: string?) -> Promise<RpcTypes.BlockWithReceipts>,
-	getTransactionByHash: (self: RpcProvider, txHash: string) -> Promise<RpcTypes.Transaction>,
-	getClassHashAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<string>,
-	getStorageAt: (self: RpcProvider, contractAddress: string, key: string, blockId: string?) -> Promise<string>,
-	getClass: (self: RpcProvider, classHash: string, blockId: string?) -> Promise<RpcTypes.ContractClass>,
-	getClassAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> Promise<RpcTypes.ContractClass>,
+	) -> RpcTypes.Promise<RpcTypes.DeployAccountResult>,
+	getTransactionReceipt: (self: RpcProvider, txHash: string) -> RpcTypes.Promise<RpcTypes.TransactionReceipt>,
+	getTransactionStatus: (self: RpcProvider, txHash: string) -> RpcTypes.Promise<RpcTypes.TransactionStatus>,
+	getBlockWithTxHashes: (self: RpcProvider, blockId: string?) -> RpcTypes.Promise<RpcTypes.Block>,
+	getBlockWithTxs: (self: RpcProvider, blockId: string?) -> RpcTypes.Promise<RpcTypes.BlockWithTxs>,
+	getBlockWithReceipts: (self: RpcProvider, blockId: string?) -> RpcTypes.Promise<RpcTypes.BlockWithReceipts>,
+	getTransactionByHash: (self: RpcProvider, txHash: string) -> RpcTypes.Promise<RpcTypes.Transaction>,
+	getClassHashAt: (self: RpcProvider, contractAddress: string, blockId: string?) -> RpcTypes.Promise<string>,
+	getStorageAt: (
+		self: RpcProvider,
+		contractAddress: string,
+		key: string,
+		blockId: string?
+	) -> RpcTypes.Promise<string>,
+	getClass: (
+		self: RpcProvider,
+		classHash: string,
+		blockId: string?
+	) -> RpcTypes.Promise<RpcTypes.ContractClass>,
+	getClassAt: (
+		self: RpcProvider,
+		contractAddress: string,
+		blockId: string?
+	) -> RpcTypes.Promise<RpcTypes.ContractClass>,
 	estimateMessageFee: (
 		self: RpcProvider,
 		message: RpcTypes.MessageFromL1,
 		blockId: string?
-	) -> Promise<RpcTypes.FeeEstimate>,
-	getSyncingStats: (self: RpcProvider) -> Promise<any>,
-	getEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<RpcTypes.EventsChunk>,
-	getAllEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> Promise<{ RpcTypes.EmittedEvent }>,
+	) -> RpcTypes.Promise<RpcTypes.FeeEstimate>,
+	getSyncingStats: (self: RpcProvider) -> RpcTypes.Promise<any>,
+	getEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> RpcTypes.Promise<RpcTypes.EventsChunk>,
+	getAllEvents: (self: RpcProvider, filter: RpcTypes.EventFilter) -> RpcTypes.Promise<{ RpcTypes.EmittedEvent }>,
 	waitForTransaction: (
 		self: RpcProvider,
 		txHash: string,
 		options: RpcTypes.WaitOptions?
-	) -> Promise<RpcTypes.TransactionReceipt>,
-	fetch: (self: RpcProvider, method: string, params: any, options: RpcTypes.FetchOptions?) -> Promise<any>,
+	) -> RpcTypes.Promise<RpcTypes.TransactionReceipt>,
+	fetch: (self: RpcProvider, method: string, params: any, options: RpcTypes.FetchOptions?) -> RpcTypes.Promise<any>,
 	getNodeUrl: (self: RpcProvider) -> string,
 	getMetrics: (self: RpcProvider) -> RpcTypes.ProviderMetrics,
 	flushCache: (self: RpcProvider) -> (),
 }
-
---------------------------------------------------------------------------------
--- Rate limiter: token bucket algorithm
---------------------------------------------------------------------------------
-
-type RateLimiter = {
-	tokens: number,
-	maxTokens: number,
-	refillRate: number, -- tokens per second
-	lastRefill: number, -- os.clock() timestamp
-}
-
-local function createRateLimiter(maxPerMinute: number, clockFn: () -> number): RateLimiter
-	return {
-		tokens = maxPerMinute,
-		maxTokens = maxPerMinute,
-		refillRate = maxPerMinute / 60,
-		lastRefill = clockFn(),
-	}
-end
-
-local function tryAcquire(limiter: RateLimiter, clockFn: () -> number): boolean
-	local now = clockFn()
-	local elapsed = now - limiter.lastRefill
-	local newTokens = elapsed * limiter.refillRate
-	limiter.tokens = math.min(limiter.maxTokens, limiter.tokens + newTokens)
-	limiter.lastRefill = now
-
-	if limiter.tokens >= 1 then
-		limiter.tokens -= 1
-		return true
-	end
-	return false
-end
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -132,24 +105,28 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		error(StarknetError.validation("RpcProvider: nodeUrl is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
-	local clockFn = config._clock or os.clock
-	local maxRpm = config.maxRequestsPerMinute or 450
-
 	local queueConfig = config.queueConfig or {}
 
-	local self = setmetatable({
-		_nodeUrl = config.nodeUrl,
-		_headers = config.headers or {},
-		_retryAttempts = config.retryAttempts or 3,
-		_retryDelay = config.retryDelay or 1,
-		_requestId = 0,
-		_rateLimiter = createRateLimiter(maxRpm, clockFn),
+	-- Create the shared JSON-RPC transport client
+	local client = JsonRpcClient.new({
+		nodeUrl = config.nodeUrl,
+		headers = config.headers,
+		maxRequestsPerMinute = config.maxRequestsPerMinute or 450,
+		retryAttempts = config.retryAttempts,
+		retryDelay = config.retryDelay,
+		clientName = "RpcProvider",
 		_httpRequest = config._httpRequest,
-		_sleep = config._sleep or function(seconds: number)
-			task.wait(seconds)
-		end,
-		_clock = clockFn,
-		_PromiseModule = nil :: any,
+		_sleep = config._sleep,
+		_clock = config._clock,
+	})
+
+	local self = setmetatable({
+		_client = client,
+		-- Expose fields needed by external consumers (EventPoller, NonceManager, tests)
+		_nodeUrl = config.nodeUrl,
+		_PromiseModule = client._PromiseModule,
+		_sleep = client._sleep,
+		_clock = client._clock,
 		_queue = nil :: any,
 		_cache = nil :: any,
 		_nonceManager = nil :: any,
@@ -167,6 +144,7 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 	end
 
 	if config.enableCache then
+		local clockFn = config._clock or os.clock
 		self._cache = ResponseCache.new(config.cacheConfig or {}, clockFn)
 	end
 
@@ -174,163 +152,47 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		self._nonceManager = NonceManager.new(self, config.nonceManagerConfig or {})
 	end
 
-	-- Load Promise module (skip in test mode where _httpRequest is injected)
-	if not config._httpRequest then
-		local ok, promiseMod = pcall(function()
-			return require("@Packages/Promise") :: any
-		end)
-		if ok then
-			self._PromiseModule = promiseMod
-		end
-	end
-
 	return self :: any
 end
 
 --- Get the configured node URL
 function RpcProviderClass:getNodeUrl(): string
-	return self._nodeUrl
+	return self._client:getNodeUrl()
 end
+
+--------------------------------------------------------------------------------
+-- Delegate to JsonRpcClient for infrastructure
+-- These methods forward to the internal client, preserving the interface
+-- that EventPoller and other consumers depend on.
+--------------------------------------------------------------------------------
 
 --- Internal: Get the Promise constructor
+--- Syncs externally-injected _PromiseModule (test pattern) to the internal client.
 function RpcProviderClass:_getPromise(): any
-	if self._PromiseModule then
-		return self._PromiseModule
+	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
+		self._client._PromiseModule = self._PromiseModule
 	end
-	error(
-		StarknetError.validation(
-			"RpcProvider: Promise module not available. In tests, set _PromiseModule on the provider instance.",
-			ErrorCodes.REQUIRED_FIELD.code
-		)
-	)
+	return self._client:_getPromise()
 end
 
---- Internal: Perform an HTTP request (with injection point for testing)
-function RpcProviderClass:_doHttpRequest(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
-	if self._httpRequest then
-		return self._httpRequest(request)
-	end
-	-- Default: use Roblox HttpService
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:RequestAsync(request)
-end
-
---- Internal: JSON encode
+--- Internal: JSON encode (used by fetch cache key computation and _dispatchBatch)
 function RpcProviderClass:_jsonEncode(value: any): string
-	if self._httpRequest then
-		-- In test/Lune environment, use the injected serde
-		local serde = require("@lune/serde") :: any
-		return serde.encode("json", value)
-	end
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:JSONEncode(value)
+	return self._client:_jsonEncode(value)
 end
 
---- Internal: JSON decode
+--- Internal: JSON decode (used by _dispatchBatch)
 function RpcProviderClass:_jsonDecode(json: string): any
-	if self._httpRequest then
-		local serde = require("@lune/serde") :: any
-		return serde.decode("json", json)
-	end
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:JSONDecode(json)
+	return self._client:_jsonDecode(json)
 end
 
---- Internal: Wait for rate limit token, then perform a single JSON-RPC request
-function RpcProviderClass:_rawRequest(method: string, params: any): any
-	-- Rate limiting: spin-wait for a token
-	local maxWait = 10 -- seconds
-	local startTime = self._clock()
-	while not tryAcquire(self._rateLimiter, self._clock) do
-		if self._clock() - startTime > maxWait then
-			error(
-				StarknetError.rpc(
-					"Rate limit exceeded: could not acquire token within timeout",
-					ErrorCodes.RATE_LIMIT.code
-				)
-			)
-		end
-		self._sleep(0.05)
-	end
-
-	-- Build JSON-RPC request
-	self._requestId += 1
-	local rpcRequest: RpcTypes.JsonRpcRequest = {
-		jsonrpc = "2.0",
-		method = method,
-		params = params,
-		id = self._requestId,
-	}
-
-	local body = self:_jsonEncode(rpcRequest)
-	local headers: { [string]: string } = {
-		["Content-Type"] = "application/json",
-	}
-	for k, v in self._headers do
-		headers[k] = v
-	end
-
-	local httpRequest: RpcTypes.HttpRequest = {
-		Url = self._nodeUrl,
-		Method = "POST",
-		Headers = headers,
-		Body = body,
-	}
-
-	local response = self:_doHttpRequest(httpRequest)
-
-	if not response.Success and response.StatusCode ~= 200 then
-		error(
-			StarknetError.rpc(
-				`HTTP {response.StatusCode}: {response.Body}`,
-				ErrorCodes.NETWORK_ERROR.code,
-				response.StatusCode
-			)
-		)
-	end
-
-	local decoded = self:_jsonDecode(response.Body)
-
-	if decoded.error then
-		error(
-			StarknetError.rpc(
-				decoded.error.message or "Unknown RPC error",
-				ErrorCodes.RPC_ERROR.code,
-				decoded.error.code,
-				decoded.error.data
-			)
-		)
-	end
-
-	return decoded.result
+--- Internal: Perform an HTTP request (used by _dispatchBatch)
+function RpcProviderClass:_doHttpRequest(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
+	return self._client:_doHttpRequest(request)
 end
 
---- Internal: Perform a JSON-RPC request with retry logic
+--- Internal: Perform a single JSON-RPC request with retry (delegates to client)
 function RpcProviderClass:_requestWithRetry(method: string, params: any): any
-	local lastErr: any = nil
-	for attempt = 1, self._retryAttempts do
-		local ok, result = pcall(function()
-			return self:_rawRequest(method, params)
-		end)
-		if ok then
-			return result
-		end
-
-		lastErr = result
-
-		-- Don't retry on RPC errors (they're deterministic)
-		if typeof(result) == "table" and result._type == "RpcError" and result.code == ErrorCodes.RPC_ERROR.code then
-			error(result)
-		end
-
-		-- Retry on transient errors (network, rate limit) with exponential backoff
-		if attempt < self._retryAttempts then
-			local delay = self._retryDelay * math.pow(2, attempt - 1)
-			self._sleep(delay)
-		end
-	end
-
-	error(lastErr)
+	return self._client:_requestWithRetry(method, params)
 end
 
 --- Raw RPC call for custom/unsupported methods.
@@ -377,17 +239,8 @@ function RpcProviderClass:_fetchNetwork(method: string, params: any): any
 		end)
 	end
 
-	-- Direct path (no queue)
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		local ok, result = pcall(function()
-			return self:_requestWithRetry(method, params)
-		end)
-		if ok then
-			resolve(result)
-		else
-			reject(result)
-		end
-	end)
+	-- Direct path (no queue): delegate to client's fetch
+	return self._client:fetch(method, params)
 end
 
 --------------------------------------------------------------------------------
@@ -491,59 +344,49 @@ end
 --- Dispatch a batch of items as a single JSON-RPC batch request.
 function RpcProviderClass:_dispatchBatch(items: { any })
 	local queue = self._queue
+	local client = self._client
 
 	-- Acquire a single rate limit token for the batch
-	local maxWait = 10
-	local startTime = self._clock()
-	while not tryAcquire(self._rateLimiter, self._clock) do
-		if self._clock() - startTime > maxWait then
-			local err = StarknetError.rpc(
-				"Rate limit exceeded: could not acquire token within timeout",
-				ErrorCodes.RATE_LIMIT.code
-			)
-			for _, item in items do
-				if queue then
-					queue:recordFailed()
-				end
-				item.reject(err)
+	local okAcquire, acquireErr = pcall(function()
+		client:_acquireRateLimitToken()
+	end)
+	if not okAcquire then
+		for _, item in items do
+			if queue then
+				queue:recordFailed()
 			end
-			return
+			item.reject(acquireErr)
 		end
-		self._sleep(0.05)
+		return
 	end
 
 	-- Build JSON-RPC batch array
 	local batchRequest: { any } = {}
 	local idToItem: { [number]: any } = {}
 	for _, item in items do
-		self._requestId += 1
+		client._requestId += 1
 		local rpcReq = {
 			jsonrpc = "2.0",
 			method = item.method,
 			params = item.params,
-			id = self._requestId,
+			id = client._requestId,
 		}
 		table.insert(batchRequest, rpcReq)
-		idToItem[self._requestId] = item
+		idToItem[client._requestId] = item
 	end
 
-	local body = self:_jsonEncode(batchRequest)
-	local headers: { [string]: string } = {
-		["Content-Type"] = "application/json",
-	}
-	for k, v in self._headers do
-		headers[k] = v
-	end
+	local body = client:_jsonEncode(batchRequest)
+	local headers = client:_buildHeaders()
 
 	local httpRequest: RpcTypes.HttpRequest = {
-		Url = self._nodeUrl,
+		Url = client._nodeUrl,
 		Method = "POST",
 		Headers = headers,
 		Body = body,
 	}
 
 	local ok, response = pcall(function()
-		return self:_doHttpRequest(httpRequest)
+		return client:_doHttpRequest(httpRequest)
 	end)
 
 	if not ok then
@@ -573,7 +416,7 @@ function RpcProviderClass:_dispatchBatch(items: { any })
 	end
 
 	local decodeOk, decoded = pcall(function()
-		return self:_jsonDecode(response.Body)
+		return client:_jsonDecode(response.Body)
 	end)
 
 	if not decodeOk then
@@ -646,6 +489,8 @@ end
 
 --- Get a snapshot of provider metrics (queue + rate limiter + cache + nonce).
 function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
+	local rateLimiter = self._client:getRateLimiter()
+
 	local cacheHits = 0
 	local cacheMisses = 0
 	local cacheEvictions = 0
@@ -679,8 +524,8 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 			totalBatched = qm.totalBatched,
 			totalDropped = qm.totalDropped,
 			currentQueueDepth = qm.currentQueueDepth,
-			rateLimitTokens = math.floor(self._rateLimiter.tokens),
-			rateLimitMax = self._rateLimiter.maxTokens,
+			rateLimitTokens = math.floor(rateLimiter.tokens),
+			rateLimitMax = rateLimiter.maxTokens,
 			batchesSent = qm.batchesSent,
 			cacheHits = cacheHits,
 			cacheMisses = cacheMisses,
@@ -700,8 +545,8 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 		totalBatched = 0,
 		totalDropped = 0,
 		currentQueueDepth = 0,
-		rateLimitTokens = math.floor(self._rateLimiter.tokens),
-		rateLimitMax = self._rateLimiter.maxTokens,
+		rateLimitTokens = math.floor(rateLimiter.tokens),
+		rateLimitMax = rateLimiter.maxTokens,
 		batchesSent = 0,
 		cacheHits = cacheHits,
 		cacheMisses = cacheMisses,

@@ -3,6 +3,7 @@ local serde = require("@lune/serde")
 
 local AvnuPaymaster = require("../../src/paymaster/AvnuPaymaster")
 local PaymasterRpc = require("../../src/paymaster/PaymasterRpc")
+local RpcTypes = require("../../src/provider/RpcTypes")
 local MockPromise = require("../helpers/MockPromise")
 
 --------------------------------------------------------------------------------
@@ -109,8 +110,8 @@ local function clearRequestLog()
 end
 
 --- Create mock HTTP function
-local function createMockHttpRequest(): (request: PaymasterRpc.HttpRequest) -> PaymasterRpc.HttpResponse
-	return function(request: PaymasterRpc.HttpRequest): PaymasterRpc.HttpResponse
+local function createMockHttpRequest(): (request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse
+	return function(request: RpcTypes.HttpRequest): RpcTypes.HttpResponse
 		local body = serde.decode("json", request.Body or "{}") :: any
 		local method: string = body.method or ""
 		local params: any = body.params

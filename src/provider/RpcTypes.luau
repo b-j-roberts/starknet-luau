@@ -4,6 +4,14 @@
 
 local RpcTypes = {}
 
+--- Promise-like type for return annotations
+--- In Roblox runtime, this is evaera/promise; in tests, a compatible mock is injected
+export type Promise<T> = {
+	andThen: (self: Promise<T>, onResolve: (value: T) -> any) -> Promise<any>,
+	catch: (self: Promise<T>, onReject: (err: any) -> any) -> Promise<any>,
+	expect: (self: Promise<T>) -> T,
+}
+
 --- Request priority levels for the queue
 export type RequestPriority = "high" | "normal" | "low"
 
@@ -116,15 +124,6 @@ export type JsonRpcError = {
 	code: number,
 	message: string,
 	data: any?,
-}
-
---- SDK error structure (structured errors with :is() method)
-export type StarknetError = {
-	_type: string,
-	message: string,
-	code: number?,
-	data: any?,
-	is: (self: StarknetError, errorType: string) -> boolean,
 }
 
 --- Request for starknet_call

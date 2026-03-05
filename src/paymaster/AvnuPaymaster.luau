@@ -7,6 +7,7 @@
 -- With apiKey: gasfree/sponsored mode (game developer pays gas)
 
 local PaymasterRpc = require("./PaymasterRpc")
+local RpcTypes = require("../provider/RpcTypes")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -79,34 +80,34 @@ export type AvnuPaymasterConfig = {
 	maxRequestsPerMinute: number?,
 	tokenCacheTtl: number?, -- seconds to cache getSupportedTokens (default 300 = 5 min)
 	-- Testing injection points
-	_httpRequest: ((request: PaymasterRpc.HttpRequest) -> PaymasterRpc.HttpResponse)?,
+	_httpRequest: ((request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,
 	_clock: (() -> number)?,
 }
 
 export type AvnuPaymaster = {
 	-- All PaymasterRpc methods (delegated)
-	isAvailable: (self: AvnuPaymaster) -> PaymasterRpc.Promise<boolean>,
-	getSupportedTokens: (self: AvnuPaymaster) -> PaymasterRpc.Promise<{ PaymasterRpc.TokenData }>,
+	isAvailable: (self: AvnuPaymaster) -> RpcTypes.Promise<boolean>,
+	getSupportedTokens: (self: AvnuPaymaster) -> RpcTypes.Promise<{ PaymasterRpc.TokenData }>,
 	buildTypedData: (
 		self: AvnuPaymaster,
 		userAddress: string,
 		calls: { PaymasterRpc.Call },
 		gasTokenAddress: string,
 		options: PaymasterRpc.BuildTypedDataOptions?
-	) -> PaymasterRpc.Promise<PaymasterRpc.BuildTypedDataResult>,
+	) -> RpcTypes.Promise<PaymasterRpc.BuildTypedDataResult>,
 	executeTransaction: (
 		self: AvnuPaymaster,
 		userAddress: string,
 		typedData: any,
 		signature: { string },
 		options: PaymasterRpc.BuildTypedDataOptions?
-	) -> PaymasterRpc.Promise<PaymasterRpc.ExecuteResult>,
+	) -> RpcTypes.Promise<PaymasterRpc.ExecuteResult>,
 	trackingIdToLatestHash: (
 		self: AvnuPaymaster,
 		trackingId: string
-	) -> PaymasterRpc.Promise<PaymasterRpc.TrackingResult>,
-	fetch: (self: AvnuPaymaster, method: string, params: any) -> PaymasterRpc.Promise<any>,
+	) -> RpcTypes.Promise<PaymasterRpc.TrackingResult>,
+	fetch: (self: AvnuPaymaster, method: string, params: any) -> RpcTypes.Promise<any>,
 	getNodeUrl: (self: AvnuPaymaster) -> string,
 	-- AVNU-specific methods
 	getNetwork: (self: AvnuPaymaster) -> string,

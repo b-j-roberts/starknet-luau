@@ -2,35 +2,17 @@
 -- PaymasterRpc: Generic SNIP-29 paymaster JSON-RPC client
 -- Supports any SNIP-29-compliant paymaster service (AVNU, Cartridge, self-hosted)
 -- All public methods return Promises for async operation
+-- Delegates core JSON-RPC transport to JsonRpcClient
 -- Reference: https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-29.md
 
+local RpcTypes = require("../provider/RpcTypes")
+local JsonRpcClient = require("../provider/JsonRpcClient")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------------------
-
---- Promise-like type for return annotations
-export type Promise<T> = {
-	andThen: (self: Promise<T>, onResolve: (value: T) -> any) -> Promise<any>,
-	catch: (self: Promise<T>, onReject: (err: any) -> any) -> Promise<any>,
-	expect: (self: Promise<T>) -> T,
-}
-
-export type HttpRequest = {
-	Url: string,
-	Method: string,
-	Headers: { [string]: string },
-	Body: string?,
-}
-
-export type HttpResponse = {
-	StatusCode: number,
-	Body: string,
-	Headers: { [string]: string }?,
-	Success: boolean,
-}
 
 --- Paymaster configuration
 export type PaymasterConfig = {
@@ -40,7 +22,7 @@ export type PaymasterConfig = {
 	retryDelay: number?,
 	maxRequestsPerMinute: number?,
 	-- Testing injection points (same pattern as RpcProvider)
-	_httpRequest: ((request: HttpRequest) -> HttpResponse)?,
+	_httpRequest: ((request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,
 	_clock: (() -> number)?,
 }
@@ -124,25 +106,25 @@ export type TrackingResult = {
 
 --- The PaymasterRpc class type
 export type PaymasterRpc = {
-	isAvailable: (self: PaymasterRpc) -> Promise<boolean>,
-	getSupportedTokens: (self: PaymasterRpc) -> Promise<{ TokenData }>,
+	isAvailable: (self: PaymasterRpc) -> RpcTypes.Promise<boolean>,
+	getSupportedTokens: (self: PaymasterRpc) -> RpcTypes.Promise<{ TokenData }>,
 	buildTypedData: (
 		self: PaymasterRpc,
 		userAddress: string,
 		calls: { Call },
 		gasTokenAddress: string,
 		options: BuildTypedDataOptions?
-	) -> Promise<BuildTypedDataResult>,
+	) -> RpcTypes.Promise<BuildTypedDataResult>,
 	executeTransaction: (
 		self: PaymasterRpc,
 		userAddress: string,
 		typedData: any,
 		signature: { string },
 		options: BuildTypedDataOptions?
-	) -> Promise<ExecuteResult>,
-	trackingIdToLatestHash: (self: PaymasterRpc, trackingId: string) -> Promise<TrackingResult>,
+	) -> RpcTypes.Promise<ExecuteResult>,
+	trackingIdToLatestHash: (self: PaymasterRpc, trackingId: string) -> RpcTypes.Promise<TrackingResult>,
 	getNodeUrl: (self: PaymasterRpc) -> string,
-	fetch: (self: PaymasterRpc, method: string, params: any) -> Promise<any>,
+	fetch: (self: PaymasterRpc, method: string, params: any) -> RpcTypes.Promise<any>,
 }
 
 --------------------------------------------------------------------------------
@@ -163,38 +145,38 @@ local PAYMASTER_RPC_ERROR_MAP: { [number]: { code: number, name: string } } = {
 	[163] = ErrorCodes.PAYMASTER_ERROR, -- UNKNOWN_ERROR
 }
 
---------------------------------------------------------------------------------
--- Rate limiter: token bucket (same algorithm as RpcProvider)
---------------------------------------------------------------------------------
-
-type RateLimiter = {
-	tokens: number,
-	maxTokens: number,
-	refillRate: number,
-	lastRefill: number,
-}
-
-local function createRateLimiter(maxPerMinute: number, clockFn: () -> number): RateLimiter
-	return {
-		tokens = maxPerMinute,
-		maxTokens = maxPerMinute,
-		refillRate = maxPerMinute / 60,
-		lastRefill = clockFn(),
-	}
+--- Map a paymaster JSON-RPC error code to an SDK error, then throw
+local function mapPaymasterError(decoded: RpcTypes.JsonRpcError): never
+	local rpcCode = decoded.code or 0
+	local message = decoded.message or "Unknown paymaster error"
+	local data = decoded.data
+	local mapped = PAYMASTER_RPC_ERROR_MAP[rpcCode]
+	if mapped then
+		error(StarknetError.rpc(message, mapped.code, rpcCode, data))
+	end
+	-- Unmapped code: use generic PAYMASTER_ERROR
+	error(StarknetError.rpc(message, ErrorCodes.PAYMASTER_ERROR.code, rpcCode, data))
 end
 
-local function tryAcquire(limiter: RateLimiter, clockFn: () -> number): boolean
-	local now = clockFn()
-	local elapsed = now - limiter.lastRefill
-	local newTokens = elapsed * limiter.refillRate
-	limiter.tokens = math.min(limiter.maxTokens, limiter.tokens + newTokens)
-	limiter.lastRefill = now
-
-	if limiter.tokens >= 1 then
-		limiter.tokens -= 1
-		return true
+--- Determine whether a paymaster error should be retried.
+--- Returns false for deterministic paymaster-specific errors.
+local function shouldRetryPaymasterError(err: any): boolean
+	if typeof(err) == "table" and err._type == "RpcError" then
+		local code = err.code
+		if
+			code == ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code
+			or code == ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code
+			or code == ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code
+			or code == ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code
+			or code == ErrorCodes.PAYMASTER_EXECUTION_ERROR.code
+			or code == ErrorCodes.PAYMASTER_INVALID_ADDRESS.code
+			or code == ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code
+			or code == ErrorCodes.PAYMASTER_ERROR.code
+		then
+			return false
+		end
 	end
-	return false
+	return true
 end
 
 --------------------------------------------------------------------------------
@@ -211,204 +193,33 @@ function PaymasterRpcClass.new(config: PaymasterConfig): PaymasterRpc
 		error(StarknetError.validation("PaymasterRpc: nodeUrl is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
 
-	local clockFn = config._clock or os.clock
-	local maxRpm = config.maxRequestsPerMinute or 120
+	-- Create the shared JSON-RPC transport client with paymaster-specific customizations
+	local client = JsonRpcClient.new({
+		nodeUrl = config.nodeUrl,
+		headers = config.headers,
+		maxRequestsPerMinute = config.maxRequestsPerMinute or 120,
+		retryAttempts = config.retryAttempts,
+		retryDelay = config.retryDelay,
+		clientName = "PaymasterRpc",
+		errorMapper = mapPaymasterError,
+		shouldRetry = shouldRetryPaymasterError,
+		_httpRequest = config._httpRequest,
+		_sleep = config._sleep,
+		_clock = config._clock,
+	})
 
 	local self = setmetatable({
-		_nodeUrl = config.nodeUrl,
-		_headers = config.headers or {},
-		_retryAttempts = config.retryAttempts or 3,
-		_retryDelay = config.retryDelay or 1,
-		_requestId = 0,
-		_rateLimiter = createRateLimiter(maxRpm, clockFn),
-		_httpRequest = config._httpRequest,
-		_sleep = config._sleep or function(seconds: number)
-			task.wait(seconds)
-		end,
-		_clock = clockFn,
-		_PromiseModule = nil :: any,
+		_client = client,
+		-- Expose _PromiseModule for test injection compatibility
+		_PromiseModule = client._PromiseModule,
 	}, PaymasterRpcClass)
-
-	-- Load Promise module (skip in test mode where _httpRequest is injected)
-	if not config._httpRequest then
-		local ok, promiseMod = pcall(function()
-			return require("@Packages/Promise") :: any
-		end)
-		if ok then
-			self._PromiseModule = promiseMod
-		end
-	end
 
 	return self :: any
 end
 
 --- Get the configured paymaster endpoint URL
 function PaymasterRpcClass:getNodeUrl(): string
-	return self._nodeUrl
-end
-
---------------------------------------------------------------------------------
--- Internal: Promise, HTTP, JSON helpers
---------------------------------------------------------------------------------
-
-function PaymasterRpcClass:_getPromise(): any
-	if self._PromiseModule then
-		return self._PromiseModule
-	end
-	error(
-		StarknetError.validation(
-			"PaymasterRpc: Promise module not available. In tests, set _PromiseModule on the instance.",
-			ErrorCodes.REQUIRED_FIELD.code
-		)
-	)
-end
-
-function PaymasterRpcClass:_doHttpRequest(request: HttpRequest): HttpResponse
-	if self._httpRequest then
-		return self._httpRequest(request)
-	end
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:RequestAsync(request)
-end
-
-function PaymasterRpcClass:_jsonEncode(value: any): string
-	if self._httpRequest then
-		local serde = require("@lune/serde") :: any
-		return serde.encode("json", value)
-	end
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:JSONEncode(value)
-end
-
-function PaymasterRpcClass:_jsonDecode(json: string): any
-	if self._httpRequest then
-		local serde = require("@lune/serde") :: any
-		return serde.decode("json", json)
-	end
-	local HttpService = (game :: any):GetService("HttpService")
-	return HttpService:JSONDecode(json)
-end
-
---------------------------------------------------------------------------------
--- Internal: JSON-RPC request mechanics
---------------------------------------------------------------------------------
-
---- Map a paymaster JSON-RPC error code to an SDK error, then throw
-local function mapPaymasterError(rpcCode: number, message: string, data: any): never
-	local mapped = PAYMASTER_RPC_ERROR_MAP[rpcCode]
-	if mapped then
-		error(StarknetError.rpc(message, mapped.code, rpcCode, data))
-	end
-	-- Unmapped code: use generic PAYMASTER_ERROR
-	error(StarknetError.rpc(message, ErrorCodes.PAYMASTER_ERROR.code, rpcCode, data))
-end
-
---- Perform a single JSON-RPC request (rate-limited, synchronous).
-function PaymasterRpcClass:_rawRequest(method: string, params: any): any
-	-- Rate limiting
-	local maxWait = 10
-	local startTime = self._clock()
-	while not tryAcquire(self._rateLimiter, self._clock) do
-		if self._clock() - startTime > maxWait then
-			error(
-				StarknetError.rpc(
-					"Rate limit exceeded: could not acquire token within timeout",
-					ErrorCodes.RATE_LIMIT.code
-				)
-			)
-		end
-		self._sleep(0.05)
-	end
-
-	-- Build JSON-RPC 2.0 request
-	self._requestId += 1
-	local rpcRequest = {
-		jsonrpc = "2.0",
-		method = method,
-		params = params,
-		id = self._requestId,
-	}
-
-	local body = self:_jsonEncode(rpcRequest)
-	local headers: { [string]: string } = {
-		["Content-Type"] = "application/json",
-	}
-	for k, v in self._headers do
-		headers[k] = v
-	end
-
-	local httpRequest: HttpRequest = {
-		Url = self._nodeUrl,
-		Method = "POST",
-		Headers = headers,
-		Body = body,
-	}
-
-	local response = self:_doHttpRequest(httpRequest)
-
-	-- HTTP-level error
-	if not response.Success and response.StatusCode ~= 200 then
-		error(
-			StarknetError.rpc(
-				`HTTP {response.StatusCode}: {response.Body}`,
-				ErrorCodes.NETWORK_ERROR.code,
-				response.StatusCode
-			)
-		)
-	end
-
-	local decoded = self:_jsonDecode(response.Body)
-
-	-- JSON-RPC error response
-	if decoded.error then
-		local rpcCode = decoded.error.code or 0
-		local message = decoded.error.message or "Unknown paymaster error"
-		local data = decoded.error.data
-		mapPaymasterError(rpcCode, message, data)
-	end
-
-	return decoded.result
-end
-
---- Perform a JSON-RPC request with retry logic.
---- Does NOT retry on paymaster-specific errors (they're deterministic).
-function PaymasterRpcClass:_requestWithRetry(method: string, params: any): any
-	local lastErr: any = nil
-	for attempt = 1, self._retryAttempts do
-		local ok, result = pcall(function()
-			return self:_rawRequest(method, params)
-		end)
-		if ok then
-			return result
-		end
-
-		lastErr = result
-
-		-- Don't retry on paymaster-specific RPC errors (deterministic)
-		if typeof(result) == "table" and result._type == "RpcError" then
-			local code = result.code
-			if
-				code == ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code
-				or code == ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code
-				or code == ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code
-				or code == ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code
-				or code == ErrorCodes.PAYMASTER_EXECUTION_ERROR.code
-				or code == ErrorCodes.PAYMASTER_INVALID_ADDRESS.code
-				or code == ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code
-				or code == ErrorCodes.PAYMASTER_ERROR.code
-			then
-				error(result)
-			end
-		end
-
-		-- Retry on transient errors with exponential backoff
-		if attempt < self._retryAttempts then
-			local delay = self._retryDelay * math.pow(2, attempt - 1)
-			self._sleep(delay)
-		end
-	end
-
-	error(lastErr)
+	return self._client:getNodeUrl()
 end
 
 --------------------------------------------------------------------------------
@@ -417,18 +228,11 @@ end
 
 --- Raw paymaster RPC call. Returns a Promise that resolves to the JSON-RPC result.
 function PaymasterRpcClass:fetch(method: string, params: any): any
-	local Promise = self:_getPromise()
-
-	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		local ok, result = pcall(function()
-			return self:_requestWithRetry(method, params)
-		end)
-		if ok then
-			resolve(result)
-		else
-			reject(result)
-		end
-	end)
+	-- Sync _PromiseModule to client in case it was injected externally (tests)
+	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
+		self._client._PromiseModule = self._PromiseModule
+	end
+	return self._client:fetch(method, params)
 end
 
 --------------------------------------------------------------------------------
@@ -438,11 +242,15 @@ end
 --- Check if the paymaster service is operational.
 --- @return Promise<boolean> -- true if available, false otherwise
 function PaymasterRpcClass:isAvailable(): any
-	local Promise = self:_getPromise()
+	-- Sync _PromiseModule to client in case it was injected externally (tests)
+	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
+		self._client._PromiseModule = self._PromiseModule
+	end
+	local Promise = self._client:_getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), _reject: (any) -> ())
 		local ok, result = pcall(function()
-			return self:_rawRequest("paymaster_isAvailable", {})
+			return self._client:_requestWithRetry("paymaster_isAvailable", {})
 		end)
 		if ok then
 			resolve(result == true)
