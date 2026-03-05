@@ -8,13 +8,14 @@ Synthesized from the full code review audit in `docs/refactor/` (01-14). Every a
 
 | Phase | # Items | Complexity | Key Files Affected |
 |-------|---------|------------|--------------------|
-| **R1: Code Deduplication & Shared Utilities** | 14 | L | RpcProvider, PaymasterRpc, Account, TypedData, CallData, StarkField, StarkScalarField, Keccak, SHA256, ECDSA, TransactionBuilder, AbiCodec, ERC20, ERC721 |
-| **R2: Type Safety & API Consistency** | 12 | M | RpcTypes, StarkSigner, Account, Contract, TransactionBuilder, PaymasterRpc, ErrorCodes, SponsoredExecutor, OutsideExecution |
-| **R3: Bug Fixes & Correctness** | 8 | S-M | TransactionBuilder, Contract, AbiCodec, PaymasterRpc, SponsoredExecutor, examples/ |
-| **R4: Performance** | 6 | S | Poseidon, StarkCurve, TypedData, BigInt, PaymasterPolicy |
-| **R5: Test Improvements** | 10 | M-L | 16+ test files, run.luau, MockPromise, test-vectors, paymaster specs |
-| **R6: Documentation** | 5 | M-L | SPEC.md, ROADMAP.md, CHANGELOG.md, all 7 guides, README.md |
+| **R1: Code Deduplication & Shared Utilities** | 15 | L | RpcProvider, PaymasterRpc, Account, TypedData, CallData, StarkField, StarkScalarField, Keccak, SHA256, ECDSA, TransactionBuilder, AbiCodec, ERC20, ERC721 |
+| **R2: Type Safety & API Consistency** | 6 | M | RpcTypes, StarkSigner, Account, Contract, TransactionBuilder, PaymasterRpc, ErrorCodes, SponsoredExecutor, OutsideExecution |
+| **R3: Bug Fixes & Correctness** | 9 | S-M | TransactionBuilder, Contract, AbiCodec, PaymasterRpc, SponsoredExecutor, examples/ |
+| **R4: Performance** | 7 | S | Poseidon, StarkCurve, TypedData, BigInt, PaymasterPolicy, Contract |
+| **R5: Test Improvements** | 8 | M-L | 16+ test files, run.luau, MockPromise, test-vectors, paymaster specs |
+| **R6: Documentation** | 6 | M-L | SPEC.md, ROADMAP.md, CHANGELOG.md, all 7 guides, README.md, source comments |
 | **R7: Config, Build & Infrastructure** | 6 | S-M | Makefile, project JSONs, wally.toml, pesde.toml, .luaurc, CLAUDE.md |
+| **Feature Items** | 4 | S-M | ERC20, ERC721, AccountType |
 
 ---
 
@@ -29,9 +30,9 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 **Description**: `RpcProvider.luau` and `PaymasterRpc.luau` share ~400 lines of independently implemented JSON-RPC infrastructure: rate limiter, HTTP helpers, JSON encode/decode, raw request, retry logic, and Promise loading. This is the single largest DRY violation in the codebase. Extract a shared `src/provider/JsonRpcClient.luau` that both modules delegate to.
 
 **Requirements**:
-- [ ] Create `src/provider/JsonRpcClient.luau` with shared rate limiter (`createRateLimiter`, `tryAcquire`), HTTP helpers (`_doHttpRequest`, `_jsonEncode`, `_jsonDecode`), raw request (`_rawRequest` with error mapper callback), retry loop (`_requestWithRetry` with shouldRetry predicate), and Promise loading
-- [ ] Refactor `RpcProvider.luau` to delegate to `JsonRpcClient` for infrastructure, keeping queue/cache/nonce/block-invalidation/RPC methods
-- [ ] Refactor `PaymasterRpc.luau` to delegate to `JsonRpcClient`, keeping SNIP-29 error mapping and paymaster methods
+- [ ] Create `src/provider/JsonRpcClient.luau` with shared rate limiter (`createRateLimiter`, `tryAcquire`), HTTP helpers (`_doHttpRequest`, `_jsonEncode`, `_jsonDecode`), raw request (`_rawRequest` with error mapper callback), retry loop (`_requestWithRetry` with shouldRetry predicate), and Promise loading (ref: 04-provider.md §RpcProvider [refactor], 08-paymaster.md §PaymasterRpc [refactor], 14-cross-cutting.md §2A)
+- [ ] Refactor `RpcProvider.luau` to delegate to `JsonRpcClient` for infrastructure, keeping queue/cache/nonce/block-invalidation/RPC methods (ref: 04-provider.md §RpcProvider [refactor])
+- [ ] Refactor `PaymasterRpc.luau` to delegate to `JsonRpcClient`, keeping SNIP-29 error mapping and paymaster methods (ref: 08-paymaster.md §PaymasterRpc [refactor])
 - [ ] Extract rate-limit spin wait (duplicated in `_rawRequest` and `_dispatchBatch`) to `_acquireRateLimitToken()` helper (ref: 04-provider.md §RpcProvider [refactor])
 - [ ] Extract header construction (duplicated in `_rawRequest` and `_dispatchBatch`) to `_buildHeaders()` helper (ref: 04-provider.md §RpcProvider [refactor])
 - [ ] Move `Promise<T>` type definition to `RpcTypes.luau` (ref: 14-cross-cutting.md §2C [refactor])
@@ -58,6 +59,7 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 - [ ] Move SponsoredExecutor's inline 58-line MockPromise to use shared `tests/helpers/MockPromise.luau` (ref: 12-tests.md §MockPromise [refactor])
 - [ ] Replace 11+ files' inline `SN_SEPOLIA` definitions with import from Constants or TestUtils (ref: 09-root.md §chain IDs [refactor], 14-cross-cutting.md §9D)
 - [ ] Consolidate 15 files' duplicate private key constants under a single variable name (ref: 14-cross-cutting.md §9D)
+- [ ] Migrate TypedData Account integration tests (lines 614-712) from separate mock setup to shared test infrastructure (ref: 06-wallet.md §TypedData [test])
 
 **Implementation Notes**:
 - Factory-based design (not global state) so tests remain isolated
@@ -90,9 +92,9 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 
 **Requirements**:
 - [ ] Create `src/crypto/FieldFactory.luau` with `createField(modulus, modulusMinus2, barrettCtx, name)` that generates all shared methods: `reduce`, `powmodBarrett`, `zero`, `one`, `fromNumber`, `fromHex`, `add`, `sub`, `mul`, `square`, `neg`, `inv`, `toHex`, `toBigInt`, `eq`, `isZero` (ref: 01-crypto.md §StarkField [refactor], §StarkScalarField [refactor])
-- [ ] Refactor `StarkField.luau` to use the factory, adding `sqrt()` as an extension
-- [ ] Refactor `StarkScalarField.luau` to use the factory
-- [ ] Move `powmodBarrett()` to `BigInt.powmodB(a, e, ctx)` so callers don't reimplement the loop (ref: 01-crypto.md §priority actions #5)
+- [ ] Refactor `StarkField.luau` to use the factory, adding `sqrt()` as an extension (ref: 01-crypto.md §StarkField [refactor])
+- [ ] Refactor `StarkScalarField.luau` to use the factory (ref: 01-crypto.md §StarkScalarField [refactor])
+- [ ] Move `powmodBarrett()` to `BigInt.powmodB(a, e, ctx)` so callers don't reimplement the loop (ref: 01-crypto.md §priority actions #5; see also R.4.6 for performance motivation)
 - [ ] Extract parameterized field test suite `fieldTestSuite(Field, modulus, name)` and run against both fields (ref: 01-crypto.md §StarkScalarField [test])
 
 **Implementation Notes**:
@@ -216,11 +218,14 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 
 **Requirements**:
 - [ ] Extract `formatDeploymentData(dd)` helper in PaymasterRpc — eliminates ~17 lines between `buildTypedData` and `executeTransaction` (ref: 08-paymaster.md §PaymasterRpc [refactor])
+- [ ] Extract `normalizeKeys()` helper in PaymasterRpc for repetitive response normalization (ref: 08-paymaster.md §PaymasterRpc [refactor])
+- [ ] Extract shared transaction structure construction between PaymasterRpc `buildTypedData` and `executeTransaction` (envelope construction beyond just deploymentData) (ref: 08-paymaster.md §PaymasterRpc [refactor])
 - [ ] Consolidate `PlayerData`/`UsageStats` identical types in PaymasterBudget (ref: 08-paymaster.md §PaymasterBudget [refactor])
 - [ ] Replace `clonePlayerData()` manual 4-field copy with `table.clone()` (ref: 08-paymaster.md §PaymasterBudget [refactor])
 - [ ] Deduplicate DataStore loading between `_getPlayerData()` and `loadPlayer()` in PaymasterBudget (~15 lines) (ref: 08-paymaster.md §PaymasterBudget [refactor])
 - [ ] Extract config validation helper `validateNonNeg(name, value)` in PaymasterBudget — replaces 6 nearly identical blocks (ref: 08-paymaster.md §PaymasterBudget [refactor])
 - [ ] Fix `flushPlayer()` dirty count recomputation — should decrement, not re-iterate (inconsistent with `unloadPlayer` which already does it correctly) (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [ ] Deduplicate player whitelist check between `validate()` and `validateFee()` in PaymasterPolicy (ref: 08-paymaster.md §PaymasterPolicy [refactor])
 
 ---
 
@@ -245,6 +250,12 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 - [ ] Normalize `OutsideExecution.buildExecuteFromOutsideCall()` dual-key inspection — normalize data at `getTypedData()` output boundary (ref: 06-wallet.md §OutsideExecution [refactor])
 - [ ] Centralize transient error classification — `SponsoredExecutor.isTransientError()` and `PaymasterRpc._requestWithRetry()` classify from opposite perspectives. Add `ErrorCodes.isTransient(code)` (ref: 08-paymaster.md §SponsoredExecutor [refactor], 14-cross-cutting.md §2E)
 - [ ] Align 3 paymaster modules' import pattern for ErrorCodes (use `StarknetError.ErrorCodes` like other 23 modules) (ref: 14-cross-cutting.md §1)
+- [ ] Extract shared `_sleep`/`_clock` injection boilerplate (~35 lines) duplicated across 7 modules (RpcProvider, PaymasterRpc, SponsoredExecutor, PaymasterPolicy, PaymasterBudget, AvnuPaymaster, EventPoller) into a shared `TestableConfig` type or `applyDefaults()` helper (ref: 14-cross-cutting.md §2D)
+- [ ] Extract EventPoller filter reconstruction — duplicated on every poll cycle instead of built once (ref: 04-provider.md §EventPoller [refactor])
+- [ ] Remove `CallData.encodeStruct()` no-op wrapper that does an unnecessary copy (ref: 05-tx.md §CallData [refactor])
+- [ ] Extract Promise+pcall boilerplate repeated in every TransactionBuilder method into shared wrapper (ref: 05-tx.md §TransactionBuilder [refactor])
+- [ ] Simplify `AccountFactory._createAccountFromSigner` Argent-specific branching (ref: 06-wallet.md §AccountFactory [refactor])
+- [ ] Consider breaking TypedData `encodeValue` (163-line monolithic function) into dispatch table (ref: 06-wallet.md §TypedData [refactor])
 
 ---
 
@@ -308,6 +319,7 @@ Improve type annotations, define shared interfaces, fix API inconsistencies, and
 - [ ] Fix `NONCE_EXHAUSTED` (2014) domain mismatch — 2xxx code used with `StarknetError.transaction()` in NonceManager (ref: 14-cross-cutting.md §5)
 - [ ] Remove `RpcTypes.ErrorTypes` dead code (lines 376-382, 5 error type constants never referenced) (ref: 04-provider.md §RpcTypes [api])
 - [ ] Consider generating ErrorCodes `name` from table key to prevent key/name divergence (ref: 02-errors.md §ErrorCodes [refactor])
+- [ ] Audit `isStarknetError()` — never called in production code; either dogfood it or document as test-only utility (ref: 02-errors.md §StarknetError [api])
 
 ---
 
@@ -324,6 +336,15 @@ Improve type annotations, define shared interfaces, fix API inconsistencies, and
 - [ ] Add `getLastBlockNumber(): number?` to EventPoller public API (ref: 04-provider.md §EventPoller [api])
 - [ ] Normalize `contract/init.luau` barrel export style to match other barrels (use local-variable-then-return pattern) (ref: 09-root.md §init.luau [refactor])
 - [ ] Document `self_: any = self` pattern at class level in Contract.luau (appears 11 times) (ref: 07-contract.md §Contract [refactor])
+- [ ] Fix `addInvokeTransaction` returning bare string vs `addDeployAccountTransaction` returning table — normalize to consistent return shape (ref: 14-cross-cutting.md §3D)
+- [ ] Fix `Account:executePaymaster()` passing through raw unnormalized return value — should match `execute()` return shape (ref: 14-cross-cutting.md §3D)
+- [ ] Fix `PaymasterPolicy.allowedMethods` semantic mismatch — `selector` vs `entrypoint` naming confusion causes silent comparison failure when mixing hex selectors with function names (ref: 14-cross-cutting.md §6)
+- [ ] Consider `StarkCurve.scalarMul()` INFINITY sentinel instead of returning `nil` for k=0 — current `AffinePoint?` return forces nil-checks everywhere (ref: 01-crypto.md §StarkCurve [api])
+- [ ] Fix `RpcProvider:addInvokeTransaction()` manually copying all 11 fields — fragile pattern that breaks when fields change (ref: 04-provider.md §RpcProvider [api])
+- [ ] Consider making `TransactionHash.encodeResourceBound()` internal — too low-level for public API surface (ref: 05-tx.md §TransactionHash [api])
+- [ ] Consider `OutsideExecution.getTypedData()` config table instead of 6 positional parameters (ref: 06-wallet.md §OutsideExecution [api])
+- [ ] Make PaymasterRpc rate-limit timeout configurable instead of hardcoded 10 seconds (ref: 08-paymaster.md §PaymasterRpc [api])
+- [ ] Fix AvnuPaymaster method selector normalization gap with PaymasterPolicy (ref: 08-paymaster.md §AvnuPaymaster [refactor])
 
 ---
 
@@ -338,6 +359,11 @@ Improve type annotations, define shared interfaces, fix API inconsistencies, and
 - [ ] Type `ResponseCache` constructor config as `CacheConfig` from RpcTypes instead of `{ [string]: any }?` (ref: 04-provider.md §ResponseCache [api])
 - [ ] Type `SponsoredExecutorConfig` fields (`account`, `paymaster`, `policy`, `budget`) with proper types instead of `any` (ref: 08-paymaster.md §SponsoredExecutor [type])
 - [ ] Export `PaymasterPolicy` constructor return type (ref: 08-paymaster.md §PaymasterPolicy [type])
+- [ ] Document `export type BigInt = buffer` provides no structural distinction from raw buffers — known Luau limitation (ref: 01-crypto.md §BigInt [type])
+- [ ] Narrow `StarknetError.data: any?` to `{ [string]: any }?` — usage shows it's always a table when present (ref: 02-errors.md §StarknetError [type])
+- [ ] Fix StarkSigner constructor return type `:: any` cast — document as known Luau strict mode limitation (ref: 03-signer.md §StarkSigner [type])
+- [ ] Add validation for `contractAddress` format in `Call` type (ref: 05-tx.md §CallData [type])
+- [ ] Type `PaymasterPolicy.validate()` `calls` parameter as `{ Call }` instead of `{ any }` (ref: 08-paymaster.md §PaymasterPolicy [type])
 
 ---
 
@@ -378,9 +404,11 @@ Fix incorrect implementations and correctness issues.
 
 **Requirements**:
 - [ ] Add bounds checking in `AbiCodec.decode()` — validate `offset <= #results` before reading (ref: 07-contract.md §AbiCodec [fix])
-- [ ] Extract `parseHexToNumber(hex)` helper replacing 4 instances of broken two-branch pattern where first `tonumber(hex, 16)` always fails for `0x`-prefixed strings (ref: 07-contract.md §AbiCodec [fix])
+- [ ] Extract `parseHexToNumber(hex)` helper replacing 4 instances of broken two-branch pattern where first `tonumber(hex, 16)` always fails for `0x`-prefixed strings (ref: 07-contract.md §AbiCodec [fix]; implementation shared with R.1.5 HexUtils extraction)
 - [ ] Remove or replace unreachable fallbacks in `encode()` (line 411-412) and `decode()` (line 573-574) with `error("unreachable")` assertions (ref: 07-contract.md §AbiCodec [refactor])
 - [ ] Add `warn()` or strict mode option for `resolveType()` unknown type fallback to felt (ref: 07-contract.md §AbiCodec [refactor])
+- [ ] Fix `AbiCodec.decodeEvent()` silently skipping members when keys/data arrays are shorter than expected — should warn or error (ref: 07-contract.md §AbiCodec [refactor])
+- [ ] Fix `Contract.parseEvents()` silently swallowing decode errors — no logging, callback, or strict-mode option (ref: 07-contract.md §Contract [refactor])
 
 ---
 
@@ -433,6 +461,15 @@ Fix incorrect implementations and correctness issues.
 
 ---
 
+### R.3.9 Fix SponsoredExecutor safeCall() Swallowing Errors
+
+**Description**: `safeCall()` catches callback errors and only calls `warn()`, silently discarding the error. Callers have no way to detect or handle the failure.
+
+**Requirements**:
+- [ ] Fix `safeCall()` to propagate or configurable handler instead of silently swallowing callback errors with `warn()` (ref: 08-paymaster.md §SponsoredExecutor [refactor])
+
+---
+
 ## Phase R4: Performance
 
 Optimization opportunities identified during the audit. All are low priority since the codebase already uses `--!native` and `--!optimize 2` on crypto paths.
@@ -479,6 +516,10 @@ Optimization opportunities identified during the audit. All are low priority sin
 **Requirements**:
 - [ ] Cache `require("@lune/serde")` at module level in PaymasterRpc instead of re-requiring on every `_jsonEncode`/`_jsonDecode` (ref: 08-paymaster.md §PaymasterRpc [perf])
 - [ ] Consider tracking NonceManager `pendingCount` incrementally instead of O(n) table iteration on every `reserve()` (ref: 04-provider.md §NonceManager [refactor])
+- [ ] Fix `OutsideExecution.validateCalls()` normalizing every hex on every comparison — pre-normalize once (ref: 06-wallet.md §OutsideExecution [perf])
+- [ ] Consider lazy selector computation in `AbiCodec.parseAbi()` for large ABIs instead of eager computation (ref: 07-contract.md §AbiCodec [perf])
+- [ ] Cap `SponsoredExecutor` metrics `byContract` and `byMethod` maps — grow unboundedly with no eviction (ref: 08-paymaster.md §SponsoredExecutor [refactor])
+- [ ] Consider caching serialized cache keys or using a cheaper key strategy than `_jsonEncode(params)` on every `fetch()` call (ref: 04-provider.md §RpcProvider [perf])
 
 ---
 
@@ -487,7 +528,16 @@ Optimization opportunities identified during the audit. All are low priority sin
 **Description**: `BigInt.powmod()` uses division-based `mulmod()` instead of Barrett reduction.
 
 **Requirements**:
-- [ ] Add `BigInt.powmodB(a, e, ctx)` so callers outside field modules can use the fast path (ref: 01-crypto.md §BigInt [perf])
+- [ ] Add `BigInt.powmodB(a, e, ctx)` so callers outside field modules can use the fast path (ref: 01-crypto.md §BigInt [perf]; see also R.1.4 for DRY motivation — same work item)
+
+---
+
+### R.4.7 Build _eventsByName Lookup in Contract
+
+**Description**: `hasEvent()` is O(n) linear scan vs O(1) `hasFunction()` because events are keyed by selector hex.
+
+**Requirements**:
+- [ ] Maintain parallel `_eventsByName` lookup table built in `parseAbiEvents()` (ref: 07-contract.md §Contract [refactor])
 
 ---
 
@@ -509,6 +559,14 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 - [ ] Test `Contract:call()` blockId parameter (never exercised) (ref: 12-tests.md §contract [test])
 - [ ] Test `toRpcResourceBounds()` dropping `l1DataGas` (ref: 12-tests.md §tx [fix])
 - [ ] Test `skipValidate=false` in execute/deploy (ref: 12-tests.md §tx [test])
+- [ ] Test `CallData.encodeMulticall()` with malformed Call objects (missing fields, wrong types) (ref: 05-tx.md §CallData [test])
+- [ ] Test `queryEvents` continuation_token passthrough (ref: 12-tests.md §contract [test])
+- [ ] Test interface ABI parsing (nested `items` extraction) (ref: 12-tests.md §contract [test])
+- [ ] Test `AbiCodec.decodeEvent()` directly (currently only tested indirectly through Contract) (ref: 12-tests.md §contract [test])
+- [ ] Test `AbiCodec.resolveType()` fallback with unknown type names (ref: 07-contract.md §AbiCodec [test])
+- [ ] Test `PaymasterBudget` with NaN input values (ref: 12-tests.md §paymaster [test])
+- [ ] Test `PaymasterRpc` rate limiter timeout branch (never triggered in current tests) (ref: 12-tests.md §paymaster [test])
+- [ ] Test `estimateMessageFee` priority classification in RequestQueue (ref: 12-tests.md §provider [test])
 
 ---
 
@@ -530,6 +588,7 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 - [ ] Add code uniqueness assertion (no duplicate numeric codes) (ref: 02-errors.md §ErrorCodes [test])
 - [ ] Add `tostring` tests for `ValidationError`, `AbiError`, `TransactionError` subtypes (ref: 02-errors.md §StarknetError [test])
 - [ ] Add negative test for `isStarknetError` with table that has `_type`+`message` but no `is` function (ref: 02-errors.md §StarknetError [test])
+- [ ] Add test for `:is()` with manually-constructed object whose `_type` is not in `TYPE_HIERARCHY` (ref: 02-errors.md §StarknetError [test])
 - [ ] Update constants.spec.luau completeness test to include `ANY_CALLER`, `ARGENT_ACCOUNT_CLASS_HASH`, `BRAAVOS_ACCOUNT_CLASS_HASH`, `BRAAVOS_BASE_ACCOUNT_CLASS_HASH` (ref: 09-root.md §constant tests [test])
 
 ---
@@ -548,6 +607,8 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 - [ ] Test `signRaw(BigInt.zero())` and `signRaw(BigInt.fromHex(N_hex))` for extreme hash values (ref: 03-signer.md §StarkSigner [test])
 - [ ] Add more Pedersen hash vectors (only 5 explicit tests currently) (ref: 01-crypto.md §Pedersen [test])
 - [ ] Test `hashMany` with larger inputs (8+, 16+, 100+ elements) for Poseidon sponge padding (ref: 01-crypto.md §Poseidon [test])
+- [ ] Add TransactionHash fuzz/property test for hash determinism (same inputs → same output) (ref: 05-tx.md §TransactionHash [test])
+- [ ] Add integration tests between crypto modules (e.g., Poseidon→StarkField→BigInt pipeline, ECDSA→StarkCurve→StarkScalarField pipeline) (ref: 12-tests.md §crypto [test])
 
 ---
 
@@ -560,6 +621,9 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 - [ ] Add Braavos account type test in factory tests (ref: 06-wallet.md §AccountFactory [test])
 - [ ] Test `parseEvents()` hex normalization mismatch and silent decode failure path (ref: 07-contract.md §Contract [test])
 - [ ] Test deeply nested recursive types in AbiCodec (`Array<Array<struct>>`, `Option<Option<felt252>>`) (ref: 07-contract.md §AbiCodec [test])
+- [ ] Test OutsideExecution `INTERFACE_ID_V1`/`INTERFACE_ID_V2` exposed constants (ref: 12-tests.md §wallet [test])
+- [ ] Test Contract dynamic dispatch with trailing options table that conflicts with struct input (ref: 07-contract.md §Contract [test])
+- [ ] Test TypedData `getDependencies` indirect cycle detection, ByteArray 31-byte boundary, negative i128 assertion (ref: 12-tests.md §wallet [test])
 
 ---
 
@@ -568,6 +632,22 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 **Requirements**:
 - [ ] Reduce redundant address computation tests (same 3 vectors verified in 4+ test files) (ref: 06-wallet.md §17)
 - [ ] Move 4 `MockPromise.all` tests from BatchDeploy.spec to `tests/helpers/MockPromise.spec.luau` (ref: 12-tests.md §wallet [test])
+- [ ] Fix 5 phantom module name spec files (describe blocks reference wrong module names) (ref: 12-tests.md §cross-cutting)
+- [ ] Centralize test vectors — currently only consumed by `cross-reference.spec` while all other 40 specs hardcode vectors inline (ref: 12-tests.md §test-vectors [test])
+- [ ] Add centralized vectors for SHA-256, StarkScalarField, StarkSigner, TypedData, AbiCodec, DeployAccountHash (ref: 12-tests.md §test-vectors [test])
+- [ ] Add commit hashes or version tags to cited test vector sources (ref: 12-tests.md §test-vectors [test])
+
+---
+
+### R.5.8 Test Framework Improvements
+
+**Description**: The test runner (`run.luau`) lacks standard test infrastructure features that would improve test reliability and developer experience.
+
+**Requirements**:
+- [ ] Consider adding `beforeEach`/`afterEach` hooks for test isolation (ref: 12-tests.md §run.luau [test])
+- [ ] Consider adding per-test timeouts to catch infinite loops (ref: 12-tests.md §run.luau [test])
+- [ ] Consider parallel test execution for faster CI (ref: 12-tests.md §run.luau [test])
+- [ ] Consider adding `finally()`, `cancel()`, `race()`, `allSettled()` to MockPromise for completeness (low priority — none currently used in production) (ref: 12-tests.md §MockPromise [test])
 
 ---
 
@@ -601,6 +681,7 @@ Fix inaccurate documentation, fill coverage gaps, and update stale content.
 - [ ] Fix CHANGELOG "Known Limitations" — remove false claims about missing DEPLOY_ACCOUNT and paymaster support (ref: 11-docs.md §CHANGELOG.md)
 - [ ] Add CHANGELOG entries for all missing implemented modules: paymaster/, deploy account, AccountType, AccountFactory, BatchDeploy, prefunding, OutsideExecution, ContractEvents, etc. (ref: 11-docs.md §CHANGELOG.md)
 - [ ] Fix API naming mismatches between roadmap and code (ref: 11-docs.md §ROADMAP.md)
+- [ ] Resolve test count contradiction between 12-tests.md (1926) and 11-docs.md (~2,075+) — re-count with `make test` and update both docs (ref: 14-cross-cutting.md §11)
 
 ---
 
@@ -626,6 +707,8 @@ Fix inaccurate documentation, fill coverage gaps, and update stale content.
 - [ ] Add `src/errors/`, `src/paymaster/`, `src/constants.luau` to project structure diagram (ref: 13-config-build.md §README [refactor])
 - [ ] Add feature highlights for SNIP-9/12/29, paymaster, deploy, events, queue/cache/nonce (ref: 13-config-build.md §README)
 - [ ] Consider adding test count badge (ref: 13-config-build.md §README)
+- [ ] Add quick-start require path note for pesde users (`roblox_packages` vs `Packages` path difference) (ref: 13-config-build.md §README)
+- [ ] Add required Rokit version or tool prerequisites to README (ref: 13-config-build.md §fresh clone experience)
 
 ---
 
@@ -638,6 +721,39 @@ Fix inaccurate documentation, fill coverage gaps, and update stale content.
 - [ ] Create `deploy-account.luau` — create and deploy a new player account on-chain (ref: 10-examples.md §feature coverage gaps)
 - [ ] Create `event-listener.luau` — poll for on-chain events and react in-game (ref: 10-examples.md §feature coverage gaps)
 - [ ] Create `error-handling.luau` — demonstrate StarknetError types, `:is()` checks, recovery patterns (ref: 10-examples.md §feature coverage gaps)
+- [ ] Create `batch-onboarding.luau` — batch account creation using AccountFactory (ref: 10-examples.md §feature coverage gaps [doc])
+- [ ] Create `typed-data.luau` — SNIP-12 TypedData signing example (ref: 10-examples.md §feature coverage gaps [doc])
+- [ ] Create `outside-execution.luau` — SNIP-9 Outside Execution example (ref: 10-examples.md §feature coverage gaps [doc])
+- [ ] Create `provider-features.luau` — RequestQueue, ResponseCache, NonceManager configuration example (ref: 10-examples.md §feature coverage gaps [doc])
+- [ ] Fix `read-contract.luau` missing `:catch()` on metadata calls and missing module return (ref: 10-examples.md §read-contract [doc])
+- [ ] Polish existing examples — add missing annotations and pedagogical improvements:
+  - [ ] `leaderboard.luau`: note single contract instance suffices for read+write; add u128 score overflow warning (>2^53) (ref: 10-examples.md §leaderboard [doc])
+  - [ ] `multicall.luau`: annotate `feeMultiplier = 1.5` as default or use non-default value (ref: 10-examples.md §multicall [doc])
+  - [ ] `nft-gate.luau`: add `:expect()` thread-blocking comment; use placeholder address instead of hardcoded (ref: 10-examples.md §nft-gate [doc])
+  - [ ] `read-contract.luau`: add human-readable balance formatting (divide by 10^18) (ref: 10-examples.md §read-contract [doc])
+  - [ ] `send-transaction.luau`: annotate `retryInterval = 5` as default; add f64 precision warning for large balances (ref: 10-examples.md §send-transaction [doc])
+  - [ ] Cross-cutting: standardize module return pattern across all examples (ref: 10-examples.md §cross-cutting [doc])
+  - [ ] Cross-cutting: retrofit structured error handling (`:is()`, error codes) in existing examples (ref: 10-examples.md §cross-cutting [doc])
+  - [ ] Cross-cutting: explicitly state Roblox-only runtime in examples documentation (ref: 10-examples.md §cross-cutting [doc])
+
+---
+
+### R.6.6 Add Missing Code-Level Documentation
+
+**Description**: Several design decisions, intentional omissions, and known Luau limitations are undocumented in source code, making the codebase harder to reason about for contributors.
+
+**Requirements**:
+- [ ] Document intentional `sqrt()` omission in `StarkScalarField` — scalar field does not need square roots (ref: 01-crypto.md §StarkScalarField [api])
+- [ ] Document `StarkCurve` Jacobian identity convention `{ x = one(), y = one(), z = zero() }` (ref: 01-crypto.md §StarkCurve [type])
+- [ ] Document intentional redundant private key validation between `StarkSigner` and `ECDSA` (defense-in-depth) (ref: 03-signer.md §StarkSigner [refactor])
+- [ ] Document `StarkSigner.getPubKey()` returning full `AffinePoint` — note that `getPublicKeyHex()` is preferred for most uses (ref: 03-signer.md §StarkSigner [api])
+- [ ] Document intentional omission of `getPrivateKeyHex()` accessor on StarkSigner (ref: 03-signer.md §StarkSigner [api])
+- [ ] Document `ResponseCache.getTTLForMethod()` returning nil for unknown methods as intentional (ref: 04-provider.md §ResponseCache [refactor])
+- [ ] Document `TransactionBuilder.skipValidate` default of `true` explicitly in constructor/type (ref: 05-tx.md §TransactionBuilder [api])
+- [ ] Document `waitForReceipt` 3-layer delegation chain: Account → TransactionBuilder → RpcProvider (ref: 05-tx.md §TransactionBuilder [api], 06-wallet.md §Account [api])
+- [ ] Document `Account.CLASS_HASH_TO_TYPE` keys are manually normalized — implicit contract with `BigInt.toHex()` (ref: 06-wallet.md §Account [type])
+- [ ] Fix `tx/init.luau` module comment — says "V3 INVOKE" but module also handles DEPLOY_ACCOUNT (ref: 05-tx.md §tx/init.luau [doc])
+- [ ] Add class-level doc comment to `Contract.luau` (ref: 07-contract.md §Contract [doc])
 
 ---
 
@@ -665,6 +781,7 @@ Build system, project files, and configuration improvements.
 - [ ] Add `build: install` dependency to prevent building without Packages (ref: 13-config-build.md §Makefile)
 - [ ] Add `clean` target to remove generated artifacts (ref: 13-config-build.md §Makefile)
 - [ ] Fix `check` target dependency ordering — use `&&` chaining so failures short-circuit (ref: 13-config-build.md §Makefile)
+- [ ] Add convenience targets for common workflows: `test-one` (single spec file), `build-and-test` (ref: 13-config-build.md §Makefile [refactor])
 
 ---
 
@@ -674,6 +791,7 @@ Build system, project files, and configuration improvements.
 - [ ] Remove `ServerPackages` alias from `.luaurc` (directory doesn't exist) (ref: 13-config-build.md §selene/stylua/luaurc)
 - [ ] Remove `daily3014/cryptography` mention from CLAUDE.md (it's not a dependency — only a comment attribution in BigInt.luau) (ref: 13-config-build.md §wally.toml)
 - [ ] Document pesde scope difference (`magic` vs `b-j-roberts`) (ref: 13-config-build.md §wally.toml)
+- [ ] Document dual require pattern (`require(script.X)` in init.luau barrels vs `require("./X")` in source modules) with a comment in each init.luau explaining the convention (ref: 14-cross-cutting.md §8)
 
 ---
 
@@ -689,6 +807,9 @@ Build system, project files, and configuration improvements.
 **Requirements**:
 - [ ] Consider adding Rokit tool caching in CI for faster builds (ref: 13-config-build.md §CI)
 - [ ] Fix release workflow rbxm artifact tree structure (same DataModel root issue) (ref: 13-config-build.md §CI)
+- [ ] Consider CI matrix testing across OS (macOS + Ubuntu) (ref: 13-config-build.md §CI [refactor])
+- [ ] Add Sepolia integration test step to CI (currently not exercised, no env vars configured) (ref: 12-tests.md §sepolia [test])
+- [ ] Expand integration test coverage to include transaction submission, account deployment, event polling, and paymaster flows (ref: 12-tests.md §sepolia [test])
 
 ---
 
@@ -715,6 +836,8 @@ These are feature gaps identified during review, not refactor work. Included for
 **Requirements**:
 - [ ] Add Transfer and Approval event definitions to ERC20_ABI (ref: 07-contract.md §ERC20 [feat], 14-cross-cutting.md §10)
 - [ ] Add Transfer, Approval, and ApprovalForAll event definitions to ERC721_ABI (ref: 07-contract.md §ERC721 [feat])
+- [ ] Add ERC-20 event parsing tests for new Transfer/Approval event definitions (ref: 07-contract.md §ERC20 [test])
+- [ ] Add ERC-721 event parsing tests for new Transfer/Approval/ApprovalForAll event definitions (ref: 07-contract.md §ERC721 [test])
 
 **Implementation Notes**:
 - Data-only change (adding ABI entries) with zero logic changes needed
@@ -726,6 +849,7 @@ These are feature gaps identified during review, not refactor work. Included for
 **Requirements**:
 - [ ] Add `increase_allowance`/`decrease_allowance` (+ camelCase) to ERC20 ABI (ref: 07-contract.md §ERC20 [feat])
 - [ ] Add `safe_transfer_from`, `token_uri`, `supports_interface` (+ camelCase) to ERC721 ABI (ref: 07-contract.md §ERC721 [feat])
+- [ ] Add tests for new ERC-721 functions (`safe_transfer_from`, `token_uri`, `supports_interface`) (ref: 07-contract.md §ERC721 [test])
 
 ---
 
@@ -745,9 +869,26 @@ These are feature gaps identified during review, not refactor work. Included for
 
 ---
 
-### R.F.5 Build _eventsByName Lookup in Contract
+## Appendix: Deferred Low-Priority Items
 
-**Description**: `hasEvent()` is O(n) linear scan vs O(1) `hasFunction()` because events are keyed by selector hex.
+Items identified during review that are intentionally deferred — v2 API design ideas, minor convenience improvements, and observations that are not actionable refactors. Included for completeness and future reference.
 
-**Requirements**:
-- [ ] Maintain parallel `_eventsByName` lookup table built in `parseAbiEvents()` (ref: 07-contract.md §Contract [refactor])
+- [ ] Consider INFINITY sentinel return for `StarkCurve.scalarMul()` edge cases instead of `nil` (ref: 01-crypto.md §StarkCurve — tracked in R.2.5 as consideration)
+- [ ] `tx` namespace name is terse — consider renaming to `transaction` in a future major version (ref: 09-root.md §init.luau [api])
+- [ ] No convenience top-level re-exports from main `init.luau` (e.g., `StarknetLuau.Account` shorthand) (ref: 09-root.md §init.luau [api])
+- [ ] No type re-exports from main `init.luau` (ref: 09-root.md §init.luau [api])
+- [ ] All three V3 version constants have the same value — `TransactionHash.V3_VERSION` should derive from `Constants` (ref: 09-root.md §constants.luau [refactor])
+- [ ] Transaction type prefixes, resource names, and SNIP-9 Interface IDs could be centralized in constants — judgment call on scope (ref: 09-root.md §constants.luau [refactor])
+- [ ] `constants.spec.luau` cross-reference test validates `TransactionHash.SN_MAIN/SN_SEPOLIA` but not `Constants.SN_MAIN/SN_SEPOLIA` (ref: 09-root.md §constant tests [test])
+- [ ] `AvnuPaymaster` has no way to update API key after construction (ref: 08-paymaster.md §AvnuPaymaster [api])
+- [ ] `PaymasterBudget` has no `destroy()` or lifecycle cleanup method (ref: 08-paymaster.md §PaymasterBudget [api])
+- [ ] `SponsoredExecutor` has no getter for inner components (account, paymaster, policy, budget) (ref: 08-paymaster.md §SponsoredExecutor [api])
+- [ ] `SponsoredExecutor` has no way to update `feeMode` after construction (ref: 08-paymaster.md §SponsoredExecutor [api])
+- [ ] `AccountFactory.batchDeploy` uses `Promise.all():expect()` inside `Promise.new()` — synchronous blocking pattern (ref: 06-wallet.md §AccountFactory [api])
+- [ ] `Contract` dynamic dispatch heuristic for detecting options table vs struct input is fragile — marked LOW in source (ref: 07-contract.md §Contract [api])
+- [ ] `ResponseCache.invalidateByPrefix()` is O(n) — noted as acceptable for current cache sizes (ref: 04-provider.md §ResponseCache [refactor])
+- [ ] `Account.getPublicKeyHex()` is a trivial pass-through to signer — document as convenience delegation (ref: 06-wallet.md §Account [api])
+- [ ] `CallData.numberToHex()` uses `StarkField` for a non-field operation — consider standalone impl (ref: 05-tx.md §CallData [api])
+- [ ] Test runner: `run.luau` test-vectors.luau only consumed by cross-reference.spec — 40 other specs hardcode vectors inline (broader than R.5.7 centralization) (ref: 12-tests.md §test-vectors [test])
+- [ ] `getAllEvents()` pagination in RpcProvider duplicates EventPoller pagination logic (ref: 04-provider.md §RpcProvider [refactor])
+- [ ] `RequestQueue.dequeue()` uses `table.remove(_, 1)` which is O(n) — acceptable for current max queue depth of 100 (ref: 04-provider.md §RequestQueue [perf])
