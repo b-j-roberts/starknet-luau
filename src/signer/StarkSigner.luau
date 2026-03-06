@@ -70,7 +70,7 @@ end
 --- @param txHash -- BigInt buffer representing the transaction hash
 --- @return { string } -- array of two hex strings
 function StarkSignerClass:signTransaction(txHash: buffer): { string }
-	local sig = ECDSA.sign(txHash, self._privateKey)
+	local sig = self:signRaw(txHash)
 	return { BigInt.toHex(sig.r), BigInt.toHex(sig.s) }
 end
 

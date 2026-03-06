@@ -54,6 +54,16 @@ function NonceManager.new(provider: any, config: { maxPendingNonces: number?, au
 	return self
 end
 
+--- Internal: Parse a hex nonce string to a number.
+--- Handles "0x1a" hex format, plain decimal strings, and defaults to 0 on failure.
+local function parseNonceHex(nonceHex: string): number
+	local n = tonumber(nonceHex, 16)
+	if not n then
+		n = tonumber(nonceHex) or 0
+	end
+	return n
+end
+
 --- Internal: Count pending nonces for an address state.
 local function countPending(state: NonceState): number
 	local count = 0
@@ -95,11 +105,7 @@ function NonceManager:reserve(address: string): any
 				return
 			end
 
-			local onChainNonce = tonumber(result, 16)
-			if not onChainNonce then
-				-- Try decimal parsing as fallback
-				onChainNonce = tonumber(result) or 0
-			end
+			local onChainNonce = parseNonceHex(result)
 
 			if state and state.dirty then
 				self._metrics.totalResyncs += 1
@@ -149,10 +155,7 @@ function NonceManager:confirm(address: string, nonceHex: string)
 		return
 	end
 
-	local nonce = tonumber(nonceHex, 16)
-	if not nonce then
-		nonce = tonumber(nonceHex) or 0
-	end
+	local nonce = parseNonceHex(nonceHex)
 
 	if state.pending[nonce] then
 		state.pending[nonce] = nil
@@ -168,10 +171,7 @@ function NonceManager:reject(address: string, nonceHex: string)
 		return
 	end
 
-	local nonce = tonumber(nonceHex, 16)
-	if not nonce then
-		nonce = tonumber(nonceHex) or 0
-	end
+	local nonce = parseNonceHex(nonceHex)
 
 	if state.pending[nonce] then
 		state.pending[nonce] = nil
@@ -203,10 +203,7 @@ function NonceManager:resync(address: string): any
 			return
 		end
 
-		local onChainNonce = tonumber(result, 16)
-		if not onChainNonce then
-			onChainNonce = tonumber(result) or 0
-		end
+		local onChainNonce = parseNonceHex(result)
 
 		self._states[address] = {
 			nextNonce = onChainNonce,

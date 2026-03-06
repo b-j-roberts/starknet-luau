@@ -747,8 +747,7 @@ end
 function Account:signMessage(typedData: { [string]: any }): { string }
 	local msgHash = self:hashMessage(typedData)
 	local hashBuf = BigInt.fromHex(msgHash)
-	local sig = self.signer:signRaw(hashBuf)
-	return { BigInt.toHex(sig.r), BigInt.toHex(sig.s) }
+	return self.signer:signTransaction(hashBuf)
 end
 
 --- Get the SNIP-29 DeploymentData for this account.
