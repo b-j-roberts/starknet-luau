@@ -87,14 +87,16 @@ local function computeFeeFieldHash(tip: string, resourceBounds: ResourceBounds):
 end
 
 -- Internal: extract common defaults and compute shared fields for V3 transaction hashes
-local function prepareCommonFields(params: {
-	version: string?,
-	tip: string?,
-	paymasterData: { string }?,
-	nonceDataAvailabilityMode: number?,
-	feeDataAvailabilityMode: number?,
-	resourceBounds: ResourceBounds,
-}): { feeFieldHash: Felt, paymasterHash: Felt, daMode: Felt, versionFelt: Felt }
+local function prepareCommonFields(
+	params: {
+		version: string?,
+		tip: string?,
+		paymasterData: { string }?,
+		nonceDataAvailabilityMode: number?,
+		feeDataAvailabilityMode: number?,
+		resourceBounds: ResourceBounds,
+	}
+): { feeFieldHash: Felt, paymasterHash: Felt, daMode: Felt, versionFelt: Felt }
 	local tip = params.tip or "0x0"
 	local paymasterData = params.paymasterData or {}
 	local nonceDAMode = params.nonceDataAvailabilityMode or 0

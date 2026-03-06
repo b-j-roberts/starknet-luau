@@ -217,15 +217,15 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 **Description**: Several internal patterns within paymaster modules are duplicated.
 
 **Requirements**:
-- [ ] Extract `formatDeploymentData(dd)` helper in PaymasterRpc — eliminates ~17 lines between `buildTypedData` and `executeTransaction` (ref: 08-paymaster.md §PaymasterRpc [refactor])
-- [ ] Extract `normalizeKeys()` helper in PaymasterRpc for repetitive response normalization (ref: 08-paymaster.md §PaymasterRpc [refactor])
-- [ ] Extract shared transaction structure construction between PaymasterRpc `buildTypedData` and `executeTransaction` (envelope construction beyond just deploymentData) (ref: 08-paymaster.md §PaymasterRpc [refactor])
-- [ ] Consolidate `PlayerData`/`UsageStats` identical types in PaymasterBudget (ref: 08-paymaster.md §PaymasterBudget [refactor])
-- [ ] Replace `clonePlayerData()` manual 4-field copy with `table.clone()` (ref: 08-paymaster.md §PaymasterBudget [refactor])
-- [ ] Deduplicate DataStore loading between `_getPlayerData()` and `loadPlayer()` in PaymasterBudget (~15 lines) (ref: 08-paymaster.md §PaymasterBudget [refactor])
-- [ ] Extract config validation helper `validateNonNeg(name, value)` in PaymasterBudget — replaces 6 nearly identical blocks (ref: 08-paymaster.md §PaymasterBudget [refactor])
-- [ ] Fix `flushPlayer()` dirty count recomputation — should decrement, not re-iterate (inconsistent with `unloadPlayer` which already does it correctly) (ref: 08-paymaster.md §PaymasterBudget [refactor])
-- [ ] Deduplicate player whitelist check between `validate()` and `validateFee()` in PaymasterPolicy (ref: 08-paymaster.md §PaymasterPolicy [refactor])
+- [x] Extract `formatDeploymentData(dd)` helper in PaymasterRpc — eliminates ~17 lines between `buildTypedData` and `executeTransaction` (ref: 08-paymaster.md §PaymasterRpc [refactor])
+- [x] Extract `normalizeKeys()` helper in PaymasterRpc for repetitive response normalization (ref: 08-paymaster.md §PaymasterRpc [refactor])
+- [x] Extract shared transaction structure construction between PaymasterRpc `buildTypedData` and `executeTransaction` (envelope construction beyond just deploymentData) (ref: 08-paymaster.md §PaymasterRpc [refactor])
+- [x] Consolidate `PlayerData`/`UsageStats` identical types in PaymasterBudget (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [x] Replace `clonePlayerData()` manual 4-field copy with `table.clone()` (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [x] Deduplicate DataStore loading between `_getPlayerData()` and `loadPlayer()` in PaymasterBudget (~15 lines) (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [x] Extract config validation helper `validateNonNeg(name, value)` in PaymasterBudget — replaces 6 nearly identical blocks (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [x] Fix `flushPlayer()` dirty count recomputation — should decrement, not re-iterate (inconsistent with `unloadPlayer` which already does it correctly) (ref: 08-paymaster.md §PaymasterBudget [refactor])
+- [x] Deduplicate player whitelist check between `validate()` and `validateFee()` in PaymasterPolicy (ref: 08-paymaster.md §PaymasterPolicy [refactor])
 
 ---
 

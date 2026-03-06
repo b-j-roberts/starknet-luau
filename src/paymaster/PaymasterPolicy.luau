@@ -164,6 +164,17 @@ function PaymasterPolicy.new(config: PolicyConfig)
 	return self
 end
 
+--- Check player whitelist. Returns a rejection result if blocked, or nil if allowed.
+function PolicyProto:_checkPlayerWhitelist(playerId: number): ValidationResult?
+	if self._playersRestricted and not self._allowedPlayers[playerId] then
+		return {
+			allowed = false,
+			reason = "Player " .. tostring(playerId) .. " is not in the allowed players list",
+		}
+	end
+	return nil
+end
+
 --- Check if a set of calls is allowed for a given player.
 --- Validates player whitelist, contract whitelist, method whitelist, and rate limits.
 --- Does NOT record usage — call recordUsage() after a successful transaction.
@@ -171,14 +182,9 @@ end
 --- @param calls table — array of Call objects ({ contractAddress, entrypoint, calldata })
 --- @return ValidationResult — { allowed: boolean, reason: string? }
 function PolicyProto:validate(playerId: number, calls: { any }): ValidationResult
-	-- Check player whitelist
-	if self._playersRestricted then
-		if not self._allowedPlayers[playerId] then
-			return {
-				allowed = false,
-				reason = "Player " .. tostring(playerId) .. " is not in the allowed players list",
-			}
-		end
+	local playerCheck = self:_checkPlayerWhitelist(playerId)
+	if playerCheck then
+		return playerCheck
 	end
 
 	-- Require at least one call
@@ -253,14 +259,9 @@ end
 --- @param feeAmount string|buffer — fee amount as hex string or BigInt buffer
 --- @return ValidationResult — { allowed: boolean, reason: string? }
 function PolicyProto:validateFee(playerId: number, feeAmount: string | buffer): ValidationResult
-	-- Check player whitelist
-	if self._playersRestricted then
-		if not self._allowedPlayers[playerId] then
-			return {
-				allowed = false,
-				reason = "Player " .. tostring(playerId) .. " is not in the allowed players list",
-			}
-		end
+	local playerCheck = self:_checkPlayerWhitelist(playerId)
+	if playerCheck then
+		return playerCheck
 	end
 
 	-- Check fee against maxFeePerTx

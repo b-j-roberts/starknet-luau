@@ -36,12 +36,8 @@ export type PlayerData = {
 	lastTxTime: number,
 }
 
-export type UsageStats = {
-	balance: number,
-	totalTxCount: number,
-	totalTokensSpent: number,
-	lastTxTime: number,
-}
+-- UsageStats is identical to PlayerData — kept as an alias for API clarity
+export type UsageStats = PlayerData
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -56,21 +52,34 @@ local function defaultPlayerData(defaultBalance: number): PlayerData
 	}
 end
 
-local function clonePlayerData(data: PlayerData): PlayerData
-	return {
-		balance = data.balance,
-		totalTxCount = data.totalTxCount,
-		totalTokensSpent = data.totalTokensSpent,
-		lastTxTime = data.lastTxTime,
-	}
-end
-
 local function isValidPlayerData(data: any): boolean
 	return type(data) == "table"
 		and type(data.balance) == "number"
 		and type(data.totalTxCount) == "number"
 		and type(data.totalTokensSpent) == "number"
 		and type(data.lastTxTime) == "number"
+end
+
+--- Validate a config field is a number and either non-negative or positive.
+--- @param name string — field name for error messages
+--- @param value any — the value to validate
+--- @param positive boolean? — if true, require > 0; otherwise require >= 0
+local function validateConfigField(name: string, value: any, positive: boolean?): ()
+	if value == nil then
+		return
+	end
+	if positive then
+		if type(value) ~= "number" or value <= 0 then
+			error(StarknetError.validation(name .. " must be a positive number", ErrorCodes.INVALID_ARGUMENT.code))
+		end
+	else
+		if type(value) ~= "number" then
+			error(StarknetError.validation(name .. " must be a number", ErrorCodes.INVALID_ARGUMENT.code))
+		end
+		if value < 0 then
+			error(StarknetError.validation(name .. " must be non-negative", ErrorCodes.INVALID_ARGUMENT.code))
+		end
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -87,53 +96,11 @@ BudgetProto.__index = BudgetProto
 function PaymasterBudget.new(config: BudgetConfig?)
 	local cfg = config or {} :: BudgetConfig
 
-	-- Validate costPerTransaction
-	if cfg.costPerTransaction ~= nil then
-		if type(cfg.costPerTransaction) ~= "number" then
-			error(StarknetError.validation("costPerTransaction must be a number", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-		if cfg.costPerTransaction < 0 then
-			error(StarknetError.validation("costPerTransaction must be non-negative", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-	end
-
-	-- Validate costPerGasUnit
-	if cfg.costPerGasUnit ~= nil then
-		if type(cfg.costPerGasUnit) ~= "number" then
-			error(StarknetError.validation("costPerGasUnit must be a number", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-		if cfg.costPerGasUnit < 0 then
-			error(StarknetError.validation("costPerGasUnit must be non-negative", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-	end
-
-	-- Validate defaultTokenBalance
-	if cfg.defaultTokenBalance ~= nil then
-		if type(cfg.defaultTokenBalance) ~= "number" then
-			error(StarknetError.validation("defaultTokenBalance must be a number", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-		if cfg.defaultTokenBalance < 0 then
-			error(
-				StarknetError.validation("defaultTokenBalance must be non-negative", ErrorCodes.INVALID_ARGUMENT.code)
-			)
-		end
-	end
-
-	-- Validate flushInterval
-	if cfg.flushInterval ~= nil then
-		if type(cfg.flushInterval) ~= "number" or cfg.flushInterval <= 0 then
-			error(StarknetError.validation("flushInterval must be a positive number", ErrorCodes.INVALID_ARGUMENT.code))
-		end
-	end
-
-	-- Validate maxDirtyEntries
-	if cfg.maxDirtyEntries ~= nil then
-		if type(cfg.maxDirtyEntries) ~= "number" or cfg.maxDirtyEntries <= 0 then
-			error(
-				StarknetError.validation("maxDirtyEntries must be a positive number", ErrorCodes.INVALID_ARGUMENT.code)
-			)
-		end
-	end
+	validateConfigField("costPerTransaction", cfg.costPerTransaction)
+	validateConfigField("costPerGasUnit", cfg.costPerGasUnit)
+	validateConfigField("defaultTokenBalance", cfg.defaultTokenBalance)
+	validateConfigField("flushInterval", cfg.flushInterval, true)
+	validateConfigField("maxDirtyEntries", cfg.maxDirtyEntries, true)
 
 	local clock = cfg._clock or os.clock
 
@@ -162,6 +129,24 @@ end
 -- Private: Data access
 --------------------------------------------------------------------------------
 
+--- Load player data from DataStore. Returns the data or nil if unavailable.
+function BudgetProto:_loadFromDataStore(playerId: number): PlayerData?
+	if not self._dataStore then
+		return nil
+	end
+	local key = "player_" .. tostring(playerId)
+	local ok, result = pcall(function()
+		return self._dataStore:GetAsync(key)
+	end)
+	if ok and result ~= nil and isValidPlayerData(result) then
+		return table.clone(result)
+	end
+	if not ok then
+		table.insert(self._flushErrors, "GetAsync failed for player " .. tostring(playerId) .. ": " .. tostring(result))
+	end
+	return nil
+end
+
 --- Get player data from cache, loading from DataStore if needed.
 function BudgetProto:_getPlayerData(playerId: number): PlayerData
 	local cached = self._cache[playerId]
@@ -169,30 +154,7 @@ function BudgetProto:_getPlayerData(playerId: number): PlayerData
 		return cached
 	end
 
-	-- Try loading from DataStore
-	if self._dataStore then
-		local key = "player_" .. tostring(playerId)
-		local ok, result = pcall(function()
-			return self._dataStore:GetAsync(key)
-		end)
-
-		if ok and result ~= nil and isValidPlayerData(result) then
-			local data = clonePlayerData(result)
-			self._cache[playerId] = data
-			return data
-		end
-
-		if not ok then
-			-- Log DataStore error but don't crash — use default data
-			table.insert(
-				self._flushErrors,
-				"GetAsync failed for player " .. tostring(playerId) .. ": " .. tostring(result)
-			)
-		end
-	end
-
-	-- Create default player data
-	local data = defaultPlayerData(self._defaultTokenBalance)
+	local data = self:_loadFromDataStore(playerId) or defaultPlayerData(self._defaultTokenBalance)
 	self._cache[playerId] = data
 	return data
 end
@@ -238,7 +200,7 @@ function BudgetProto:_flushPlayer(playerId: number): ()
 
 	local key = "player_" .. tostring(playerId)
 	local ok, err = pcall(function()
-		self._dataStore:SetAsync(key, clonePlayerData(data))
+		self._dataStore:SetAsync(key, table.clone(data))
 	end)
 
 	if not ok then
@@ -384,15 +346,9 @@ end
 
 --- Get usage statistics for a player.
 --- @param playerId number — Roblox player ID
---- @return UsageStats — { balance, totalTxCount, totalTokensSpent, lastTxTime }
-function BudgetProto:getUsageStats(playerId: number): UsageStats
-	local data = self:_getPlayerData(playerId)
-	return {
-		balance = data.balance,
-		totalTxCount = data.totalTxCount,
-		totalTokensSpent = data.totalTokensSpent,
-		lastTxTime = data.lastTxTime,
-	}
+--- @return PlayerData — { balance, totalTxCount, totalTokensSpent, lastTxTime }
+function BudgetProto:getUsageStats(playerId: number): PlayerData
+	return table.clone(self:_getPlayerData(playerId))
 end
 
 --------------------------------------------------------------------------------
@@ -421,39 +377,21 @@ end
 --- @param playerId number — Roblox player ID
 function BudgetProto:flushPlayer(playerId: number): ()
 	self:_flushPlayer(playerId)
-	self._dirty[playerId] = nil
-	-- Recount dirty entries
-	local count = 0
-	for _ in self._dirty do
-		count += 1
+	if self._dirty[playerId] then
+		self._dirty[playerId] = nil
+		self._dirtyCount = math.max(0, self._dirtyCount - 1)
 	end
-	self._dirtyCount = count
 end
 
 --- Explicitly load a player's data from DataStore into cache.
 --- Useful for pre-loading when a player joins.
 --- @param playerId number — Roblox player ID
 function BudgetProto:loadPlayer(playerId: number): ()
-	-- Force load from DataStore (skip cache)
-	if self._dataStore then
-		local key = "player_" .. tostring(playerId)
-		local ok, result = pcall(function()
-			return self._dataStore:GetAsync(key)
-		end)
-
-		if ok and result ~= nil and isValidPlayerData(result) then
-			self._cache[playerId] = clonePlayerData(result)
-			return
-		end
-
-		if not ok then
-			table.insert(
-				self._flushErrors,
-				"GetAsync failed for player " .. tostring(playerId) .. ": " .. tostring(result)
-			)
-		end
+	local loaded = self:_loadFromDataStore(playerId)
+	if loaded then
+		self._cache[playerId] = loaded
+		return
 	end
-
 	-- No DataStore or no data found — use default if not already cached
 	if not self._cache[playerId] then
 		self._cache[playerId] = defaultPlayerData(self._defaultTokenBalance)

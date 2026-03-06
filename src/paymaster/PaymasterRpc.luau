@@ -128,6 +128,76 @@ export type PaymasterRpc = {
 }
 
 --------------------------------------------------------------------------------
+-- Helpers: shared construction & normalization
+--------------------------------------------------------------------------------
+
+--- Convert SDK DeploymentData into the SNIP-29 wire format.
+local function formatDeploymentData(dd: DeploymentData): any
+	local deployData: any = {
+		class_hash = dd.classHash,
+		constructor_calldata = dd.calldata,
+		salt = dd.salt,
+		unique = if dd.unique ~= nil then dd.unique else false,
+		version = dd.version or 1,
+	}
+	if dd.sigdata then
+		deployData.sigdata = dd.sigdata
+	end
+	return deployData
+end
+
+--- Wrap an invoke body in an INVOKE or DEPLOY_AND_INVOKE envelope.
+--- If opts.deploymentData is present, converts to DEPLOY_AND_INVOKE.
+local function wrapWithDeployment(invokeBody: any, opts: BuildTypedDataOptions?): any
+	local o = opts or {}
+	if o.deploymentData then
+		invokeBody.deployment_data = formatDeploymentData(o.deploymentData)
+		return {
+			type = "DEPLOY_AND_INVOKE",
+			deploy_and_invoke = invokeBody,
+		}
+	end
+	return {
+		type = "INVOKE",
+		invoke = invokeBody,
+	}
+end
+
+--- Build SNIP-29 fee parameters.
+--- Nil or "0x0" or "" gasTokenAddress → sponsored mode; otherwise default mode.
+local function buildParameters(gasTokenAddress: string?): any
+	local parameters: any = { version = "0x1" }
+	if not gasTokenAddress or gasTokenAddress == "0x0" or gasTokenAddress == "" then
+		parameters.fee_mode = { mode = "sponsored" }
+	else
+		parameters.fee_mode = { mode = "default", gas_token = gasTokenAddress }
+	end
+	return parameters
+end
+
+--- Normalize a response table from snake_case to camelCase using a key map.
+--- keyMap: { camelKey = "snake_key" }
+local function normalizeKeys(raw: any, keyMap: { [string]: string }): { [string]: any }
+	local result: { [string]: any } = {}
+	for camelKey, snakeKey in keyMap do
+		result[camelKey] = raw[snakeKey] or raw[camelKey]
+	end
+	return result
+end
+
+-- Response normalization key maps
+local FEE_ESTIMATE_KEYS = {
+	gasTokenPrice = "gas_token_price",
+	estimatedFeeInStrk = "estimated_fee_in_strk",
+	estimatedFeeInGasToken = "estimated_fee_in_gas_token",
+	suggestedMaxFeeInStrk = "suggested_max_fee_in_strk",
+	suggestedMaxFeeInGasToken = "suggested_max_fee_in_gas_token",
+}
+local BUILD_RESULT_KEYS = { typedData = "typed_data", deploymentData = "deployment_data" }
+local EXECUTE_RESULT_KEYS = { trackingId = "tracking_id", transactionHash = "transaction_hash" }
+local TRACKING_RESULT_KEYS = { transactionHash = "transaction_hash", status = "status" }
+
+--------------------------------------------------------------------------------
 -- SNIP-29 paymaster JSON-RPC error code mapping
 --------------------------------------------------------------------------------
 
@@ -303,82 +373,24 @@ function PaymasterRpcClass:buildTypedData(
 		})
 	end
 
-	local transaction: any = {
-		type = "INVOKE",
-		invoke = {
-			user_address = userAddress,
-			calls = formattedCalls,
-		},
-	}
-
-	-- Include deployment data if provided (deploy-via-paymaster)
 	local opts = options or {}
-	if opts.deploymentData then
-		local dd = opts.deploymentData
-		local deployData: any = {
-			class_hash = dd.classHash,
-			constructor_calldata = dd.calldata,
-			salt = dd.salt,
-			unique = if dd.unique ~= nil then dd.unique else false,
-			version = dd.version or 1,
-		}
-		if dd.sigdata then
-			deployData.sigdata = dd.sigdata
-		end
-
-		transaction = {
-			type = "DEPLOY_AND_INVOKE",
-			deploy_and_invoke = {
-				user_address = userAddress,
-				calls = formattedCalls,
-				deployment_data = deployData,
-			},
-		}
-	elseif opts.accountClassHash then
-		-- When accountClassHash is provided without full deploymentData, pass it
-		-- in the deploy_and_invoke variant for the paymaster to use
-		transaction.invoke.account_class_hash = opts.accountClassHash
-	end
-
-	-- Build SNIP-29 "parameters"
-	local parameters: any = {
-		version = "0x1",
-		fee_mode = {
-			mode = "default",
-			gas_token = gasTokenAddress,
-		},
-	}
-
-	-- Sponsored mode: gasTokenAddress "0x0" signals sponsored
-	if gasTokenAddress == "0x0" or gasTokenAddress == "" then
-		parameters.fee_mode = {
-			mode = "sponsored",
-		}
+	local invokeBody: any = { user_address = userAddress, calls = formattedCalls }
+	if opts.accountClassHash and not opts.deploymentData then
+		invokeBody.account_class_hash = opts.accountClassHash
 	end
 
 	local rpcParams = {
-		transaction,
-		parameters,
+		wrapWithDeployment(invokeBody, opts),
+		buildParameters(gasTokenAddress),
 	}
 
 	return self:fetch("paymaster_buildTypedData", rpcParams):andThen(function(result: any)
-		-- Normalize response
-		local buildResult: BuildTypedDataResult = {
-			typedData = result.typed_data or result.typedData,
-			feeEstimate = nil,
-			deploymentData = result.deployment_data or result.deploymentData,
-		}
+		local buildResult: BuildTypedDataResult = normalizeKeys(result, BUILD_RESULT_KEYS) :: any
+		buildResult.feeEstimate = nil
 
-		-- Parse fee estimate if present
 		local rawFee = result.fee_estimate or result.feeEstimate
 		if rawFee then
-			buildResult.feeEstimate = {
-				gasTokenPrice = rawFee.gas_token_price or rawFee.gasTokenPrice,
-				estimatedFeeInStrk = rawFee.estimated_fee_in_strk or rawFee.estimatedFeeInStrk,
-				estimatedFeeInGasToken = rawFee.estimated_fee_in_gas_token or rawFee.estimatedFeeInGasToken,
-				suggestedMaxFeeInStrk = rawFee.suggested_max_fee_in_strk or rawFee.suggestedMaxFeeInStrk,
-				suggestedMaxFeeInGasToken = rawFee.suggested_max_fee_in_gas_token or rawFee.suggestedMaxFeeInGasToken,
-			}
+			buildResult.feeEstimate = normalizeKeys(rawFee, FEE_ESTIMATE_KEYS) :: FeeEstimate
 		end
 
 		return buildResult
@@ -397,60 +409,19 @@ function PaymasterRpcClass:executeTransaction(
 	signature: { string },
 	options: BuildTypedDataOptions?
 ): any
-	-- Build the SNIP-29 "transaction" parameter for execution
-	local transaction: any = {
-		type = "INVOKE",
-		invoke = {
-			user_address = userAddress,
-			typed_data = typedData,
-			signature = signature,
-		},
-	}
-
-	-- Include deployment data if provided
-	local opts = options or {}
-	if opts.deploymentData then
-		local dd = opts.deploymentData
-		local deployData: any = {
-			class_hash = dd.classHash,
-			constructor_calldata = dd.calldata,
-			salt = dd.salt,
-			unique = if dd.unique ~= nil then dd.unique else false,
-			version = dd.version or 1,
-		}
-		if dd.sigdata then
-			deployData.sigdata = dd.sigdata
-		end
-
-		transaction = {
-			type = "DEPLOY_AND_INVOKE",
-			deploy_and_invoke = {
-				user_address = userAddress,
-				typed_data = typedData,
-				signature = signature,
-				deployment_data = deployData,
-			},
-		}
-	end
-
-	-- Parameters
-	local parameters: any = {
-		version = "0x1",
-		fee_mode = {
-			mode = "sponsored",
-		},
+	local invokeBody: any = {
+		user_address = userAddress,
+		typed_data = typedData,
+		signature = signature,
 	}
 
 	local rpcParams = {
-		transaction,
-		parameters,
+		wrapWithDeployment(invokeBody, options),
+		buildParameters(), -- always sponsored for execution
 	}
 
 	return self:fetch("paymaster_executeTransaction", rpcParams):andThen(function(result: any)
-		return {
-			trackingId = result.tracking_id or result.trackingId,
-			transactionHash = result.transaction_hash or result.transactionHash,
-		} :: ExecuteResult
+		return normalizeKeys(result, EXECUTE_RESULT_KEYS) :: ExecuteResult
 	end)
 end
 
@@ -459,10 +430,9 @@ end
 --- @return Promise<TrackingResult>
 function PaymasterRpcClass:trackingIdToLatestHash(trackingId: string): any
 	return self:fetch("paymaster_trackingIdToLatestHash", { trackingId }):andThen(function(result: any)
-		return {
-			transactionHash = result.transaction_hash or result.transactionHash,
-			status = result.status or "active",
-		} :: TrackingResult
+		local trackResult = normalizeKeys(result, TRACKING_RESULT_KEYS)
+		trackResult.status = trackResult.status or "active"
+		return trackResult :: TrackingResult
 	end)
 end
 

@@ -176,11 +176,7 @@ end
 --- Resolve an ABI function by name, validate args, and encode calldata.
 --- Shared by call() and populate() to eliminate duplicated lookup/validation/encoding.
 --- Returns (parsedFunction, encodedCalldata).
-local function resolveAndEncode(
-	self_: any,
-	method: string,
-	args: { any }?
-): (ParsedFunction, { string })
+local function resolveAndEncode(self_: any, method: string, args: { any }?): (ParsedFunction, { string })
 	local functions: { [string]: ParsedFunction } = self_._functions
 	local fn = functions[method]
 	if not fn then
