@@ -530,7 +530,7 @@ local TYPE_ENCODERS: { [string]: TypeEncoder } = {
 		return typeName, getHex(data)
 	end,
 
-	merkletree = function(types, typeName, data, ctx, rev)
+	merkletree = function(types, _typeName, data, ctx, rev)
 		local merkleType = getMerkleTreeType(types, ctx)
 		local structHashes: { string } = {}
 		for _, item in data :: { any } do

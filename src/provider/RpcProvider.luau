@@ -23,7 +23,10 @@ export type RpcProvider = {
 		transactions: { RpcTypes.InvokeTransactionV3 },
 		simulationFlags: { string }?
 	) -> RpcTypes.Promise<{ RpcTypes.FeeEstimate }>,
-	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> RpcTypes.Promise<RpcTypes.InvokeResult>,
+	addInvokeTransaction: (
+		self: RpcProvider,
+		invokeTx: RpcTypes.InvokeTransactionV3
+	) -> RpcTypes.Promise<RpcTypes.InvokeResult>,
 	addDeployAccountTransaction: (
 		self: RpcProvider,
 		deployTx: RpcTypes.DeployAccountTransactionV3
