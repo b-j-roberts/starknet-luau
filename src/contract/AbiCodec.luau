@@ -12,6 +12,14 @@ local ErrorCodes = StarknetError.ErrorCodes
 
 local AbiCodec = {}
 
+--- Append all elements from source array to target array using table.move.
+--- Replaces repeated `for _, v in encoded do table.insert(target, v) end` loops.
+local function appendAll(target: { string }, source: { string })
+	if #source > 0 then
+		table.move(source, 1, #source, #target + 1, target)
+	end
+end
+
 --------------------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------------------
@@ -279,11 +287,7 @@ function AbiCodec.encode(value: any, typeName: string, typeMap: TypeMap): { stri
 		local members = typeDef.members or {}
 		local result: { string } = {}
 		for _, member in members do
-			local memberValue = (value :: any)[member.name]
-			local encoded = AbiCodec.encode(memberValue, member.type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode((value :: any)[member.name], member.type, typeMap))
 		end
 		return result
 	elseif kind == "enum" then
@@ -297,10 +301,7 @@ function AbiCodec.encode(value: any, typeName: string, typeMap: TypeMap): { stri
 		table.insert(result, string.format("0x%x", #arr))
 		-- Encode each element
 		for _, elem in arr do
-			local encoded = AbiCodec.encode(elem, elementType, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(elem, elementType, typeMap))
 		end
 		return result
 	elseif kind == "tuple" then
@@ -308,10 +309,7 @@ function AbiCodec.encode(value: any, typeName: string, typeMap: TypeMap): { stri
 		local arr = value :: { any }
 		local result: { string } = {}
 		for i, elemType in tupleTypes do
-			local encoded = AbiCodec.encode(arr[i], elemType, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(arr[i], elemType, typeMap))
 		end
 		return result
 	end
@@ -335,40 +333,27 @@ function AbiCodec.encodeEnum(value: any, variants: { { name: string, type: strin
 	if isOption then
 		-- Accept { Some = val } or { None = true } or nil
 		if value == nil then
-			-- None variant (index 1)
 			local result: { string } = { "0x1" }
-			local encoded = AbiCodec.encode(nil, variants[2].type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(nil, variants[2].type, typeMap))
 			return result
 		end
 
 		local tbl = value :: any
 		if type(tbl) == "table" and tbl.None ~= nil then
 			local result: { string } = { "0x1" }
-			local encoded = AbiCodec.encode(nil, variants[2].type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(nil, variants[2].type, typeMap))
 			return result
 		end
 
 		if type(tbl) == "table" and tbl.Some ~= nil then
 			local result: { string } = { "0x0" }
-			local encoded = AbiCodec.encode(tbl.Some, variants[1].type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(tbl.Some, variants[1].type, typeMap))
 			return result
 		end
 
 		-- Bare value → treat as Some
 		local result: { string } = { "0x0" }
-		local encoded = AbiCodec.encode(value, variants[1].type, typeMap)
-		for _, felt in encoded do
-			table.insert(result, felt)
-		end
+		appendAll(result, AbiCodec.encode(value, variants[1].type, typeMap))
 		return result
 	end
 
@@ -376,17 +361,11 @@ function AbiCodec.encodeEnum(value: any, variants: { { name: string, type: strin
 		local tbl = value :: any
 		if type(tbl) == "table" and tbl.Ok ~= nil then
 			local result: { string } = { "0x0" }
-			local encoded = AbiCodec.encode(tbl.Ok, variants[1].type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(tbl.Ok, variants[1].type, typeMap))
 			return result
 		elseif type(tbl) == "table" and tbl.Err ~= nil then
 			local result: { string } = { "0x1" }
-			local encoded = AbiCodec.encode(tbl.Err, variants[2].type, typeMap)
-			for _, felt in encoded do
-				table.insert(result, felt)
-			end
+			appendAll(result, AbiCodec.encode(tbl.Err, variants[2].type, typeMap))
 			return result
 		end
 		error(StarknetError.abi("AbiCodec: Result value must have Ok or Err key", ErrorCodes.ENCODE_ERROR.code))
@@ -398,11 +377,7 @@ function AbiCodec.encodeEnum(value: any, variants: { { name: string, type: strin
 		for i, variant in variants do
 			if variant.name == tbl.variant then
 				local result: { string } = { string.format("0x%x", i - 1) }
-				local variantData = tbl.value
-				local encoded = AbiCodec.encode(variantData, variant.type, typeMap)
-				for _, felt in encoded do
-					table.insert(result, felt)
-				end
+				appendAll(result, AbiCodec.encode(tbl.value, variant.type, typeMap))
 				return result
 			end
 		end
@@ -515,10 +490,7 @@ end
 function AbiCodec.encodeInputs(args: { any }, inputs: { { name: string, type: string } }, typeMap: TypeMap): { string }
 	local calldata: { string } = {}
 	for i, input in inputs do
-		local encoded = AbiCodec.encode(args[i], input.type, typeMap)
-		for _, felt in encoded do
-			table.insert(calldata, felt)
-		end
+		appendAll(calldata, AbiCodec.encode(args[i], input.type, typeMap))
 	end
 	return calldata
 end

@@ -170,6 +170,41 @@ end
 -- NOTE: Type encoding/decoding is now handled by AbiCodec module
 
 --------------------------------------------------------------------------------
+-- Internal helpers
+--------------------------------------------------------------------------------
+
+--- Resolve an ABI function by name, validate args, and encode calldata.
+--- Shared by call() and populate() to eliminate duplicated lookup/validation/encoding.
+--- Returns (parsedFunction, encodedCalldata).
+local function resolveAndEncode(
+	self_: any,
+	method: string,
+	args: { any }?
+): (ParsedFunction, { string })
+	local functions: { [string]: ParsedFunction } = self_._functions
+	local fn = functions[method]
+	if not fn then
+		error(StarknetError.abi(`Contract: function "{method}" not found in ABI`, ErrorCodes.FUNCTION_NOT_FOUND.code))
+	end
+
+	local callArgs = args or {}
+	local inputs = fn.inputs
+	local typeMap: AbiCodec.TypeMap = self_._typeMap
+
+	if #callArgs ~= #inputs then
+		error(
+			StarknetError.abi(
+				`Contract: {method} expects {#inputs} arguments, got {#callArgs}`,
+				ErrorCodes.ARGUMENT_COUNT.code
+			)
+		)
+	end
+
+	local calldata = AbiCodec.encodeInputs(callArgs, inputs, typeMap)
+	return fn, calldata
+end
+
+--------------------------------------------------------------------------------
 -- Contract class
 --------------------------------------------------------------------------------
 
@@ -265,29 +300,9 @@ end
 --- @return Promise resolving to parsed result
 function Contract:call(method: string, args: { any }?, blockId: string?): any
 	local self_: any = self
-	local functions: { [string]: ParsedFunction } = self_._functions
-	local fn = functions[method]
-	if not fn then
-		error(StarknetError.abi(`Contract: function "{method}" not found in ABI`, ErrorCodes.FUNCTION_NOT_FOUND.code))
-	end
-
-	local callArgs = args or {}
-	local inputs = fn.inputs
+	local fn, calldata = resolveAndEncode(self_, method, args)
 	local typeMap: AbiCodec.TypeMap = self_._typeMap
 
-	if #callArgs ~= #inputs then
-		error(
-			StarknetError.abi(
-				`Contract: {method} expects {#inputs} arguments, got {#callArgs}`,
-				ErrorCodes.ARGUMENT_COUNT.code
-			)
-		)
-	end
-
-	-- Encode calldata via AbiCodec
-	local calldata = AbiCodec.encodeInputs(callArgs, inputs, typeMap)
-
-	-- Build the RPC call request
 	local request = {
 		contract_address = self_.address,
 		entry_point_selector = fn.selector,
@@ -295,8 +310,6 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 	}
 
 	local provider: any = self_._provider
-
-	-- Call provider and parse result via AbiCodec
 	return provider:call(request, blockId):andThen(function(results: { string })
 		return AbiCodec.decodeOutputs(results, fn.outputs, typeMap)
 	end)
@@ -308,27 +321,7 @@ end
 --- @return Call object { contractAddress, entrypoint, calldata }
 function Contract:populate(method: string, args: { any }?): Call
 	local self_: any = self
-	local functions: { [string]: ParsedFunction } = self_._functions
-	local fn = functions[method]
-	if not fn then
-		error(StarknetError.abi(`Contract: function "{method}" not found in ABI`, ErrorCodes.FUNCTION_NOT_FOUND.code))
-	end
-
-	local callArgs = args or {}
-	local inputs = fn.inputs
-	local typeMap: AbiCodec.TypeMap = self_._typeMap
-
-	if #callArgs ~= #inputs then
-		error(
-			StarknetError.abi(
-				`Contract: {method} expects {#inputs} arguments, got {#callArgs}`,
-				ErrorCodes.ARGUMENT_COUNT.code
-			)
-		)
-	end
-
-	-- Encode calldata via AbiCodec
-	local calldata = AbiCodec.encodeInputs(callArgs, inputs, typeMap)
+	local _, calldata = resolveAndEncode(self_, method, args)
 
 	return {
 		contractAddress = self_.address,

@@ -4,8 +4,7 @@
 -- Provides both snake_case (Cairo standard) and camelCase method names.
 
 local Contract = require("./Contract")
-local StarknetError = require("../errors/StarknetError")
-local ErrorCodes = StarknetError.ErrorCodes
+local PresetFactory = require("./PresetFactory")
 
 --------------------------------------------------------------------------------
 -- Standard OpenZeppelin Cairo ERC-721 ABI
@@ -170,36 +169,4 @@ local ERC721_ABI: Contract.Abi = {
 	},
 }
 
---------------------------------------------------------------------------------
--- ERC721 module
---------------------------------------------------------------------------------
-
-local ERC721 = {}
-
---- Create a new ERC-721 contract instance with built-in ABI.
---- @param address -- hex contract address
---- @param provider -- RpcProvider instance
---- @param account -- optional Account for write operations
---- @return Contract instance with ERC-721 ABI
-function ERC721.new(address: string, provider: any, account: any?): any
-	if not address then
-		error(StarknetError.validation("ERC721: address is required", ErrorCodes.REQUIRED_FIELD.code))
-	end
-	if not provider then
-		error(StarknetError.validation("ERC721: provider is required", ErrorCodes.REQUIRED_FIELD.code))
-	end
-
-	return Contract.new({
-		abi = ERC721_ABI,
-		address = address,
-		provider = provider,
-		account = account,
-	})
-end
-
---- Get the built-in ERC-721 ABI.
-function ERC721.getAbi(): Contract.Abi
-	return ERC721_ABI
-end
-
-return ERC721
+return PresetFactory.create(ERC721_ABI)

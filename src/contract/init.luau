@@ -5,4 +5,5 @@ return {
 	Contract = require(script.Contract),
 	ERC20 = require(script.ERC20),
 	ERC721 = require(script.ERC721),
+	PresetFactory = require(script.PresetFactory),
 }
