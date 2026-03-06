@@ -28,25 +28,13 @@ ErrorProto.__index = ErrorProto
 --- Check if this error is of the given type (including parent types).
 --- e.g. an RpcError:is("RpcError") → true, :is("StarknetError") → true
 function ErrorProto:is(errorType: string): boolean
-	if self._type == errorType then
-		return true
-	end
-	local parents = TYPE_HIERARCHY[self._type]
-	if parents then
-		for _, parent in parents do
-			if parent == errorType then
-				return true
-			end
-			-- Check grandparents
-			local grandparents = TYPE_HIERARCHY[parent]
-			if grandparents then
-				for _, gp in grandparents do
-					if gp == errorType then
-						return true
-					end
-				end
-			end
+	local current = self._type
+	while current do
+		if current == errorType then
+			return true
 		end
+		local parents = TYPE_HIERARCHY[current]
+		current = if parents then parents[1] else nil
 	end
 	return false
 end
@@ -68,86 +56,41 @@ local StarknetError = {}
 --- Re-export ErrorCodes for convenience
 StarknetError.ErrorCodes = ErrorCodes
 
+--------------------------------------------------------------------------------
+-- Internal helper: creates an error table with the given type and fields
+--------------------------------------------------------------------------------
+
+local function createError(errorType: string, fields: { [string]: any }): any
+	fields._type = errorType
+	return setmetatable(fields, ErrorProto)
+end
+
 --- Create a base StarknetError.
---- @param message -- human-readable error message
---- @param code -- optional numeric error code (from ErrorCodes)
---- @param data -- optional arbitrary data payload
 function StarknetError.new(message: string, code: number?, data: any?): any
-	local err = setmetatable({
-		_type = "StarknetError",
-		message = message,
-		code = code,
-		data = data,
-	}, ErrorProto)
-	return err
+	return createError("StarknetError", { message = message, code = code, data = data })
 end
 
 --- Create an RpcError (network / JSON-RPC errors).
---- @param message -- human-readable error message
---- @param sdkCode -- optional SDK error code (from ErrorCodes)
---- @param rpcCode -- optional JSON-RPC error code from the node
---- @param data -- optional arbitrary data payload
 function StarknetError.rpc(message: string, sdkCode: number?, rpcCode: number?, data: any?): any
-	local err = setmetatable({
-		_type = "RpcError",
-		message = message,
-		code = sdkCode,
-		rpcCode = rpcCode,
-		data = data,
-	}, ErrorProto)
-	return err
+	return createError("RpcError", { message = message, code = sdkCode, rpcCode = rpcCode, data = data })
 end
 
 --- Create a SigningError (ECDSA / key errors).
---- @param message -- human-readable error message
---- @param code -- optional numeric error code (from ErrorCodes)
---- @param data -- optional arbitrary data payload
 function StarknetError.signing(message: string, code: number?, data: any?): any
-	local err = setmetatable({
-		_type = "SigningError",
-		message = message,
-		code = code,
-		data = data,
-	}, ErrorProto)
-	return err
+	return createError("SigningError", { message = message, code = code, data = data })
 end
 
 --- Create an AbiError (encoding / decoding / type resolution errors).
---- @param message -- human-readable error message
---- @param code -- optional numeric error code (from ErrorCodes)
---- @param data -- optional arbitrary data payload
 function StarknetError.abi(message: string, code: number?, data: any?): any
-	local err = setmetatable({
-		_type = "AbiError",
-		message = message,
-		code = code,
-		data = data,
-	}, ErrorProto)
-	return err
+	return createError("AbiError", { message = message, code = code, data = data })
 end
 
 --- Create a ValidationError (input validation / required field errors).
---- @param message -- human-readable error message
---- @param code -- optional numeric error code (from ErrorCodes)
---- @param hint -- optional hint with fix guidance
---- @param data -- optional arbitrary data payload
 function StarknetError.validation(message: string, code: number?, hint: string?, data: any?): any
-	local err = setmetatable({
-		_type = "ValidationError",
-		message = message,
-		code = code,
-		hint = hint,
-		data = data,
-	}, ErrorProto)
-	return err
+	return createError("ValidationError", { message = message, code = code, hint = hint, data = data })
 end
 
 --- Create a TransactionError (tx execution / fee estimation errors).
---- @param message -- human-readable error message
---- @param code -- optional numeric error code (from ErrorCodes)
---- @param revertReason -- optional revert reason from the node
---- @param executionTrace -- optional execution trace data
---- @param data -- optional arbitrary data payload
 function StarknetError.transaction(
 	message: string,
 	code: number?,
@@ -155,15 +98,13 @@ function StarknetError.transaction(
 	executionTrace: any?,
 	data: any?
 ): any
-	local err = setmetatable({
-		_type = "TransactionError",
+	return createError("TransactionError", {
 		message = message,
 		code = code,
 		revertReason = revertReason,
 		executionTrace = executionTrace,
 		data = data,
-	}, ErrorProto)
-	return err
+	})
 end
 
 --- Duck-type checker: returns true if value looks like a StarknetError.
