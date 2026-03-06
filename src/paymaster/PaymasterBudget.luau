@@ -6,7 +6,8 @@
 -- "Paymaster tokens" are NOT on-chain — purely game-managed via Roblox DataStoreService.
 
 local StarknetError = require("../errors/StarknetError")
-local ErrorCodes = require("../errors/ErrorCodes")
+local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -102,7 +103,7 @@ function PaymasterBudget.new(config: BudgetConfig?)
 	validateConfigField("flushInterval", cfg.flushInterval, true)
 	validateConfigField("maxDirtyEntries", cfg.maxDirtyEntries, true)
 
-	local clock = cfg._clock or os.clock
+	local clock = cfg._clock or Defaults.clock
 
 	local self = setmetatable({
 		_dataStoreName = cfg.dataStoreName or "StarknetPaymaster",

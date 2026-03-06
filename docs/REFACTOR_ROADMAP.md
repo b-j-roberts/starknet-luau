@@ -243,19 +243,19 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 ### R.1.15 Miscellaneous DRY Items
 
 **Requirements**:
-- [ ] Move Poseidon round constants (250+ lines of hex strings) to `PoseidonConstants.luau` for readability (ref: 01-crypto.md §Poseidon [refactor])
-- [ ] Consolidate `getMetrics()` two nearly-identical return paths (queue-enabled vs disabled) in RpcProvider (ref: 04-provider.md §RpcProvider [refactor])
-- [ ] Extract call conversion in `OutsideExecution.getTypedData()` — V2 and V3 blocks produce identical `{To, Selector, Calldata}` (ref: 06-wallet.md §OutsideExecution [refactor])
-- [ ] Extract shared deploy result-building logic in AccountFactory — sequential and parallel paths duplicate ~40 lines (ref: 06-wallet.md §AccountFactory [refactor])
-- [ ] Normalize `OutsideExecution.buildExecuteFromOutsideCall()` dual-key inspection — normalize data at `getTypedData()` output boundary (ref: 06-wallet.md §OutsideExecution [refactor])
-- [ ] Centralize transient error classification — `SponsoredExecutor.isTransientError()` and `PaymasterRpc._requestWithRetry()` classify from opposite perspectives. Add `ErrorCodes.isTransient(code)` (ref: 08-paymaster.md §SponsoredExecutor [refactor], 14-cross-cutting.md §2E)
-- [ ] Align 3 paymaster modules' import pattern for ErrorCodes (use `StarknetError.ErrorCodes` like other 23 modules) (ref: 14-cross-cutting.md §1)
-- [ ] Extract shared `_sleep`/`_clock` injection boilerplate (~35 lines) duplicated across 7 modules (RpcProvider, PaymasterRpc, SponsoredExecutor, PaymasterPolicy, PaymasterBudget, AvnuPaymaster, EventPoller) into a shared `TestableConfig` type or `applyDefaults()` helper (ref: 14-cross-cutting.md §2D)
-- [ ] Extract EventPoller filter reconstruction — duplicated on every poll cycle instead of built once (ref: 04-provider.md §EventPoller [refactor])
-- [ ] Remove `CallData.encodeStruct()` no-op wrapper that does an unnecessary copy (ref: 05-tx.md §CallData [refactor])
-- [ ] Extract Promise+pcall boilerplate repeated in every TransactionBuilder method into shared wrapper (ref: 05-tx.md §TransactionBuilder [refactor])
-- [ ] Simplify `AccountFactory._createAccountFromSigner` Argent-specific branching (ref: 06-wallet.md §AccountFactory [refactor])
-- [ ] Consider breaking TypedData `encodeValue` (163-line monolithic function) into dispatch table (ref: 06-wallet.md §TypedData [refactor])
+- [x] Move Poseidon round constants (250+ lines of hex strings) to `PoseidonConstants.luau` for readability (ref: 01-crypto.md §Poseidon [refactor])
+- [x] Consolidate `getMetrics()` two nearly-identical return paths (queue-enabled vs disabled) in RpcProvider (ref: 04-provider.md §RpcProvider [refactor])
+- [x] Extract call conversion in `OutsideExecution.getTypedData()` — V2 and V3 blocks produce identical `{To, Selector, Calldata}` (ref: 06-wallet.md §OutsideExecution [refactor])
+- [x] Extract shared deploy result-building logic in AccountFactory — sequential and parallel paths duplicate ~40 lines (ref: 06-wallet.md §AccountFactory [refactor])
+- [x] Normalize `OutsideExecution.buildExecuteFromOutsideCall()` dual-key inspection — normalize data at `getTypedData()` output boundary (ref: 06-wallet.md §OutsideExecution [refactor])
+- [x] Centralize transient error classification — `SponsoredExecutor.isTransientError()` and `PaymasterRpc._requestWithRetry()` classify from opposite perspectives. Add `ErrorCodes.isTransient(code)` (ref: 08-paymaster.md §SponsoredExecutor [refactor], 14-cross-cutting.md §2E)
+- [x] Align 3 paymaster modules' import pattern for ErrorCodes (use `StarknetError.ErrorCodes` like other 23 modules) (ref: 14-cross-cutting.md §1)
+- [x] Extract shared `_sleep`/`_clock` injection boilerplate into `src/shared/TestableDefaults.luau` — 6 modules updated to use `Defaults.sleep`/`Defaults.clock` (ref: 14-cross-cutting.md §2D)
+- [x] Extract EventPoller filter reconstruction — duplicated on every poll cycle instead of built once (ref: 04-provider.md §EventPoller [refactor])
+- [x] Remove `CallData.encodeStruct()` no-op wrapper that does an unnecessary copy (ref: 05-tx.md §CallData [refactor])
+- [x] Extract Promise+pcall boilerplate repeated in every TransactionBuilder method into shared wrapper — already done via `_executePipeline` + `_estimateInternal` in R.1.9 (ref: 05-tx.md §TransactionBuilder [refactor])
+- [x] Simplify `AccountFactory._createAccountFromSigner` Argent-specific branching (ref: 06-wallet.md §AccountFactory [refactor])
+- [x] Break TypedData `encodeValue` monolithic function into `TYPE_ENCODERS` dispatch table (ref: 06-wallet.md §TypedData [refactor])
 
 ---
 

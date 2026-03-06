@@ -70,4 +70,33 @@ ErrorCodes.DATASTORE_ERROR = { code = 7013, name = "DATASTORE_ERROR" }
 ErrorCodes.INVALID_AMOUNT = { code = 7014, name = "INVALID_AMOUNT" }
 ErrorCodes.SPONSORED_EXECUTION_FAILED = { code = 7020, name = "SPONSORED_EXECUTION_FAILED" }
 
+--- Transient error codes that may succeed on retry.
+local TRANSIENT_CODES: { [number]: boolean } = {
+	[ErrorCodes.NETWORK_ERROR.code] = true,
+	[ErrorCodes.RATE_LIMIT.code] = true,
+	[ErrorCodes.PAYMASTER_UNAVAILABLE.code] = true,
+}
+
+--- Deterministic paymaster error codes that should NOT be retried.
+local NON_RETRYABLE_PAYMASTER_CODES: { [number]: boolean } = {
+	[ErrorCodes.PAYMASTER_ERROR.code] = true,
+	[ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code] = true,
+	[ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code] = true,
+	[ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code] = true,
+	[ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code] = true,
+	[ErrorCodes.PAYMASTER_EXECUTION_ERROR.code] = true,
+	[ErrorCodes.PAYMASTER_INVALID_ADDRESS.code] = true,
+	[ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code] = true,
+}
+
+--- Check if an error code represents a transient (retryable) error.
+function ErrorCodes.isTransient(code: number): boolean
+	return TRANSIENT_CODES[code] == true
+end
+
+--- Check if a paymaster error code is deterministic (should not be retried).
+function ErrorCodes.isNonRetryablePaymaster(code: number): boolean
+	return NON_RETRYABLE_PAYMASTER_CODES[code] == true
+end
+
 return ErrorCodes

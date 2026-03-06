@@ -232,17 +232,7 @@ end
 --- Returns false for deterministic paymaster-specific errors.
 local function shouldRetryPaymasterError(err: any): boolean
 	if typeof(err) == "table" and err._type == "RpcError" then
-		local code = err.code
-		if
-			code == ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code
-			or code == ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code
-			or code == ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code
-			or code == ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code
-			or code == ErrorCodes.PAYMASTER_EXECUTION_ERROR.code
-			or code == ErrorCodes.PAYMASTER_INVALID_ADDRESS.code
-			or code == ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code
-			or code == ErrorCodes.PAYMASTER_ERROR.code
-		then
+		if ErrorCodes.isNonRetryablePaymaster(err.code or 0) then
 			return false
 		end
 	end

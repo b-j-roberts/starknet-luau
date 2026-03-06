@@ -7,7 +7,8 @@
 local BigInt = require("../crypto/BigInt")
 local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
-local ErrorCodes = require("../errors/ErrorCodes")
+local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -158,7 +159,7 @@ function PaymasterPolicy.new(config: PolicyConfig)
 		_maxTxPerPlayer = config.maxTxPerPlayer,
 		_timeWindow = config.timeWindow,
 		_playerRecords = {} :: { [number]: { timestamps: { number } } },
-		_clock = config._clock or os.clock,
+		_clock = config._clock or Defaults.clock,
 	}, PolicyProto)
 
 	return self

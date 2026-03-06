@@ -6,7 +6,8 @@
 -- and PaymasterBudget together. Each sub-module is independently usable for advanced users.
 
 local StarknetError = require("../errors/StarknetError")
-local ErrorCodes = require("../errors/ErrorCodes")
+local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -113,20 +114,7 @@ local function isTransientError(err: any): boolean
 	if rpcCode == 502 or rpcCode == 503 or rpcCode == 504 then
 		return true
 	end
-	-- Network errors
-	local code = err.code
-	if code == ErrorCodes.NETWORK_ERROR.code then
-		return true
-	end
-	-- Paymaster temporarily unavailable
-	if code == ErrorCodes.PAYMASTER_UNAVAILABLE.code then
-		return true
-	end
-	-- Rate limiting (may succeed after backoff)
-	if code == ErrorCodes.RATE_LIMIT.code then
-		return true
-	end
-	return false
+	return ErrorCodes.isTransient(err.code or 0)
 end
 
 --- Safely call a callback, catching and warning on errors.
@@ -228,10 +216,8 @@ function SponsoredExecutor.new(config: SponsoredExecutorConfig)
 		_retryAttempts = config.retryAttempts or 3,
 		_retryDelay = config.retryDelay or 1,
 		_deploymentData = config.deploymentData,
-		_sleep = config._sleep or function(seconds: number)
-			task.wait(seconds)
-		end,
-		_clock = config._clock or os.clock,
+		_sleep = config._sleep or Defaults.sleep,
+		_clock = config._clock or Defaults.clock,
 		_metrics = createMetrics(),
 	}, ExecutorProto)
 

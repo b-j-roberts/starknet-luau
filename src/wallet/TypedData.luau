@@ -414,6 +414,153 @@ local function prepareSelector(data: string): string
 	return StarkField.toHex(Keccak.getSelectorFromName(data))
 end
 
+--- Encode an ACTIVE-revision enum value.
+local function encodeEnum(
+	types: { [string]: any },
+	data: any,
+	ctx: { parent: string?, key: string? }?,
+	rev: string
+): string
+	-- Extract variant key and data from the table
+	local variantKey: string = ""
+	local variantData: any = nil
+	for k, v in data :: { [string]: any } do
+		variantKey = k
+		variantData = v
+		break
+	end
+
+	-- Find parent type and enum type
+	local parentType = types[(ctx :: any).parent :: string] :: { any }
+	local enumContains: string = ""
+	for _, field in parentType do
+		local f = field :: any
+		if f.name == (ctx :: any).key then
+			enumContains = f.contains :: string
+			break
+		end
+	end
+
+	local enumType = types[enumContains] :: { any }
+	local variantIndex: number = -1
+	local variantType: string = ""
+	for i, variant in enumType do
+		local v = variant :: any
+		if v.name == variantKey then
+			variantIndex = i - 1 -- 0-indexed
+			variantType = v.type :: string
+			break
+		end
+	end
+
+	-- Encode sub-values from the variant's tuple type
+	local elements: { string } = { string.format("0x%x", variantIndex) }
+
+	-- Parse tuple type "(type1,type2,...)" or "()"
+	local inner = string.sub(variantType, 2, -2)
+	if inner ~= "" then
+		local subtypes: { string } = {}
+		for part in string.gmatch(inner, "[^,]+") do
+			table.insert(subtypes, part)
+		end
+
+		local variantDataArr = variantData :: { any }
+		for idx, subtype in subtypes do
+			local _, encoded = encodeValue(types, subtype, variantDataArr[idx], nil, rev)
+			table.insert(elements, encoded)
+		end
+	else
+		-- Empty tuple "()" — starknet.js includes an empty string element
+		-- which converts to 0 via BigInt("") → 0n
+		table.insert(elements, "0x0")
+	end
+
+	local hashMethod = getHashMethod(rev)
+	return hashMethod(elements)
+end
+
+--- Encode an i128 value (ACTIVE revision with two's complement for negatives).
+local function encodeI128Active(data: any): string
+	local value: number
+	if type(data) == "number" then
+		value = data :: number
+	else
+		local s = data :: string
+		if string.sub(s, 1, 2) == "0x" or string.sub(s, 1, 2) == "0X" then
+			value = tonumber(s, 16) :: number
+		else
+			value = tonumber(s) :: number
+		end
+	end
+	if value < 0 then
+		-- Two's complement in field: P + value
+		local bigVal = BigInt.fromNumber(-value)
+		local result = BigInt.sub(STARK_PRIME, bigVal)
+		return BigInt.toHex(result)
+	end
+	return getHex(data)
+end
+
+--- Simple hex types: direct getHex conversion, no special logic.
+local SIMPLE_HEX_TYPES: { [string]: boolean } = {
+	felt = true,
+	shortstring = true,
+	ClassHash = true,
+	ContractAddress = true,
+	bool = true,
+	timestamp = true,
+	u128 = true,
+}
+
+--- Type-specific encoders keyed by type name.
+--- Each returns (typeName, encodedValue). Checked after struct/preset/array/simple dispatch.
+type TypeEncoder = (
+	types: { [string]: any },
+	typeName: string,
+	data: any,
+	ctx: { parent: string?, key: string? }?,
+	rev: string
+) -> (string, string)
+
+local TYPE_ENCODERS: { [string]: TypeEncoder } = {
+	enum = function(types, typeName, data, ctx, rev)
+		if rev == REVISION_ACTIVE then
+			return typeName, encodeEnum(types, data, ctx, rev)
+		end
+		return typeName, getHex(data)
+	end,
+
+	merkletree = function(types, typeName, data, ctx, rev)
+		local merkleType = getMerkleTreeType(types, ctx)
+		local structHashes: { string } = {}
+		for _, item in data :: { any } do
+			local _, encoded = encodeValue(types, merkleType, item, nil, rev)
+			table.insert(structHashes, encoded)
+		end
+		local hashPair = getMerkleHashMethod(rev)
+		return "felt", merkleRoot(structHashes, hashPair)
+	end,
+
+	selector = function(_types, _typeName, data, _ctx, _rev)
+		return "felt", prepareSelector(data :: string)
+	end,
+
+	string = function(_types, typeName, data, _ctx, rev)
+		if rev == REVISION_ACTIVE then
+			local elements = encodeByteArray(data :: string)
+			return typeName, getHashMethod(rev)(elements)
+		end
+		return typeName, getHex(data)
+	end,
+
+	i128 = function(_types, typeName, data, _ctx, rev)
+		if rev == REVISION_ACTIVE then
+			return typeName, encodeI128Active(data)
+		end
+		return typeName, getHex(data)
+	end,
+}
+
 encodeValue = function(types, typeName, data, ctx, revision)
 	local rev = revision or REVISION_LEGACY
 
@@ -431,148 +578,25 @@ encodeValue = function(types, typeName, data, ctx, revision)
 	if string.sub(typeName, -1) == "*" then
 		local baseType = string.sub(typeName, 1, -2)
 		local hashes: { string } = {}
-		local arr = data :: { any }
-		for _, entry in arr do
+		for _, entry in data :: { any } do
 			local _, encoded = encodeValue(types, baseType, entry, nil, rev)
 			table.insert(hashes, encoded)
 		end
-		local hashMethod = getHashMethod(rev)
-		return typeName, hashMethod(hashes)
+		return typeName, getHashMethod(rev)(hashes)
 	end
 
-	-- Switch on type name
-	if typeName == "enum" then
-		if rev == REVISION_ACTIVE then
-			-- Extract variant key and data from the table
-			local variantKey: string = ""
-			local variantData: any = nil
-			for k, v in data :: { [string]: any } do
-				variantKey = k
-				variantData = v
-				break
-			end
-
-			-- Find parent type and enum type
-			local parentType = types[(ctx :: any).parent :: string] :: { any }
-			local enumContains: string = ""
-			for _, field in parentType do
-				local f = field :: any
-				if f.name == (ctx :: any).key then
-					enumContains = f.contains :: string
-					break
-				end
-			end
-
-			local enumType = types[enumContains] :: { any }
-			local variantIndex: number = -1
-			local variantType: string = ""
-			for i, variant in enumType do
-				local v = variant :: any
-				if v.name == variantKey then
-					variantIndex = i - 1 -- 0-indexed
-					variantType = v.type :: string
-					break
-				end
-			end
-
-			-- Encode sub-values from the variant's tuple type
-			local elements: { string } = { string.format("0x%x", variantIndex) }
-
-			-- Parse tuple type "(type1,type2,...)" or "()"
-			local inner = string.sub(variantType, 2, -2)
-			if inner ~= "" then
-				local subtypes: { string } = {}
-				for part in string.gmatch(inner, "[^,]+") do
-					table.insert(subtypes, part)
-				end
-
-				local variantDataArr = variantData :: { any }
-				for idx, subtype in subtypes do
-					local _, encoded = encodeValue(types, subtype, variantDataArr[idx], nil, rev)
-					table.insert(elements, encoded)
-				end
-			else
-				-- Empty tuple "()" — starknet.js includes an empty string element
-				-- which converts to 0 via BigInt("") → 0n
-				table.insert(elements, "0x0")
-			end
-
-			local hashMethod = getHashMethod(rev)
-			return typeName, hashMethod(elements)
-		end
-		-- LEGACY: just convert to hex
+	-- Simple hex types (direct conversion)
+	if SIMPLE_HEX_TYPES[typeName] then
 		return typeName, getHex(data)
 	end
 
-	if typeName == "merkletree" then
-		local merkleType = getMerkleTreeType(types, ctx)
-		local structHashes: { string } = {}
-		local arr = data :: { any }
-		for _, item in arr do
-			local _, encoded = encodeValue(types, merkleType, item, nil, rev)
-			table.insert(structHashes, encoded)
-		end
-		local hashPair = getMerkleHashMethod(rev)
-		local root = merkleRoot(structHashes, hashPair)
-		return "felt", root
+	-- Named type dispatch
+	local encoder = TYPE_ENCODERS[typeName]
+	if encoder then
+		return encoder(types, typeName, data, ctx, rev)
 	end
 
-	if typeName == "selector" then
-		return "felt", prepareSelector(data :: string)
-	end
-
-	if typeName == "string" then
-		if rev == REVISION_ACTIVE then
-			-- ByteArray encoding
-			local elements = encodeByteArray(data :: string)
-			local hashMethod = getHashMethod(rev)
-			return typeName, hashMethod(elements)
-		end
-		return typeName, getHex(data)
-	end
-
-	if typeName == "i128" then
-		if rev == REVISION_ACTIVE then
-			local value: number
-			if type(data) == "number" then
-				value = data :: number
-			else
-				-- Parse string to number
-				local s = data :: string
-				if string.sub(s, 1, 2) == "0x" or string.sub(s, 1, 2) == "0X" then
-					value = tonumber(s, 16) :: number
-				else
-					value = tonumber(s) :: number
-				end
-			end
-			if value < 0 then
-				-- Two's complement in field: P + value
-				local bigVal = BigInt.fromNumber(-value)
-				local result = BigInt.sub(STARK_PRIME, bigVal)
-				return typeName, BigInt.toHex(result)
-			end
-			return typeName, getHex(data)
-		end
-		return typeName, getHex(data)
-	end
-
-	if typeName == "timestamp" or typeName == "u128" then
-		return typeName, getHex(data)
-	end
-
-	if typeName == "felt" or typeName == "shortstring" then
-		return typeName, getHex(data)
-	end
-
-	if typeName == "ClassHash" or typeName == "ContractAddress" then
-		return typeName, getHex(data)
-	end
-
-	if typeName == "bool" then
-		return typeName, getHex(data)
-	end
-
-	-- Default: try to convert to hex (LEGACY allows unknown types)
+	-- Default fallback (LEGACY allows unknown types)
 	if rev == REVISION_ACTIVE then
 		error(StarknetError.abi(`TypedData: unsupported type: {typeName}`, ErrorCodes.UNKNOWN_TYPE.code))
 	end

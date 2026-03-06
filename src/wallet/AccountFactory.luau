@@ -24,6 +24,36 @@ local ErrorCodes = StarknetError.ErrorCodes
 
 local MAX_BATCH_SIZE = 100
 
+--- Build a deploy result entry and update summary counters.
+local function buildDeployResult(
+	summary: { deployed: number, failed: number, skipped: number, results: { any } },
+	index: number,
+	address: string,
+	ok: boolean,
+	deployResult: any
+): any
+	local resultEntry: any
+	if ok then
+		if deployResult.alreadyDeployed then
+			summary.skipped += 1
+			resultEntry = { index = index, address = address, transactionHash = "0x0", status = "skipped" }
+		else
+			summary.deployed += 1
+			resultEntry = {
+				index = index,
+				address = address,
+				transactionHash = deployResult.transactionHash,
+				status = "deployed",
+			}
+		end
+	else
+		summary.failed += 1
+		resultEntry = { index = index, address = address, error = deployResult, status = "failed" }
+	end
+	table.insert(summary.results, resultEntry)
+	return resultEntry
+end
+
 local AccountFactory = {}
 AccountFactory.__index = AccountFactory
 
@@ -77,12 +107,7 @@ function AccountFactory:_createAccountFromSigner(
 	local classHash = opts.classHash or self._accountType.classHash
 	local salt = opts.salt or publicKey
 
-	local calldata: { string }
-	if self._accountType.type == "argent" then
-		calldata = self._accountType(publicKey, opts.guardian)
-	else
-		calldata = self._accountType(publicKey)
-	end
+	local calldata: { string } = self._accountType(publicKey, opts.guardian)
 
 	local address = Account.computeAddress({
 		classHash = classHash,
@@ -314,46 +339,13 @@ function AccountFactory:batchDeploy(
 		--- Deploy a single account and return its result entry.
 		local function deployOne(index: number): any
 			local entry = accounts[index]
-			local resultEntry: any
-
 			local ok, deployResult = pcall(function()
 				return entry.account:deployAccount(deployOpts):expect()
 			end)
-
-			if ok then
-				if deployResult.alreadyDeployed then
-					summary.skipped += 1
-					resultEntry = {
-						index = index,
-						address = entry.address,
-						transactionHash = "0x0",
-						status = "skipped",
-					}
-				else
-					summary.deployed += 1
-					resultEntry = {
-						index = index,
-						address = entry.address,
-						transactionHash = deployResult.transactionHash,
-						status = "deployed",
-					}
-				end
-			else
-				summary.failed += 1
-				resultEntry = {
-					index = index,
-					address = entry.address,
-					error = deployResult,
-					status = "failed",
-				}
-			end
-
-			table.insert(summary.results, resultEntry)
-
+			local resultEntry = buildDeployResult(summary, index, entry.address, ok, deployResult)
 			if progressCallback then
 				progressCallback(index, total, resultEntry)
 			end
-
 			return resultEntry
 		end
 
@@ -374,39 +366,14 @@ function AccountFactory:batchDeploy(
 					local p = entryRef.account
 						:deployAccount(deployOpts)
 						:andThen(function(depResult: any)
-							local resultEntry: any
-							if depResult.alreadyDeployed then
-								summary.skipped += 1
-								resultEntry = {
-									index = idx,
-									address = entryRef.address,
-									transactionHash = "0x0",
-									status = "skipped",
-								}
-							else
-								summary.deployed += 1
-								resultEntry = {
-									index = idx,
-									address = entryRef.address,
-									transactionHash = depResult.transactionHash,
-									status = "deployed",
-								}
-							end
-							table.insert(summary.results, resultEntry)
+							local resultEntry = buildDeployResult(summary, idx, entryRef.address, true, depResult)
 							if progressCallback then
 								progressCallback(idx, total, resultEntry)
 							end
 							return resultEntry
 						end)
 						:catch(function(err: any)
-							summary.failed += 1
-							local resultEntry = {
-								index = idx,
-								address = entryRef.address,
-								error = err,
-								status = "failed",
-							}
-							table.insert(summary.results, resultEntry)
+							local resultEntry = buildDeployResult(summary, idx, entryRef.address, false, err)
 							if progressCallback then
 								progressCallback(idx, total, resultEntry)
 							end

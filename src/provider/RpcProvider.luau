@@ -515,39 +515,18 @@ function RpcProviderClass:getMetrics(): RpcTypes.ProviderMetrics
 		nonceResyncs = nm.totalResyncs
 	end
 
-	if self._queue then
-		local qm = self._queue:getMetrics()
-		return {
-			totalRequests = qm.totalRequests,
-			totalCompleted = qm.totalCompleted,
-			totalFailed = qm.totalFailed,
-			totalBatched = qm.totalBatched,
-			totalDropped = qm.totalDropped,
-			currentQueueDepth = qm.currentQueueDepth,
-			rateLimitTokens = math.floor(rateLimiter.tokens),
-			rateLimitMax = rateLimiter.maxTokens,
-			batchesSent = qm.batchesSent,
-			cacheHits = cacheHits,
-			cacheMisses = cacheMisses,
-			cacheEvictions = cacheEvictions,
-			cacheSize = cacheSize,
-			nonceReserved = nonceReserved,
-			nonceConfirmed = nonceConfirmed,
-			nonceRejected = nonceRejected,
-			nonceResyncs = nonceResyncs,
-		}
-	end
+	local qm = if self._queue then self._queue:getMetrics() else nil
 
 	return {
-		totalRequests = 0,
-		totalCompleted = 0,
-		totalFailed = 0,
-		totalBatched = 0,
-		totalDropped = 0,
-		currentQueueDepth = 0,
+		totalRequests = if qm then qm.totalRequests else 0,
+		totalCompleted = if qm then qm.totalCompleted else 0,
+		totalFailed = if qm then qm.totalFailed else 0,
+		totalBatched = if qm then qm.totalBatched else 0,
+		totalDropped = if qm then qm.totalDropped else 0,
+		currentQueueDepth = if qm then qm.currentQueueDepth else 0,
 		rateLimitTokens = math.floor(rateLimiter.tokens),
 		rateLimitMax = rateLimiter.maxTokens,
-		batchesSent = 0,
+		batchesSent = if qm then qm.batchesSent else 0,
 		cacheHits = cacheHits,
 		cacheMisses = cacheMisses,
 		cacheEvictions = cacheEvictions,

@@ -132,6 +132,27 @@ OutsideExecution.TYPES_V3 = TYPES_V3
 
 local normalizeHex = HexUtils.normalizeHex
 
+--- Convert outside calls to the Capitalized key format used by V2/V3 TypedData.
+local function toTypedDataCalls(outsideCalls: { { [string]: any } }): { { [string]: any } }
+	local result: { { [string]: any } } = {}
+	for _, oc in outsideCalls do
+		table.insert(result, {
+			To = oc.to,
+			Selector = oc.selector,
+			Calldata = oc.calldata,
+		})
+	end
+	return result
+end
+
+--- Encode a number-or-string value as a hex string for calldata.
+local function toHexFelt(value: any): string
+	if type(value) == "number" then
+		return string.format("0x%x", value)
+	end
+	return tostring(value)
+end
+
 --------------------------------------------------------------------------------
 -- Public API
 --------------------------------------------------------------------------------
@@ -246,17 +267,11 @@ function OutsideExecution.getTypedData(
 		}
 	end
 
+	-- V2/V3 share the same call conversion (Capitalized keys)
+	local typedDataCalls = toTypedDataCalls(outsideCalls)
+
 	-- V2: ACTIVE revision (Poseidon, StarknetDomain)
 	if version == "2" then
-		local v2Calls: { { [string]: any } } = {}
-		for _, oc in outsideCalls do
-			table.insert(v2Calls, {
-				To = oc.to,
-				Selector = oc.selector,
-				Calldata = oc.calldata,
-			})
-		end
-
 		return {
 			types = TYPES_V2,
 			primaryType = "OutsideExecution",
@@ -271,7 +286,7 @@ function OutsideExecution.getTypedData(
 				Nonce = nonce,
 				["Execute After"] = executeAfter,
 				["Execute Before"] = executeBefore,
-				Calls = v2Calls,
+				Calls = typedDataCalls,
 			},
 		}
 	end
@@ -284,15 +299,6 @@ function OutsideExecution.getTypedData(
 				ErrorCodes.MISSING_FEE_MODE.code
 			)
 		)
-	end
-
-	local v3Calls: { { [string]: any } } = {}
-	for _, oc in outsideCalls do
-		table.insert(v3Calls, {
-			To = oc.to,
-			Selector = oc.selector,
-			Calldata = oc.calldata,
-		})
 	end
 
 	-- Build Fee field value based on feeMode
@@ -330,7 +336,7 @@ function OutsideExecution.getTypedData(
 			Nonce = nonce,
 			["Execute After"] = executeAfter,
 			["Execute Before"] = executeBefore,
-			Calls = v3Calls,
+			Calls = typedDataCalls,
 			Fee = feeValue,
 		},
 	}
@@ -408,36 +414,19 @@ function OutsideExecution.buildExecuteFromOutsideCall(
 	local entrypoint = OutsideExecution.getEntrypoint(version)
 	local calldata: { string } = {}
 
-	-- Caller
+	-- Normalize dual-key convention: resolve to single key set
 	local caller = outsideExecution.caller or outsideExecution.Caller
-	table.insert(calldata, tostring(caller))
-
-	-- Nonce
 	local nonce = outsideExecution.nonce or outsideExecution.Nonce
-	if type(nonce) == "number" then
-		table.insert(calldata, string.format("0x%x", nonce))
-	else
-		table.insert(calldata, tostring(nonce))
-	end
-
-	-- Execute after
 	local execAfter = outsideExecution.execute_after or outsideExecution["Execute After"]
-	if type(execAfter) == "number" then
-		table.insert(calldata, string.format("0x%x", execAfter))
-	else
-		table.insert(calldata, tostring(execAfter))
-	end
-
-	-- Execute before
 	local execBefore = outsideExecution.execute_before or outsideExecution["Execute Before"]
-	if type(execBefore) == "number" then
-		table.insert(calldata, string.format("0x%x", execBefore))
-	else
-		table.insert(calldata, tostring(execBefore))
-	end
+	local calls = (outsideExecution.calls or outsideExecution.Calls) :: { { [string]: any } }
+
+	table.insert(calldata, tostring(caller))
+	table.insert(calldata, toHexFelt(nonce))
+	table.insert(calldata, toHexFelt(execAfter))
+	table.insert(calldata, toHexFelt(execBefore))
 
 	-- Calls array
-	local calls = (outsideExecution.calls or outsideExecution.Calls) :: { { [string]: any } }
 	table.insert(calldata, string.format("0x%x", #calls))
 	for _, call in calls do
 		table.insert(calldata, tostring(call.to or call.To))

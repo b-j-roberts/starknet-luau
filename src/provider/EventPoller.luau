@@ -6,6 +6,7 @@
 local RpcTypes = require("./RpcTypes")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -45,10 +46,8 @@ function EventPollerClass.new(config: RpcTypes.EventPollerConfig): EventPoller
 		_onError = config.onError or function(_err: any) end,
 		_running = false,
 		_lastBlockNumber = nil :: number?,
-		_sleep = config._sleep or function(seconds: number)
-			task.wait(seconds)
-		end,
-		_clock = config._clock or os.clock,
+		_sleep = config._sleep or Defaults.sleep,
+		_clock = config._clock or Defaults.clock,
 	}, EventPollerClass)
 
 	return self :: any
@@ -80,15 +79,13 @@ function EventPollerClass:start()
 		end
 	end
 
-	while self._running do
-		local pollFilter: RpcTypes.EventFilter = {
-			from_block = filter.from_block,
-			to_block = filter.to_block or ({ block_tag = "latest" } :: any),
-			address = filter.address,
-			keys = filter.keys,
-			chunk_size = filter.chunk_size or 100,
-		}
+	-- Build stable filter fields once (from_block is updated after events)
+	local toBlock = filter.to_block or ({ block_tag = "latest" } :: any)
+	local filterAddress = filter.address
+	local filterKeys = filter.keys
+	local filterChunkSize = filter.chunk_size or 100
 
+	while self._running do
 		local ok, result = pcall(function()
 			-- Use getAllEvents to get all pages in one go
 			local allEvents: { RpcTypes.EmittedEvent } = {}
@@ -96,11 +93,11 @@ function EventPollerClass:start()
 
 			for _ = 1, 100 do -- safety limit per poll cycle
 				local pageFilter: { [string]: any } = {
-					from_block = pollFilter.from_block,
-					to_block = pollFilter.to_block,
-					address = pollFilter.address,
-					keys = pollFilter.keys,
-					chunk_size = pollFilter.chunk_size or 100,
+					from_block = filter.from_block,
+					to_block = toBlock,
+					address = filterAddress,
+					keys = filterKeys,
+					chunk_size = filterChunkSize,
 				}
 				if continuationToken then
 					pageFilter.continuation_token = continuationToken

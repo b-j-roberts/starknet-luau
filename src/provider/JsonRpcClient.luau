@@ -6,6 +6,7 @@
 local RpcTypes = require("./RpcTypes")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- Types
@@ -83,7 +84,7 @@ function JsonRpcClientClass.new(config: JsonRpcClientConfig): any
 		error(StarknetError.validation(`{name}: nodeUrl is required`, ErrorCodes.REQUIRED_FIELD.code))
 	end
 
-	local clockFn = config._clock or os.clock
+	local clockFn = config._clock or Defaults.clock
 	local maxRpm = config.maxRequestsPerMinute or 450
 
 	local self = setmetatable({
@@ -94,9 +95,7 @@ function JsonRpcClientClass.new(config: JsonRpcClientConfig): any
 		_requestId = 0,
 		_rateLimiter = createRateLimiter(maxRpm, clockFn),
 		_httpRequest = config._httpRequest,
-		_sleep = config._sleep or function(seconds: number)
-			task.wait(seconds)
-		end,
+		_sleep = config._sleep or Defaults.sleep,
 		_clock = clockFn,
 		_PromiseModule = nil :: any,
 		_errorMapper = config.errorMapper,

@@ -11,6 +11,7 @@ local RpcTypes = require("../provider/RpcTypes")
 local Constants = require("../constants")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
+local Defaults = require("../shared/TestableDefaults")
 
 --------------------------------------------------------------------------------
 -- AVNU Endpoint URLs
@@ -171,7 +172,7 @@ function AvnuPaymasterClass.new(config: AvnuPaymasterConfig): AvnuPaymaster
 	}
 
 	local inner = PaymasterRpc.new(paymasterConfig)
-	local clockFn = config._clock or os.clock
+	local clockFn = config._clock or Defaults.clock
 
 	local self = setmetatable({
 		_inner = inner,

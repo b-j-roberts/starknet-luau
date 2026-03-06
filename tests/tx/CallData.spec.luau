@@ -207,32 +207,6 @@ describe("CallData - encodeArray", function()
 end)
 
 --------------------------------------------------------------------------------
--- encodeStruct
---------------------------------------------------------------------------------
-
-describe("CallData - encodeStruct", function()
-	it("empty struct produces empty array", function()
-		local result = CallData.encodeStruct({})
-		expect(#result):toBe(0)
-	end)
-
-	it("single field struct", function()
-		local result = CallData.encodeStruct({ "0x74657374" })
-		expect(#result):toBe(1)
-		expect(result[1]):toBe("0x74657374")
-	end)
-
-	it("multiple fields concatenated without length prefix", function()
-		-- Unlike arrays, structs have no length prefix
-		local result = CallData.encodeStruct({ "0x1", "0x2", "0x3" })
-		expect(#result):toBe(3)
-		expect(result[1]):toBe("0x1")
-		expect(result[2]):toBe("0x2")
-		expect(result[3]):toBe("0x3")
-	end)
-end)
-
---------------------------------------------------------------------------------
 -- encodeMulticall
 --------------------------------------------------------------------------------
 

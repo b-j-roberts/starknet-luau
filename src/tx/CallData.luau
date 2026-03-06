@@ -90,16 +90,6 @@ function CallData.encodeArray(elements: { string }): { string }
 	return result
 end
 
--- Encode a struct as ordered field concatenation (no length prefix)
--- Input: pre-encoded hex string fields in order
-function CallData.encodeStruct(fields: { string }): { string }
-	local result: { string } = {}
-	for _, field in fields do
-		table.insert(result, field)
-	end
-	return result
-end
-
 -- Encode multicall format for __execute__ (Cairo 1)
 -- Format: [num_calls, to_0, selector_0, calldata_len_0, ...calldata_0, ...]
 -- Reference: starknet.js fromCallsToExecuteCalldata_cairo1
