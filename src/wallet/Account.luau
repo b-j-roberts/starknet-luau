@@ -14,6 +14,7 @@ local TypedData = require("./TypedData")
 local OutsideExecution = require("./OutsideExecution")
 local ERC20 = require("../contract/ERC20")
 local Constants = require("../constants")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -83,8 +84,12 @@ end
 --- Returns { paymaster, gasTokenAddress, feeMode } or throws a ValidationError.
 local function validatePaymasterDetails(
 	methodName: string,
-	paymasterDetails: { [string]: any }
-): { paymaster: any, gasTokenAddress: string, feeMode: { [string]: any } }
+	paymasterDetails: Interfaces.PaymasterDetails
+): {
+	paymaster: Interfaces.PaymasterInterface,
+	gasTokenAddress: string,
+	feeMode: { mode: string, gasToken: string? },
+}
 	if not paymasterDetails or not paymasterDetails.paymaster then
 		error(
 			StarknetError.validation(
@@ -226,7 +231,7 @@ function Account.getDeploymentFeeEstimate(config: {
 	constructorCalldata: { string },
 	salt: string,
 	contractAddress: string,
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	feeMultiplier: number?,
 }): any
 	if not config.provider then
@@ -300,7 +305,7 @@ function Account.checkDeploymentBalance(config: {
 	classHash: string,
 	constructorCalldata: { string },
 	salt: string,
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	feeMultiplier: number?,
 	token: string?,
 }): any
@@ -390,7 +395,7 @@ end
 --- Returns a Promise resolving to { address, estimatedFee, token, tokenAddress, classHash, constructorCalldata, salt }.
 function Account.getDeploymentFundingInfo(config: {
 	publicKey: string,
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	classHash: string?,
 	accountType: string?,
 	guardian: string?,
@@ -461,8 +466,8 @@ end
 --- Create an Account from an explicit address, signer, and provider.
 function Account.new(config: {
 	address: string,
-	signer: any,
-	provider: any,
+	signer: Interfaces.SignerInterface,
+	provider: Interfaces.ProviderInterface,
 	accountType: string?,
 	classHash: string?,
 	constructorCalldata: { string }?,
@@ -495,7 +500,7 @@ end
 --- For Argent, an optional guardian public key can be provided.
 function Account.fromPrivateKey(config: {
 	privateKey: string,
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	accountType: string?,
 	classHash: string?,
 	guardian: string?,
@@ -769,7 +774,7 @@ end
 --- Flow: idempotency check → build deploymentData → paymaster buildTypedData → sign → executeTransaction.
 --- Returns a Promise resolving to { transactionHash, contractAddress, trackingId?, alreadyDeployed? }.
 function Account:deployWithPaymaster(
-	paymasterDetails: { [string]: any },
+	paymasterDetails: Interfaces.PaymasterDetails,
 	options: { calls: { any }?, waitForConfirmation: boolean? }?
 ): any
 	local validated = validatePaymasterDetails("deployWithPaymaster", paymasterDetails)
@@ -855,7 +860,7 @@ end
 --- Estimate the fee for executing calls through a paymaster (SNIP-29).
 --- Returns a Promise resolving to { feeEstimate, typedData } from the paymaster's buildTypedData response.
 --- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
-function Account:estimatePaymasterFee(calls: { any }, paymasterDetails: { [string]: any }): any
+function Account:estimatePaymasterFee(calls: { any }, paymasterDetails: Interfaces.PaymasterDetails): any
 	local validated = validatePaymasterDetails("estimatePaymasterFee", paymasterDetails)
 
 	local options: { [string]: any } = {}
@@ -877,7 +882,7 @@ end
 --- Full flow: buildTypedData → validate returned calls → sign → executeTransaction.
 --- Returns a Promise resolving to { transactionHash, trackingId }.
 --- Does NOT interact with the NonceManager — paymaster uses SNIP-9 outside execution nonces.
-function Account:executePaymaster(calls: { any }, paymasterDetails: { [string]: any }): any
+function Account:executePaymaster(calls: { any }, paymasterDetails: Interfaces.PaymasterDetails): any
 	local validated = validatePaymasterDetails("executePaymaster", paymasterDetails)
 
 	if not calls or #calls == 0 then

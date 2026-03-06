@@ -7,6 +7,7 @@
 
 local RpcTypes = require("../provider/RpcTypes")
 local JsonRpcClient = require("../provider/JsonRpcClient")
+local CallData = require("../tx/CallData")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -27,12 +28,8 @@ export type PaymasterConfig = {
 	_clock: (() -> number)?,
 }
 
---- A single call to be executed
-export type Call = {
-	contractAddress: string,
-	entrypoint: string,
-	calldata: { string },
-}
+--- A single call to be executed (re-exported from CallData)
+export type Call = CallData.Call
 
 --- SNIP-29 user parameters
 export type UserParameters = {

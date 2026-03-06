@@ -2,6 +2,8 @@
 -- RpcTypes: Type definitions for Starknet JSON-RPC request/response objects
 -- Follows the Starknet RPC 0.7+ specification
 
+local Interfaces = require("../shared/interfaces")
+
 local RpcTypes = {}
 
 --- Promise-like type for return annotations
@@ -361,7 +363,7 @@ export type ParsedEvent = {
 
 --- Configuration for EventPoller
 export type EventPollerConfig = {
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	filter: EventFilter,
 	interval: number?, -- polling interval in seconds (default 10)
 	onEvents: ((events: { EmittedEvent }) -> ())?,

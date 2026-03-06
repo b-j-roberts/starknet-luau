@@ -5,6 +5,8 @@
 -- This is the "batteries included" module that ties PaymasterRpc, PaymasterPolicy,
 -- and PaymasterBudget together. Each sub-module is independently usable for advanced users.
 
+local Interfaces = require("../shared/interfaces")
+local PaymasterRpc = require("./PaymasterRpc")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 local Defaults = require("../shared/TestableDefaults")
@@ -68,15 +70,15 @@ export type ExecutorMetrics = {
 
 --- Configuration for creating a SponsoredExecutor.
 export type SponsoredExecutorConfig = {
-	account: any,
-	paymaster: any,
-	feeMode: { mode: string, gasToken: string? },
-	policy: any?,
-	budget: any?,
+	account: Interfaces.AccountInterface,
+	paymaster: Interfaces.PaymasterInterface,
+	feeMode: PaymasterRpc.FeeMode,
+	policy: Interfaces.PolicyInterface?,
+	budget: Interfaces.BudgetInterface?,
 	callbacks: ExecutorCallbacks?,
 	retryAttempts: number?,
 	retryDelay: number?,
-	deploymentData: any?,
+	deploymentData: PaymasterRpc.DeploymentData?,
 	-- Testing injection points
 	_sleep: ((seconds: number) -> ())?,
 	_clock: (() -> number)?,

@@ -6,6 +6,8 @@
 local BigInt = require("../crypto/BigInt")
 local CallData = require("./CallData")
 local TransactionHash = require("./TransactionHash")
+local RpcTypes = require("../provider/RpcTypes")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -15,9 +17,7 @@ local ErrorCodes = StarknetError.ErrorCodes
 
 export type Account = {
 	address: string,
-	signer: {
-		signTransaction: (self: any, txHash: buffer) -> { string },
-	},
+	signer: Interfaces.MinimalSigner,
 }
 
 export type Call = CallData.Call
@@ -50,10 +50,7 @@ export type DeployAccountOptions = BaseTransactionOptions & {
 	waitForConfirmation: boolean?, -- Account-level: wait for receipt after submission (default true)
 }
 
-export type WaitOptions = {
-	retryInterval: number?, -- Seconds between polls (default 5)
-	maxAttempts: number?, -- Max poll attempts (default 30)
-}
+export type WaitOptions = RpcTypes.WaitOptions
 
 export type ExecuteResult = {
 	transactionHash: string,
@@ -211,7 +208,7 @@ end
 --- @param resolveNonce -- returns nonce (may throw)
 --- @param buildUnsignedTx -- builds unsigned tx with zero bounds + dummy sig for given nonce
 local function _estimateInternal(
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	resolveNonce: () -> string,
 	buildUnsignedTx: (nonce: string) -> any
 ): any
@@ -240,7 +237,7 @@ end
 --- Shared execution pipeline parameterized by transaction-specific behavior.
 --- Both execute() and deployAccount() delegate to this function.
 local function _executePipeline(
-	provider: any,
+	provider: Interfaces.ProviderInterface,
 	account: Account,
 	config: {
 		resolveNonce: () -> string,
@@ -344,7 +341,7 @@ TransactionBuilder.__index = TransactionBuilder
 
 --- Create a new TransactionBuilder.
 --- @param provider -- RpcProvider instance for network communication
-function TransactionBuilder.new(provider: any): any
+function TransactionBuilder.new(provider: Interfaces.ProviderInterface): any
 	if not provider then
 		error(StarknetError.validation("TransactionBuilder: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end

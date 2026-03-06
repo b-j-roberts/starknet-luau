@@ -19,6 +19,7 @@
 
 local Account = require("./Account")
 local StarkSigner = require("../signer/StarkSigner")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -61,7 +62,11 @@ AccountFactory.__index = AccountFactory
 --- @param provider — RpcProvider instance for blockchain interaction
 --- @param accountType — Account type config (e.g., AccountType.OZ, AccountType.Argent, or AccountType.custom(...))
 --- @param signer — StarkSigner instance for signing transactions
-function AccountFactory.new(provider: any, accountType: any, signer: any): any
+function AccountFactory.new(
+	provider: Interfaces.ProviderInterface,
+	accountType: any,
+	signer: Interfaces.SignerInterface
+): any
 	if not provider then
 		error(StarknetError.validation("AccountFactory: provider is required", ErrorCodes.REQUIRED_FIELD.code))
 	end

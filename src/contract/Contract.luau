@@ -7,6 +7,7 @@ local Keccak = require("../crypto/Keccak")
 local StarkField = require("../crypto/StarkField")
 local CallData = require("../tx/CallData")
 local AbiCodec = require("./AbiCodec")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -36,11 +37,11 @@ export type Abi = { AbiFunction }
 export type ContractConfig = {
 	abi: Abi,
 	address: string,
-	provider: any,
-	account: any?, -- optional, required for invoke()
+	provider: Interfaces.ProviderInterface,
+	account: Interfaces.AccountInterface?, -- optional, required for invoke()
 }
 
---- A Call object for multicall batching (re-export from CallData)
+--- A Call object for multicall batching (re-exported from CallData)
 export type Call = CallData.Call
 
 --- Result of a call() operation (array of hex strings from RPC)

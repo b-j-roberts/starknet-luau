@@ -5,6 +5,7 @@
 local BigInt = require("../crypto/BigInt")
 local StarkCurve = require("../crypto/StarkCurve")
 local ECDSA = require("../crypto/ECDSA")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -14,6 +15,10 @@ export type StarkSigner = {
 	signRaw: (self: StarkSigner, msgHash: buffer) -> ECDSA.Signature,
 	signTransaction: (self: StarkSigner, txHash: buffer) -> { string },
 }
+
+--- Re-export shared signer interface types for convenience
+export type MinimalSigner = Interfaces.MinimalSigner
+export type SignerInterface = Interfaces.SignerInterface
 
 local StarkSignerClass = {}
 StarkSignerClass.__index = StarkSignerClass
