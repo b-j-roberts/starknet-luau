@@ -123,7 +123,11 @@ local function resourceBoundsFromEstimate(estimate: any, multiplier: number): Tr
 	}
 end
 
---- Convert TransactionHash.ResourceBounds (camelCase) to RPC format (snake_case).
+--- Convert TransactionHash.ResourceBounds (camelCase, 3 fields) to RPC format (snake_case, 2 fields).
+--- NOTE: TransactionHash uses camelCase keys (l1Gas, l2Gas, l1DataGas) for hash computation,
+--- while the Starknet JSON-RPC spec uses snake_case (l1_gas, l2_gas). The RPC wire format
+--- only includes l1_gas and l2_gas — l1DataGas is intentionally omitted here because the
+--- sequencer does not accept it in the resource_bounds object.
 local function toRpcResourceBounds(bounds: TransactionHash.ResourceBounds): any
 	return {
 		l1_gas = {
@@ -305,7 +309,7 @@ local function _executePipeline(
 
 		-- Step 6: Sign the transaction hash
 		local txHashBuf = BigInt.fromHex(txHash)
-		local signature = account.signer:signTransaction(txHashBuf)
+		local signature = account.signer:signHash(txHashBuf)
 
 		-- Step 7: Build the final signed transaction
 		local signedTx =
@@ -444,7 +448,7 @@ function TransactionBuilder:execute(account: Account, calls: { Call }, options: 
 			return provider:addInvokeTransaction(signedTx):expect()
 		end,
 		formatResult = function(submitResult: any): any
-			return { transactionHash = submitResult }
+			return { transactionHash = submitResult.transaction_hash }
 		end,
 	}, opts)
 end

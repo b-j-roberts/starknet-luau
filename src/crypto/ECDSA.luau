@@ -201,7 +201,7 @@ function ECDSA.sign(messageHash: buffer, privateKey: buffer): Signature
 
 	-- Compute R = k * G
 	local R = StarkCurve.scalarMul(StarkCurve.G, k)
-	if R == nil then
+	if StarkCurve.isInfinityAffine(R) then
 		error(StarknetError.signing("ECDSA.sign: k * G produced identity point", ErrorCodes.SIGNING_ERROR.code))
 	end
 
@@ -262,24 +262,23 @@ function ECDSA.verify(messageHash: buffer, publicKey: StarkCurve.AffinePoint, si
 	local p1 = StarkCurve.scalarMul(StarkCurve.G, u1)
 	local p2 = StarkCurve.scalarMul(publicKey, u2)
 
-	if p1 == nil and p2 == nil then
+	if StarkCurve.isInfinityAffine(p1) and StarkCurve.isInfinityAffine(p2) then
 		return false
 	end
 
 	local RPrime: StarkCurve.AffinePoint
-	if p1 == nil then
-		RPrime = p2 :: StarkCurve.AffinePoint
-	elseif p2 == nil then
+	if StarkCurve.isInfinityAffine(p1) then
+		RPrime = p2
+	elseif StarkCurve.isInfinityAffine(p2) then
 		RPrime = p1
 	else
 		local j1 = StarkCurve.jacobianFromAffine(p1)
 		local j2 = StarkCurve.jacobianFromAffine(p2)
 		local jSum = StarkCurve.jacobianAdd(j1, j2)
-		local result = StarkCurve.affineFromJacobian(jSum)
-		if result == nil then
+		RPrime = StarkCurve.affineFromJacobian(jSum)
+		if StarkCurve.isInfinityAffine(RPrime) then
 			return false
 		end
-		RPrime = result
 	end
 
 	-- Check R'.x mod N == r

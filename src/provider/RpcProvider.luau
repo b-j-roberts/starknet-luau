@@ -23,7 +23,7 @@ export type RpcProvider = {
 		transactions: { RpcTypes.InvokeTransactionV3 },
 		simulationFlags: { string }?
 	) -> RpcTypes.Promise<{ RpcTypes.FeeEstimate }>,
-	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> RpcTypes.Promise<string>,
+	addInvokeTransaction: (self: RpcProvider, invokeTx: RpcTypes.InvokeTransactionV3) -> RpcTypes.Promise<RpcTypes.InvokeResult>,
 	addDeployAccountTransaction: (
 		self: RpcProvider,
 		deployTx: RpcTypes.DeployAccountTransactionV3
@@ -68,13 +68,19 @@ export type RpcProvider = {
 	getNodeUrl: (self: RpcProvider) -> string,
 	getMetrics: (self: RpcProvider) -> RpcTypes.ProviderMetrics,
 	flushCache: (self: RpcProvider) -> (),
+	getNonceManager: (self: RpcProvider) -> any,
 }
 
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
 
---- Format a block ID parameter for RPC calls
+--- Format a block ID parameter for RPC calls.
+--- Accepts a convenience string shorthand: "latest", "pending", "0x<hash>", or a decimal
+--- block number string. This differs from the RpcTypes.BlockId structured type which uses
+--- explicit fields (block_hash, block_number, block_tag). The string shorthand is used in
+--- all public RpcProvider methods for ergonomics; formatBlockId converts it to the structured
+--- format expected by the JSON-RPC wire protocol.
 local function formatBlockId(blockId: string?): any
 	if blockId == nil or blockId == "latest" then
 		return "latest"
@@ -112,6 +118,7 @@ function RpcProviderClass.new(config: RpcTypes.RpcProviderConfig): RpcProvider
 		nodeUrl = config.nodeUrl,
 		headers = config.headers,
 		maxRequestsPerMinute = config.maxRequestsPerMinute or 450,
+		rateLimitTimeout = config.rateLimitTimeout,
 		retryAttempts = config.retryAttempts,
 		retryDelay = config.retryDelay,
 		clientName = "RpcProvider",
@@ -619,50 +626,20 @@ function RpcProviderClass:estimateFee(transactions: { RpcTypes.InvokeTransaction
 end
 
 --- Submit a signed invoke transaction.
---- Returns a Promise resolving to the transaction hash.
+--- Returns a Promise resolving to { transaction_hash: string }.
 function RpcProviderClass:addInvokeTransaction(invokeTx: RpcTypes.InvokeTransactionV3): any
-	return self:fetch("starknet_addInvokeTransaction", {
-		{
-			type = invokeTx.type,
-			version = invokeTx.version,
-			sender_address = invokeTx.sender_address,
-			calldata = invokeTx.calldata,
-			signature = invokeTx.signature,
-			nonce = invokeTx.nonce,
-			resource_bounds = invokeTx.resource_bounds,
-			tip = invokeTx.tip,
-			paymaster_data = invokeTx.paymaster_data,
-			nonce_data_availability_mode = invokeTx.nonce_data_availability_mode,
-			fee_data_availability_mode = invokeTx.fee_data_availability_mode,
-			account_deployment_data = invokeTx.account_deployment_data,
-		},
-	}):andThen(function(result: any)
+	return self:fetch("starknet_addInvokeTransaction", { invokeTx }):andThen(function(result: any)
 		if type(result) == "table" and result.transaction_hash then
-			return result.transaction_hash
+			return { transaction_hash = result.transaction_hash }
 		end
-		return result
+		return { transaction_hash = result }
 	end)
 end
 
 --- Submit a signed deploy account transaction.
 --- Returns a Promise resolving to { transaction_hash, contract_address }.
 function RpcProviderClass:addDeployAccountTransaction(deployTx: RpcTypes.DeployAccountTransactionV3): any
-	return self:fetch("starknet_addDeployAccountTransaction", {
-		{
-			type = deployTx.type,
-			version = deployTx.version,
-			class_hash = deployTx.class_hash,
-			constructor_calldata = deployTx.constructor_calldata,
-			contract_address_salt = deployTx.contract_address_salt,
-			signature = deployTx.signature,
-			nonce = deployTx.nonce,
-			resource_bounds = deployTx.resource_bounds,
-			tip = deployTx.tip,
-			paymaster_data = deployTx.paymaster_data,
-			nonce_data_availability_mode = deployTx.nonce_data_availability_mode,
-			fee_data_availability_mode = deployTx.fee_data_availability_mode,
-		},
-	}):andThen(function(result: any)
+	return self:fetch("starknet_addDeployAccountTransaction", { deployTx }):andThen(function(result: any)
 		if type(result) == "table" and result.transaction_hash then
 			return {
 				transaction_hash = result.transaction_hash,

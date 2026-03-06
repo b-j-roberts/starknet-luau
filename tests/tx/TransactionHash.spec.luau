@@ -16,35 +16,35 @@ local ZERO_BOUNDS: TransactionHash.ResourceBounds = {
 describe("TransactionHash - encodeResourceBound", function()
 	it("encodes L1_GAS with max_amount and max_price", function()
 		-- L1_GAS name = 0x4c315f474153, max_amount = 0x7c9, max_price = 0x1
-		local result = TransactionHash.encodeResourceBound("0x4c315f474153", "0x7c9", "0x1")
+		local result = TransactionHash._encodeResourceBound("0x4c315f474153", "0x7c9", "0x1")
 		expect(result):toBe("0x4c315f47415300000000000007c900000000000000000000000000000001")
 	end)
 
 	it("encodes L2_GAS with zero bounds", function()
-		local result = TransactionHash.encodeResourceBound("0x4c325f474153", "0x0", "0x0")
+		local result = TransactionHash._encodeResourceBound("0x4c325f474153", "0x0", "0x0")
 		expect(result):toBe("0x4c325f474153000000000000000000000000000000000000000000000000")
 	end)
 
 	it("encodes L1_DATA with zero bounds", function()
-		local result = TransactionHash.encodeResourceBound("0x4c315f44415441", "0x0", "0x0")
+		local result = TransactionHash._encodeResourceBound("0x4c315f44415441", "0x0", "0x0")
 		expect(result):toBe("0x4c315f44415441000000000000000000000000000000000000000000000000")
 	end)
 
 	it("encodes L1_GAS with realistic Sepolia values", function()
 		-- max_amount = 0x186a0, max_price = 0x5af3107a4000
-		local result = TransactionHash.encodeResourceBound("0x4c315f474153", "0x186a0", "0x5af3107a4000")
+		local result = TransactionHash._encodeResourceBound("0x4c315f474153", "0x186a0", "0x5af3107a4000")
 		expect(result):toBe("0x4c315f47415300000000000186a0000000000000000000005af3107a4000")
 	end)
 
 	it("encodes L2_GAS with non-zero values", function()
 		-- max_amount = 0x1388, max_price = 0x3b9aca00
-		local result = TransactionHash.encodeResourceBound("0x4c325f474153", "0x1388", "0x3b9aca00")
+		local result = TransactionHash._encodeResourceBound("0x4c325f474153", "0x1388", "0x3b9aca00")
 		expect(result):toBe("0x4c325f47415300000000000013880000000000000000000000003b9aca00")
 	end)
 
 	it("encodes L1_DATA with non-zero values", function()
 		-- max_amount = 0x64, max_price = 0x5f5e100
-		local result = TransactionHash.encodeResourceBound("0x4c315f44415441", "0x64", "0x5f5e100")
+		local result = TransactionHash._encodeResourceBound("0x4c315f44415441", "0x64", "0x5f5e100")
 		expect(result):toBe("0x4c315f44415441000000000000006400000000000000000000000005f5e100")
 	end)
 end)

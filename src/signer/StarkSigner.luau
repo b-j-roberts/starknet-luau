@@ -13,7 +13,7 @@ export type StarkSigner = {
 	getPubKey: (self: StarkSigner) -> StarkCurve.AffinePoint,
 	getPublicKeyHex: (self: StarkSigner) -> string,
 	signRaw: (self: StarkSigner, msgHash: buffer) -> ECDSA.Signature,
-	signTransaction: (self: StarkSigner, txHash: buffer) -> { string },
+	signHash: (self: StarkSigner, hash: buffer) -> { string },
 }
 
 --- Re-export shared signer interface types for convenience
@@ -70,12 +70,12 @@ function StarkSignerClass:signRaw(msgHash: buffer): ECDSA.Signature
 	return ECDSA.sign(msgHash, self._privateKey)
 end
 
---- Sign a transaction hash and return the signature as a felt array [r_hex, s_hex].
---- This is the format expected by Starknet transaction submission.
---- @param txHash -- BigInt buffer representing the transaction hash
+--- Sign a hash and return the signature as a felt array [r_hex, s_hex].
+--- Works for transaction hashes, message hashes, or any hash value.
+--- @param hash -- BigInt buffer representing the hash to sign
 --- @return { string } -- array of two hex strings
-function StarkSignerClass:signTransaction(txHash: buffer): { string }
-	local sig = self:signRaw(txHash)
+function StarkSignerClass:signHash(hash: buffer): { string }
+	local sig = self:signRaw(hash)
 	return { BigInt.toHex(sig.r), BigInt.toHex(sig.s) }
 end
 

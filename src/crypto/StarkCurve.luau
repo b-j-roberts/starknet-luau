@@ -41,12 +41,22 @@ StarkCurve.G = { x = GX, y = GY } :: AffinePoint
 -- Curve order N (imported from StarkScalarField — single source of truth)
 StarkCurve.N = StarkScalarField.N
 
+-- Point at infinity sentinel (affine representation for identity element)
+-- Has no geometric meaning on the curve, but avoids nil returns from scalarMul(k=0).
+-- Check with StarkCurve.isInfinityAffine(p).
+StarkCurve.INFINITY = { x = StarkField.zero(), y = StarkField.zero() } :: AffinePoint
+
 --------------------------------------------------------------------------------
 -- Point predicates
 --------------------------------------------------------------------------------
 
 function StarkCurve.isInfinity(p: JacobianPoint): boolean
 	return StarkField.isZero(p.z)
+end
+
+--- Check if an affine point is the INFINITY sentinel.
+function StarkCurve.isInfinityAffine(p: AffinePoint): boolean
+	return StarkField.isZero(p.x) and StarkField.isZero(p.y)
 end
 
 function StarkCurve.isOnCurve(p: AffinePoint): boolean
@@ -79,9 +89,9 @@ function StarkCurve.jacobianFromAffine(p: AffinePoint): JacobianPoint
 	}
 end
 
-function StarkCurve.affineFromJacobian(p: JacobianPoint): AffinePoint?
+function StarkCurve.affineFromJacobian(p: JacobianPoint): AffinePoint
 	if StarkField.isZero(p.z) then
-		return nil
+		return StarkCurve.INFINITY
 	end
 	-- Affine = (X/Z², Y/Z³)
 	local zInv = StarkField.inv(p.z)
@@ -185,13 +195,13 @@ end
 
 --------------------------------------------------------------------------------
 -- Scalar multiplication (left-to-right double-and-add)
--- Returns nil for k=0 (identity has no affine representation)
+-- Returns INFINITY sentinel for k=0
 --------------------------------------------------------------------------------
 
-function StarkCurve.scalarMul(p: AffinePoint, k: buffer): AffinePoint?
+function StarkCurve.scalarMul(p: AffinePoint, k: buffer): AffinePoint
 	local bitLen = BigInt.bitLength(k)
 	if bitLen == 0 then
-		return nil
+		return StarkCurve.INFINITY
 	end
 
 	local jP = StarkCurve.jacobianFromAffine(p)
@@ -225,7 +235,7 @@ function StarkCurve.getPublicKey(privateKey: buffer): AffinePoint
 		)
 	end
 	local result = StarkCurve.scalarMul(StarkCurve.G, privateKey)
-	if result == nil then
+	if StarkCurve.isInfinityAffine(result) then
 		error(
 			StarknetError.signing(
 				"StarkCurve: invalid private key (maps to infinity)",
@@ -233,7 +243,7 @@ function StarkCurve.getPublicKey(privateKey: buffer): AffinePoint
 			)
 		)
 	end
-	return result :: AffinePoint
+	return result
 end
 
 return StarkCurve

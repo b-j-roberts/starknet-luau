@@ -189,20 +189,25 @@ function OutsideExecution.getOutsideCall(call: { [string]: any }): { [string]: a
 	}
 end
 
---- Build SNIP-12 TypedData for outside execution signing.
---- The returned TypedData object can be passed directly to Account:signMessage().
-function OutsideExecution.getTypedData(
+export type GetTypedDataConfig = {
 	chainId: string,
-	options: {
-		caller: string,
-		execute_after: number | string,
-		execute_before: number | string,
-	},
+	caller: string,
+	execute_after: number | string,
+	execute_before: number | string,
 	nonce: number | string,
 	calls: { { [string]: any } },
 	version: string,
-	feeMode: { [string]: any }?
-): { [string]: any }
+	feeMode: { [string]: any }?,
+}
+
+--- Build SNIP-12 TypedData for outside execution signing.
+--- The returned TypedData object can be passed directly to Account:signMessage().
+function OutsideExecution.getTypedData(config: GetTypedDataConfig): { [string]: any }
+	local chainId = config.chainId
+	local version = config.version
+	local nonce = config.nonce
+	local calls = config.calls
+	local feeMode = config.feeMode
 	if version ~= "1" and version ~= "2" and version ~= "3" then
 		error(StarknetError.validation(`Invalid outside execution version: {version}`, ErrorCodes.INVALID_VERSION.code))
 	end
@@ -216,8 +221,8 @@ function OutsideExecution.getTypedData(
 		)
 	end
 
-	local executeAfter = options.execute_after
-	local executeBefore = options.execute_before
+	local executeAfter = config.execute_after
+	local executeBefore = config.execute_before
 	if type(executeAfter) == "number" and type(executeBefore) == "number" then
 		if (executeAfter :: number) >= (executeBefore :: number) then
 			error(
@@ -257,7 +262,7 @@ function OutsideExecution.getTypedData(
 				chainId = chainId,
 			},
 			message = {
-				caller = options.caller,
+				caller = config.caller,
 				nonce = nonce,
 				execute_after = executeAfter,
 				execute_before = executeBefore,
@@ -282,7 +287,7 @@ function OutsideExecution.getTypedData(
 				revision = "1",
 			},
 			message = {
-				Caller = options.caller,
+				Caller = config.caller,
 				Nonce = nonce,
 				["Execute After"] = executeAfter,
 				["Execute Before"] = executeBefore,
@@ -332,7 +337,7 @@ function OutsideExecution.getTypedData(
 			revision = "1",
 		},
 		message = {
-			Caller = options.caller,
+			Caller = config.caller,
 			Nonce = nonce,
 			["Execute After"] = executeAfter,
 			["Execute Before"] = executeBefore,

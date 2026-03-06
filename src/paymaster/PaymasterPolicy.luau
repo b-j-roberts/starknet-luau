@@ -5,6 +5,8 @@
 -- No persistence — all tracking is in-memory and composable with PaymasterBudget
 
 local BigInt = require("../crypto/BigInt")
+local Keccak = require("../crypto/Keccak")
+local StarkField = require("../crypto/StarkField")
 local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
@@ -35,6 +37,16 @@ export type ValidationResult = {
 --------------------------------------------------------------------------------
 
 local normalizeHex = HexUtils.normalizeHex
+
+--- Normalize a selector: if it starts with "0x", normalize the hex; otherwise treat as
+--- a function name and compute the Starknet selector via Keccak.
+local function normalizeSelector(selector: string): string
+	if string.sub(selector, 1, 2) == "0x" or string.sub(selector, 1, 2) == "0X" then
+		return normalizeHex(selector)
+	end
+	-- Function name — compute selector hash
+	return StarkField.toHex(Keccak.getSelectorFromName(selector))
+end
 
 --------------------------------------------------------------------------------
 -- PaymasterPolicy
@@ -92,7 +104,7 @@ function PaymasterPolicy.new(config: PolicyConfig)
 					)
 				)
 			end
-			local key = normalizeHex(entry.contract) .. ":" .. entry.selector
+			local key = normalizeHex(entry.contract) .. ":" .. normalizeSelector(entry.selector)
 			allowedMethods[key] = true
 		end
 	end
@@ -217,7 +229,8 @@ function PolicyProto:validate(playerId: number, calls: { any }): ValidationResul
 			if not entrypoint then
 				return { allowed = false, reason = "Call " .. tostring(i) .. " is missing entrypoint" }
 			end
-			local key = normalizedAddr .. ":" .. entrypoint
+			local normalizedEntrypoint = normalizeSelector(entrypoint)
+			local key = normalizedAddr .. ":" .. normalizedEntrypoint
 			if not self._allowedMethods[key] then
 				return {
 					allowed = false,

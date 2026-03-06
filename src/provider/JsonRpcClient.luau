@@ -17,6 +17,7 @@ export type JsonRpcClientConfig = {
 	nodeUrl: string,
 	headers: { [string]: string }?,
 	maxRequestsPerMinute: number?,
+	rateLimitTimeout: number?, -- max seconds to wait for a rate-limit token (default 10)
 	retryAttempts: number?,
 	retryDelay: number?,
 	--- Optional: maps a decoded JSON-RPC error to an SDK error (then throws).
@@ -94,6 +95,7 @@ function JsonRpcClientClass.new(config: JsonRpcClientConfig): any
 		_retryDelay = config.retryDelay or 1,
 		_requestId = 0,
 		_rateLimiter = createRateLimiter(maxRpm, clockFn),
+		_rateLimitTimeout = config.rateLimitTimeout or 10,
 		_httpRequest = config._httpRequest,
 		_sleep = config._sleep or Defaults.sleep,
 		_clock = clockFn,
@@ -178,7 +180,7 @@ end
 
 --- Spin-wait to acquire a rate limit token. Throws on timeout.
 function JsonRpcClientClass:_acquireRateLimitToken()
-	local maxWait = 10 -- seconds
+	local maxWait = self._rateLimitTimeout
 	local startTime = self._clock()
 	while not tryAcquire(self._rateLimiter, self._clock) do
 		if self._clock() - startTime > maxWait then

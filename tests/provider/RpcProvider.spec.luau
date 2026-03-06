@@ -401,7 +401,7 @@ describe("RpcProvider - addInvokeTransaction", function()
 			account_deployment_data = {},
 		}
 		local result = provider:addInvokeTransaction(tx):expect()
-		expect(result):toBe("0xabc123")
+		expect(result.transaction_hash):toBe("0xabc123")
 	end)
 end)
 

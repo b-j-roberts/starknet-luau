@@ -10,16 +10,16 @@ local Interfaces = {}
 -- Signer interfaces
 --------------------------------------------------------------------------------
 
---- Minimal signer interface: only signTransaction.
+--- Minimal signer interface: only signHash.
 --- Used by TransactionBuilder which only needs signing capability.
 export type MinimalSigner = {
-	signTransaction: (self: MinimalSigner, txHash: buffer) -> { string },
+	signHash: (self: MinimalSigner, hash: buffer) -> { string },
 }
 
 --- Full signer interface with all StarkSigner methods.
 --- Used by Account which needs both signing and public key derivation.
 export type SignerInterface = {
-	signTransaction: (self: SignerInterface, txHash: buffer) -> { string },
+	signHash: (self: SignerInterface, hash: buffer) -> { string },
 	getPublicKeyHex: (self: SignerInterface) -> string,
 	signRaw: (self: SignerInterface, msgHash: buffer) -> any, -- ECDSA.Signature
 	getPubKey: (self: SignerInterface) -> any, -- AffinePoint
@@ -37,7 +37,7 @@ export type ProviderInterface = {
 	getNonce: (self: ProviderInterface, contractAddress: string, blockId: any?) -> any, -- Promise<string>
 	call: (self: ProviderInterface, request: any, blockId: any?) -> any, -- Promise<{string}>
 	estimateFee: (self: ProviderInterface, transactions: { any }, simulationFlags: { string }?) -> any,
-	addInvokeTransaction: (self: ProviderInterface, tx: any) -> any, -- Promise<string>
+	addInvokeTransaction: (self: ProviderInterface, tx: any) -> any, -- Promise<InvokeResult>
 	addDeployAccountTransaction: (self: ProviderInterface, tx: any) -> any, -- Promise<DeployAccountResult>
 	waitForTransaction: (self: ProviderInterface, txHash: string, options: any?) -> any, -- Promise<TransactionReceipt>
 	getEvents: (self: ProviderInterface, filter: any) -> any, -- Promise<EventsChunk>

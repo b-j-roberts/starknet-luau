@@ -74,6 +74,7 @@ export type RpcProviderConfig = {
 	nodeUrl: string,
 	headers: { [string]: string }?,
 	maxRequestsPerMinute: number?,
+	rateLimitTimeout: number?, -- max seconds to wait for a rate-limit token (default 10)
 	retryAttempts: number?,
 	retryDelay: number?,
 	enableQueue: boolean?,
@@ -204,7 +205,13 @@ export type EmittedEvent = {
 	transaction_hash: string?,
 }
 
---- Resource bounds for V3 transactions
+--- Resource bounds for V3 transactions (JSON-RPC wire format).
+--- NOTE: This uses snake_case field names and includes only 2 gas types (l1_gas, l2_gas)
+--- because the Starknet JSON-RPC spec does not accept l1_data_gas in the submitted
+--- resource_bounds object. This differs from TransactionHash.ResourceBounds which uses
+--- camelCase and includes 3 fields (l1Gas, l2Gas, l1DataGas) for Poseidon hash computation
+--- (SNIP-8 requires all three). TransactionBuilder.toRpcResourceBounds() converts between
+--- the two types, intentionally dropping l1DataGas for the wire format.
 export type ResourceBounds = {
 	l1_gas: { max_amount: string, max_price_per_unit: string },
 	l2_gas: { max_amount: string, max_price_per_unit: string },
@@ -240,6 +247,11 @@ export type DeployAccountTransactionV3 = {
 	paymaster_data: { string },
 	nonce_data_availability_mode: string,
 	fee_data_availability_mode: string,
+}
+
+--- Result from addInvokeTransaction
+export type InvokeResult = {
+	transaction_hash: string,
 }
 
 --- Result from addDeployAccountTransaction

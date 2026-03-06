@@ -12,6 +12,7 @@ local Constants = require("../constants")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 local Defaults = require("../shared/TestableDefaults")
+local HexUtils = require("../shared/HexUtils")
 
 --------------------------------------------------------------------------------
 -- AVNU Endpoint URLs
@@ -80,6 +81,7 @@ export type AvnuPaymasterConfig = {
 	retryAttempts: number?,
 	retryDelay: number?,
 	maxRequestsPerMinute: number?,
+	rateLimitTimeout: number?, -- max seconds to wait for a rate-limit token (default 10)
 	tokenCacheTtl: number?, -- seconds to cache getSupportedTokens (default 300 = 5 min)
 	-- Testing injection points
 	_httpRequest: ((request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse)?,
@@ -166,6 +168,7 @@ function AvnuPaymasterClass.new(config: AvnuPaymasterConfig): AvnuPaymaster
 		retryAttempts = config.retryAttempts,
 		retryDelay = config.retryDelay,
 		maxRequestsPerMinute = config.maxRequestsPerMinute,
+		rateLimitTimeout = config.rateLimitTimeout,
 		_httpRequest = config._httpRequest,
 		_sleep = config._sleep,
 		_clock = config._clock,
@@ -269,13 +272,28 @@ function AvnuPaymasterClass:getSupportedTokens(): any
 end
 
 --- Build typed data for a transaction.
+--- Normalizes call entrypoints before forwarding to PaymasterRpc, ensuring consistency
+--- with PaymasterPolicy validation. Accepts both `entrypoint` and `selector` field names,
+--- and normalizes hex addresses for consistent matching.
 function AvnuPaymasterClass:buildTypedData(
 	userAddress: string,
 	calls: { PaymasterRpc.Call },
 	gasTokenAddress: string,
 	options: PaymasterRpc.BuildTypedDataOptions?
 ): any
-	return self._inner:buildTypedData(userAddress, calls, gasTokenAddress, options)
+	-- Normalize calls: resolve entrypoint/selector field name and normalize addresses
+	local normalizedCalls: { PaymasterRpc.Call } = {}
+	for _, call in calls do
+		local callAny = call :: any
+		local entrypoint = callAny.entrypoint or callAny.selector
+		local contractAddress = callAny.contractAddress or callAny.to
+		table.insert(normalizedCalls, {
+			contractAddress = if contractAddress then HexUtils.normalizeHex(contractAddress) else "",
+			entrypoint = entrypoint or "",
+			calldata = call.calldata,
+		})
+	end
+	return self._inner:buildTypedData(userAddress, normalizedCalls, gasTokenAddress, options)
 end
 
 --- Execute a signed transaction through the paymaster.

@@ -267,7 +267,7 @@ function Account.getDeploymentFeeEstimate(config: {
 		local dummyAccount = {
 			address = config.contractAddress,
 			signer = {
-				signTransaction = function(_self: any, _hash: buffer): { string }
+				signHash = function(_self: any, _hash: buffer): { string }
 					return { "0x0", "0x0" }
 				end,
 			},
@@ -752,7 +752,7 @@ end
 function Account:signMessage(typedData: { [string]: any }): { string }
 	local msgHash = self:hashMessage(typedData)
 	local hashBuf = BigInt.fromHex(msgHash)
-	return self.signer:signTransaction(hashBuf)
+	return self.signer:signHash(hashBuf)
 end
 
 --- Get the SNIP-29 DeploymentData for this account.
@@ -939,7 +939,11 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: Interfaces.P
 			return
 		end
 
-		resolve(execResult)
+		-- Normalize return shape to match execute(): { transactionHash, trackingId? }
+		resolve({
+			transactionHash = execResult.transactionHash or execResult.transaction_hash,
+			trackingId = execResult.trackingId,
+		})
 	end)
 end
 

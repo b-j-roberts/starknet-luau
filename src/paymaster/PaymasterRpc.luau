@@ -22,6 +22,7 @@ export type PaymasterConfig = {
 	retryAttempts: number?,
 	retryDelay: number?,
 	maxRequestsPerMinute: number?,
+	rateLimitTimeout: number?, -- max seconds to wait for a rate-limit token (default 10)
 	-- Testing injection points (same pattern as RpcProvider)
 	_httpRequest: ((request: RpcTypes.HttpRequest) -> RpcTypes.HttpResponse)?,
 	_sleep: ((seconds: number) -> ())?,
@@ -255,6 +256,7 @@ function PaymasterRpcClass.new(config: PaymasterConfig): PaymasterRpc
 		nodeUrl = config.nodeUrl,
 		headers = config.headers,
 		maxRequestsPerMinute = config.maxRequestsPerMinute or 120,
+		rateLimitTimeout = config.rateLimitTimeout,
 		retryAttempts = config.retryAttempts,
 		retryDelay = config.retryDelay,
 		clientName = "PaymasterRpc",

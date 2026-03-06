@@ -16,6 +16,7 @@ export type EventPoller = {
 	start: (self: EventPoller) -> (),
 	stop: (self: EventPoller) -> (),
 	isRunning: (self: EventPoller) -> boolean,
+	getLastBlockNumber: (self: EventPoller) -> number?,
 }
 
 --------------------------------------------------------------------------------
@@ -167,6 +168,11 @@ end
 --- Check if the poller is currently running.
 function EventPollerClass:isRunning(): boolean
 	return self._running
+end
+
+--- Get the last block number that was polled (nil if no poll has completed yet).
+function EventPollerClass:getLastBlockNumber(): number?
+	return self._lastBlockNumber
 end
 
 return EventPollerClass

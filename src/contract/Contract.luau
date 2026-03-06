@@ -209,6 +209,12 @@ local Contract = {}
 
 --- Custom __index that supports dynamic method dispatch.
 --- Looks up ABI function names and returns bound call/invoke/populate wrappers.
+--- NOTE: Methods on Contract use `local self_: any = self` to bypass Luau's strict-mode
+--- type narrowing. The Contract class uses a custom __index metamethod for dynamic dispatch,
+--- which means `self` is typed as the metamethod's first parameter rather than the full
+--- instance shape. Casting to `any` allows access to instance fields (_functions, _provider,
+--- _account, _typeMap, _events, address) without type errors. This is a standard Luau pattern
+--- for classes with custom metamethods.
 function Contract:__index(key: string): any
 	-- First check the Contract class methods
 	local classMethod = rawget(Contract, key)

@@ -15,6 +15,13 @@ local TransactionHash = {}
 -- Types
 --------------------------------------------------------------------------------
 
+--- Resource bound for a single gas type (used in hash computation).
+--- NOTE: This uses camelCase field names and includes 3 gas types (l1Gas, l2Gas, l1DataGas)
+--- because the Poseidon hash computation (SNIP-8) requires all three bounds.
+--- This differs from RpcTypes.ResourceBounds which uses snake_case (l1_gas, l2_gas) and
+--- only 2 fields, because the Starknet JSON-RPC wire format does not include l1_data_gas
+--- in the submitted resource_bounds object. See TransactionBuilder.toRpcResourceBounds()
+--- which maps from this type to the wire format, intentionally omitting l1DataGas.
 export type ResourceBound = {
 	maxAmount: string, -- hex string (max 64 bits)
 	maxPricePerUnit: string, -- hex string (max 128 bits)
@@ -114,9 +121,10 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
--- Encode a single resource bound: (resource_name << 192) | (max_amount << 128) | max_price_per_unit
+-- Internal: Encode a single resource bound: (resource_name << 192) | (max_amount << 128) | max_price_per_unit
 -- resourceName: hex-encoded ASCII name (e.g., "0x4c315f474153" for "L1_GAS")
-function TransactionHash.encodeResourceBound(resourceName: string, maxAmount: string, maxPricePerUnit: string): string
+-- Prefixed with _ to signal this is not part of the public API.
+function TransactionHash._encodeResourceBound(resourceName: string, maxAmount: string, maxPricePerUnit: string): string
 	local nameBig = BigInt.fromHex(resourceName)
 	return BigInt.toHex(encodeResourceBoundInternal(nameBig, maxAmount, maxPricePerUnit))
 end

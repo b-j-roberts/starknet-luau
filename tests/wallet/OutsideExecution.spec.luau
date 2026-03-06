@@ -37,6 +37,32 @@ local function makeTestOptions(): { caller: string, execute_after: number | stri
 	}
 end
 
+--- Build a GetTypedDataConfig from common test params.
+local function makeConfig(
+	overrides: {
+		chainId: string?,
+		caller: string?,
+		execute_after: (number | string)?,
+		execute_before: (number | string)?,
+		nonce: (number | string)?,
+		calls: { { [string]: any } }?,
+		version: string?,
+		feeMode: { [string]: any }?,
+	}?
+): OutsideExecution.GetTypedDataConfig
+	local o = overrides or {}
+	return {
+		chainId = o.chainId or TEST_CHAIN_ID,
+		caller = o.caller or TEST_CALLER,
+		execute_after = if o.execute_after ~= nil then o.execute_after else 0,
+		execute_before = if o.execute_before ~= nil then o.execute_before else 999999999,
+		nonce = o.nonce or TEST_NONCE,
+		calls = o.calls or { makeTestCall() },
+		version = o.version or "1",
+		feeMode = o.feeMode,
+	}
+end
+
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
@@ -165,46 +191,46 @@ end)
 
 describe("OutsideExecution.getTypedData - V1", function()
 	it("uses StarkNetDomain (capital N)", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		local types = td.types :: { [string]: any }
 		expect(types["StarkNetDomain"] ~= nil):toBeTruthy()
 		expect(types["StarknetDomain"]):toBe(nil)
 	end)
 
 	it("primaryType is OutsideExecution", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect(td.primaryType):toBe("OutsideExecution")
 	end)
 
 	it("domain name is Account.execute_from_outside", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect((td.domain :: any).name):toBe("Account.execute_from_outside")
 	end)
 
 	it("domain version is 1", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect((td.domain :: any).version):toBe("1")
 	end)
 
 	it("domain chainId matches input", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect((td.domain :: any).chainId):toBe(TEST_CHAIN_ID)
 	end)
 
 	it("message has calls_len field", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect((td.message :: any).calls_len):toBe(1)
 	end)
 
 	it("message calls have calldata_len field", function()
 		local call = makeTestCall("transfer", { "0x1", "0x2" })
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { call }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig({ calls = { call } }))
 		local calls = (td.message :: any).calls :: { any }
 		expect((calls[1] :: any).calldata_len):toBe(2)
 	end)
 
 	it("encodes caller and nonce in message", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		local msg = td.message :: any
 		expect(msg.caller):toBe(TEST_CALLER)
 		expect(msg.nonce):toBe(TEST_NONCE)
@@ -227,24 +253,24 @@ end)
 
 describe("OutsideExecution.getTypedData - V2", function()
 	it("uses StarknetDomain (lowercase n)", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local types = td.types :: { [string]: any }
 		expect(types["StarknetDomain"] ~= nil):toBeTruthy()
 		expect(types["StarkNetDomain"]):toBe(nil)
 	end)
 
 	it("domain has revision 1", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		expect((td.domain :: any).revision):toBe("1")
 	end)
 
 	it("domain version is 2", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		expect((td.domain :: any).version):toBe("2")
 	end)
 
 	it("message uses PascalCase fields", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local msg = td.message :: any
 		expect(msg.Caller):toBe(TEST_CALLER)
 		expect(msg.Nonce):toBe(TEST_NONCE)
@@ -254,7 +280,7 @@ describe("OutsideExecution.getTypedData - V2", function()
 	end)
 
 	it("message Calls use Call struct with PascalCase", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local calls = (td.message :: any).Calls :: { any }
 		local call = calls[1] :: any
 		expect(call.To ~= nil):toBeTruthy()
@@ -277,7 +303,7 @@ describe("OutsideExecution.getTypedData - V2", function()
 	end)
 
 	it("no calls_len or calldata_len in V2", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local msg = td.message :: any
 		expect(msg.calls_len):toBe(nil)
 		local calls = msg.Calls :: { any }
@@ -311,16 +337,12 @@ describe("OutsideExecution.getTypedData - V3-RC", function()
 	}
 
 	it("domain version is 3", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", noFeeFeeMode
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = noFeeFeeMode }))
 		expect((td.domain :: any).version):toBe("3")
 	end)
 
 	it("domain has revision 1", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", noFeeFeeMode
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = noFeeFeeMode }))
 		expect((td.domain :: any).revision):toBe("1")
 	end)
 
@@ -360,9 +382,7 @@ describe("OutsideExecution.getTypedData - V3-RC", function()
 	end)
 
 	it("NoFee encodes as empty enum variant in message", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", noFeeFeeMode
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = noFeeFeeMode }))
 		local fee = (td.message :: any).Fee :: { [string]: any }
 		expect(fee["No Fee"] ~= nil):toBeTruthy()
 		local noFeeData = fee["No Fee"] :: { any }
@@ -370,9 +390,7 @@ describe("OutsideExecution.getTypedData - V3-RC", function()
 	end)
 
 	it("PayFee encodes with FeeTransfer data in message", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", payFeeFeeMode
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = payFeeFeeMode }))
 		local fee = (td.message :: any).Fee :: { [string]: any }
 		expect(fee["Pay Fee"] ~= nil):toBeTruthy()
 		local payFeeData = fee["Pay Fee"] :: { any }
@@ -384,17 +402,13 @@ describe("OutsideExecution.getTypedData - V3-RC", function()
 
 	it("requires feeMode parameter for V3", function()
 		expect(function()
-			OutsideExecution.getTypedData(
-				TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3"
-			)
+			OutsideExecution.getTypedData(makeConfig({ version = "3" }))
 		end):toThrowCode(6003)
 	end)
 
 	it("rejects feeMode without noFee or payFee", function()
 		expect(function()
-			OutsideExecution.getTypedData(
-				TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", { invalid = true }
-			)
+			OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = { invalid = true } }))
 		end):toThrowCode(6003)
 	end)
 end)
@@ -688,33 +702,31 @@ end)
 describe("OutsideExecution - Error handling", function()
 	it("throws INVALID_VERSION for invalid version in getTypedData", function()
 		expect(function()
-			OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "99")
+			OutsideExecution.getTypedData(makeConfig({ version = "99" }))
 		end):toThrowCode(6001)
 	end)
 
 	it("throws for empty calls array", function()
 		expect(function()
-			OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, {}, "1")
+			OutsideExecution.getTypedData(makeConfig({ calls = {} }))
 		end):toThrowCode(6000)
 	end)
 
 	it("throws INVALID_TIME_BOUNDS for execute_after >= execute_before", function()
 		expect(function()
-			local opts = { caller = TEST_CALLER, execute_after = 1000, execute_before = 100 }
-			OutsideExecution.getTypedData(TEST_CHAIN_ID, opts, TEST_NONCE, { makeTestCall() }, "1")
+			OutsideExecution.getTypedData(makeConfig({ execute_after = 1000, execute_before = 100 }))
 		end):toThrowCode(6004)
 	end)
 
 	it("throws INVALID_TIME_BOUNDS for equal timestamps", function()
 		expect(function()
-			local opts = { caller = TEST_CALLER, execute_after = 500, execute_before = 500 }
-			OutsideExecution.getTypedData(TEST_CHAIN_ID, opts, TEST_NONCE, { makeTestCall() }, "1")
+			OutsideExecution.getTypedData(makeConfig({ execute_after = 500, execute_before = 500 }))
 		end):toThrowCode(6004)
 	end)
 
 	it("throws MISSING_FEE_MODE for V3 without feeMode", function()
 		expect(function()
-			OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3")
+			OutsideExecution.getTypedData(makeConfig({ version = "3" }))
 		end):toThrowCode(6003)
 	end)
 end)
@@ -725,7 +737,7 @@ end)
 
 describe("OutsideExecution - TypedData message hash integration", function()
 	it("V1 typed data produces a valid message hash", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 		-- Must be a valid hex string
 		expect(string.sub(msgHash, 1, 2)):toBe("0x")
@@ -733,59 +745,56 @@ describe("OutsideExecution - TypedData message hash integration", function()
 	end)
 
 	it("V2 typed data produces a valid message hash", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 		expect(string.sub(msgHash, 1, 2)):toBe("0x")
 		expect(#msgHash > 4):toBeTruthy()
 	end)
 
 	it("V3-RC NoFee typed data produces a valid message hash", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", { noFee = true }
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = { noFee = true } }))
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 		expect(string.sub(msgHash, 1, 2)):toBe("0x")
 		expect(#msgHash > 4):toBeTruthy()
 	end)
 
 	it("V3-RC PayFee typed data produces a valid message hash", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", {
+		local td = OutsideExecution.getTypedData(makeConfig({
+			version = "3",
+			feeMode = {
 				payFee = {
 					tokenAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
 					amount = { low = "0x1000", high = "0x0" },
 					receiver = "0xabc123",
 				},
-			}
-		)
+			},
+		}))
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 		expect(string.sub(msgHash, 1, 2)):toBe("0x")
 		expect(#msgHash > 4):toBeTruthy()
 	end)
 
 	it("V1 identifies as LEGACY revision", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		expect(TypedData.identifyRevision(td)):toBe("0")
 	end)
 
 	it("V2 identifies as ACTIVE revision", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		expect(TypedData.identifyRevision(td)):toBe("1")
 	end)
 
 	it("different nonces produce different hashes", function()
-		local td1 = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), "0x1", { makeTestCall() }, "1")
-		local td2 = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), "0x2", { makeTestCall() }, "1")
+		local td1 = OutsideExecution.getTypedData(makeConfig())
+		local td2 = OutsideExecution.getTypedData(makeConfig({ nonce = "0x2" }))
 		local hash1 = TypedData.getMessageHash(td1, TEST_ACCOUNT_ADDR)
 		local hash2 = TypedData.getMessageHash(td2, TEST_ACCOUNT_ADDR)
 		expect(hash1 ~= hash2):toBeTruthy()
 	end)
 
 	it("different callers produce different hashes", function()
-		local opts1 = { caller = TEST_CALLER, execute_after = 0, execute_before = 999999999 }
-		local opts2 = { caller = "0xdeadbeef", execute_after = 0, execute_before = 999999999 }
-		local td1 = OutsideExecution.getTypedData(TEST_CHAIN_ID, opts1, TEST_NONCE, { makeTestCall() }, "2")
-		local td2 = OutsideExecution.getTypedData(TEST_CHAIN_ID, opts2, TEST_NONCE, { makeTestCall() }, "2")
+		local td1 = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
+		local td2 = OutsideExecution.getTypedData(makeConfig({ caller = "0xdeadbeef", version = "2" }))
 		local hash1 = TypedData.getMessageHash(td1, TEST_ACCOUNT_ADDR)
 		local hash2 = TypedData.getMessageHash(td2, TEST_ACCOUNT_ADDR)
 		expect(hash1 ~= hash2):toBeTruthy()
@@ -801,7 +810,7 @@ describe("OutsideExecution - Signing integration", function()
 	local pubKeyPoint = StarkCurve.getPublicKey(BigInt.fromHex(TEST_PRIVKEY))
 
 	it("V1: sign -> verify roundtrip", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "1")
+		local td = OutsideExecution.getTypedData(makeConfig())
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 
 		local hashBuf = BigInt.fromHex(msgHash)
@@ -812,7 +821,7 @@ describe("OutsideExecution - Signing integration", function()
 	end)
 
 	it("V2: sign -> verify roundtrip", function()
-		local td = OutsideExecution.getTypedData(TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "2")
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "2" }))
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 
 		local hashBuf = BigInt.fromHex(msgHash)
@@ -823,9 +832,7 @@ describe("OutsideExecution - Signing integration", function()
 	end)
 
 	it("V3-RC: sign -> verify roundtrip with NoFee", function()
-		local td = OutsideExecution.getTypedData(
-			TEST_CHAIN_ID, makeTestOptions(), TEST_NONCE, { makeTestCall() }, "3", { noFee = true }
-		)
+		local td = OutsideExecution.getTypedData(makeConfig({ version = "3", feeMode = { noFee = true } }))
 		local msgHash = TypedData.getMessageHash(td, TEST_ACCOUNT_ADDR)
 
 		local hashBuf = BigInt.fromHex(msgHash)

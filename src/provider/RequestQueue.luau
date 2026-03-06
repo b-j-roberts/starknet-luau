@@ -48,6 +48,7 @@ export type RequestQueue = {
 
 local METHOD_PRIORITY: { [string]: string } = {
 	["starknet_addInvokeTransaction"] = "high",
+	["starknet_addDeployAccountTransaction"] = "high",
 	["starknet_estimateFee"] = "high",
 	["starknet_estimateMessageFee"] = "high",
 	["starknet_getEvents"] = "low",
