@@ -71,6 +71,43 @@ local function encodeDAModeInternal(nonceDAMode: number, feeDAMode: number): Fel
 	return BigInt.bor(noncePart, BigInt.fromNumber(feeDAMode))
 end
 
+-- Internal: compute fee field hash as Felt (shared by hashFeeField and calculate*TransactionHash)
+local function computeFeeFieldHash(tip: string, resourceBounds: ResourceBounds): Felt
+	local tipFelt = StarkField.fromHex(tip)
+	local l1Bound =
+		encodeResourceBoundInternal(L1_GAS_NAME, resourceBounds.l1Gas.maxAmount, resourceBounds.l1Gas.maxPricePerUnit)
+	local l2Bound =
+		encodeResourceBoundInternal(L2_GAS_NAME, resourceBounds.l2Gas.maxAmount, resourceBounds.l2Gas.maxPricePerUnit)
+	local l1DataBound = encodeResourceBoundInternal(
+		L1_DATA_NAME,
+		resourceBounds.l1DataGas.maxAmount,
+		resourceBounds.l1DataGas.maxPricePerUnit
+	)
+	return Poseidon.hashMany({ tipFelt, l1Bound, l2Bound, l1DataBound })
+end
+
+-- Internal: extract common defaults and compute shared fields for V3 transaction hashes
+local function prepareCommonFields(params: {
+	version: string?,
+	tip: string?,
+	paymasterData: { string }?,
+	nonceDataAvailabilityMode: number?,
+	feeDataAvailabilityMode: number?,
+	resourceBounds: ResourceBounds,
+}): { feeFieldHash: Felt, paymasterHash: Felt, daMode: Felt, versionFelt: Felt }
+	local tip = params.tip or "0x0"
+	local paymasterData = params.paymasterData or {}
+	local nonceDAMode = params.nonceDataAvailabilityMode or 0
+	local feeDAMode = params.feeDataAvailabilityMode or 0
+
+	return {
+		feeFieldHash = computeFeeFieldHash(tip, params.resourceBounds),
+		paymasterHash = Poseidon.hashMany(hexArrayToFelts(paymasterData)),
+		daMode = encodeDAModeInternal(nonceDAMode, feeDAMode),
+		versionFelt = if params.version then StarkField.fromHex(params.version) else V3_VERSION,
+	}
+end
+
 --------------------------------------------------------------------------------
 -- Public API
 --------------------------------------------------------------------------------
@@ -84,17 +121,7 @@ end
 
 -- Hash fee field: poseidonHashMany([tip, l1_bound, l2_bound, l1_data_bound])
 function TransactionHash.hashFeeField(tip: string, resourceBounds: ResourceBounds): string
-	local tipFelt = StarkField.fromHex(tip)
-	local l1Bound =
-		encodeResourceBoundInternal(L1_GAS_NAME, resourceBounds.l1Gas.maxAmount, resourceBounds.l1Gas.maxPricePerUnit)
-	local l2Bound =
-		encodeResourceBoundInternal(L2_GAS_NAME, resourceBounds.l2Gas.maxAmount, resourceBounds.l2Gas.maxPricePerUnit)
-	local l1DataBound = encodeResourceBoundInternal(
-		L1_DATA_NAME,
-		resourceBounds.l1DataGas.maxAmount,
-		resourceBounds.l1DataGas.maxPricePerUnit
-	)
-	return StarkField.toHex(Poseidon.hashMany({ tipFelt, l1Bound, l2Bound, l1DataBound }))
+	return StarkField.toHex(computeFeeFieldHash(tip, resourceBounds))
 end
 
 -- Encode DA mode: (nonce_da_mode << 32) | fee_da_mode
@@ -117,57 +144,23 @@ function TransactionHash.calculateInvokeTransactionHash(params: {
 	nonceDataAvailabilityMode: number?,
 	feeDataAvailabilityMode: number?,
 }): string
-	local versionFelt = if params.version then StarkField.fromHex(params.version) else V3_VERSION
-	local tip = params.tip or "0x0"
-	local paymasterData = params.paymasterData or {}
+	local common = prepareCommonFields(params)
 	local accountDeploymentData = params.accountDeploymentData or {}
-	local nonceDAMode = params.nonceDataAvailabilityMode or 0
-	local feeDAMode = params.feeDataAvailabilityMode or 0
-
-	-- Compute fee field hash: poseidonHashMany([tip, l1_bound, l2_bound, l1_data_bound])
-	local tipFelt = StarkField.fromHex(tip)
-	local l1Bound = encodeResourceBoundInternal(
-		L1_GAS_NAME,
-		params.resourceBounds.l1Gas.maxAmount,
-		params.resourceBounds.l1Gas.maxPricePerUnit
-	)
-	local l2Bound = encodeResourceBoundInternal(
-		L2_GAS_NAME,
-		params.resourceBounds.l2Gas.maxAmount,
-		params.resourceBounds.l2Gas.maxPricePerUnit
-	)
-	local l1DataBound = encodeResourceBoundInternal(
-		L1_DATA_NAME,
-		params.resourceBounds.l1DataGas.maxAmount,
-		params.resourceBounds.l1DataGas.maxPricePerUnit
-	)
-	local feeFieldHash = Poseidon.hashMany({ tipFelt, l1Bound, l2Bound, l1DataBound })
-
-	-- Hash paymaster data and account deployment data
-	local paymasterHash = Poseidon.hashMany(hexArrayToFelts(paymasterData))
 	local accountDeployHash = Poseidon.hashMany(hexArrayToFelts(accountDeploymentData))
-
-	-- Hash compiled calldata
 	local calldataHash = Poseidon.hashMany(hexArrayToFelts(params.compiledCalldata))
 
-	-- Encode DA mode: (nonce_da_mode << 32) | fee_da_mode
-	local daMode = encodeDAModeInternal(nonceDAMode, feeDAMode)
-
-	-- poseidonHashMany([prefix, version, sender, fee_hash, paymaster_hash, chain_id, nonce, da_mode, deploy_data_hash, calldata_hash])
-	local dataToHash: { Felt } = {
+	return StarkField.toHex(Poseidon.hashMany({
 		INVOKE_PREFIX,
-		versionFelt,
+		common.versionFelt,
 		StarkField.fromHex(params.senderAddress),
-		feeFieldHash,
-		paymasterHash,
+		common.feeFieldHash,
+		common.paymasterHash,
 		StarkField.fromHex(params.chainId),
 		StarkField.fromHex(params.nonce),
-		daMode,
+		common.daMode,
 		accountDeployHash,
 		calldataHash,
-	}
-
-	return StarkField.toHex(Poseidon.hashMany(dataToHash))
+	}))
 end
 
 -- Calculate V3 DEPLOY_ACCOUNT transaction hash
@@ -189,57 +182,22 @@ function TransactionHash.calculateDeployAccountTransactionHash(params: {
 	nonceDataAvailabilityMode: number?,
 	feeDataAvailabilityMode: number?,
 }): string
-	local versionFelt = if params.version then StarkField.fromHex(params.version) else V3_VERSION
-	local tip = params.tip or "0x0"
-	local paymasterData = params.paymasterData or {}
-	local nonceDAMode = params.nonceDataAvailabilityMode or 0
-	local feeDAMode = params.feeDataAvailabilityMode or 0
-
-	-- Compute fee field hash: poseidonHashMany([tip, l1_bound, l2_bound, l1_data_bound])
-	local tipFelt = StarkField.fromHex(tip)
-	local l1Bound = encodeResourceBoundInternal(
-		L1_GAS_NAME,
-		params.resourceBounds.l1Gas.maxAmount,
-		params.resourceBounds.l1Gas.maxPricePerUnit
-	)
-	local l2Bound = encodeResourceBoundInternal(
-		L2_GAS_NAME,
-		params.resourceBounds.l2Gas.maxAmount,
-		params.resourceBounds.l2Gas.maxPricePerUnit
-	)
-	local l1DataBound = encodeResourceBoundInternal(
-		L1_DATA_NAME,
-		params.resourceBounds.l1DataGas.maxAmount,
-		params.resourceBounds.l1DataGas.maxPricePerUnit
-	)
-	local feeFieldHash = Poseidon.hashMany({ tipFelt, l1Bound, l2Bound, l1DataBound })
-
-	-- Hash paymaster data
-	local paymasterHash = Poseidon.hashMany(hexArrayToFelts(paymasterData))
-
-	-- Hash constructor calldata
+	local common = prepareCommonFields(params)
 	local constructorCalldataHash = Poseidon.hashMany(hexArrayToFelts(params.constructorCalldata))
 
-	-- Encode DA mode: (nonce_da_mode << 32) | fee_da_mode
-	local daMode = encodeDAModeInternal(nonceDAMode, feeDAMode)
-
-	-- poseidonHashMany([prefix, version, contract_address, fee_hash, paymaster_hash,
-	--   chain_id, nonce, da_mode, constructor_calldata_hash, class_hash, salt])
-	local dataToHash: { Felt } = {
+	return StarkField.toHex(Poseidon.hashMany({
 		DEPLOY_ACCOUNT_PREFIX,
-		versionFelt,
+		common.versionFelt,
 		StarkField.fromHex(params.contractAddress),
-		feeFieldHash,
-		paymasterHash,
+		common.feeFieldHash,
+		common.paymasterHash,
 		StarkField.fromHex(params.chainId),
 		StarkField.fromHex(params.nonce),
-		daMode,
+		common.daMode,
 		constructorCalldataHash,
 		StarkField.fromHex(params.classHash),
 		StarkField.fromHex(params.salt),
-	}
-
-	return StarkField.toHex(Poseidon.hashMany(dataToHash))
+	}))
 end
 
 return TransactionHash
