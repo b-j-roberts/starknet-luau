@@ -16,6 +16,7 @@ local TYPE_HIERARCHY: { [string]: { string } } = {
 	AbiError = { "StarknetError" },
 	ValidationError = { "StarknetError" },
 	TransactionError = { "StarknetError" },
+	PaymasterError = { "StarknetError" },
 }
 
 --------------------------------------------------------------------------------
@@ -105,6 +106,11 @@ function StarknetError.transaction(
 		executionTrace = executionTrace,
 		data = data,
 	})
+end
+
+--- Create a PaymasterError (paymaster / sponsored execution errors).
+function StarknetError.paymaster(message: string, code: number?, data: any?): any
+	return createError("PaymasterError", { message = message, code = code, data = data })
 end
 
 --- Duck-type checker: returns true if value looks like a StarknetError.

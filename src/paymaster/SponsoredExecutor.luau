@@ -283,7 +283,7 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 			if not policyResult.allowed then
 				metrics.totalFailed += 1
 				playerMetrics.failed += 1
-				local err = StarknetError.new(
+				local err = StarknetError.paymaster(
 					"SponsoredExecutor: policy rejected — " .. (policyResult.reason or "unknown"),
 					ErrorCodes.PAYMASTER_POLICY_REJECTED.code,
 					{ reason = policyResult.reason }
@@ -312,7 +312,7 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 			if not budget:canAfford(playerId, cost) then
 				metrics.totalFailed += 1
 				playerMetrics.failed += 1
-				local err = StarknetError.new(
+				local err = StarknetError.paymaster(
 					"SponsoredExecutor: insufficient budget",
 					ErrorCodes.INSUFFICIENT_BUDGET.code,
 					{ playerId = playerId, required = cost, balance = budget:getBalance(playerId) }
@@ -463,9 +463,11 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 		-- Wrap with retry context if retries were attempted
 		if retryCount > 0 and isTransientError(lastErr) then
 			reject(
-				StarknetError.new(
+				StarknetError.transaction(
 					`SponsoredExecutor: all {attempts} attempts failed — {tostring(lastErr)}`,
 					ErrorCodes.SPONSORED_EXECUTION_FAILED.code,
+					nil,
+					nil,
 					{ lastError = lastErr, attempts = attempts }
 				)
 			)

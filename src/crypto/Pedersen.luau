@@ -122,7 +122,7 @@ function Pedersen.hash(a: Felt, b: Felt): Felt
 
 	local result = StarkCurve.affineFromJacobian(acc)
 	if result == nil then
-		error(StarknetError.new("Pedersen: hash resulted in point at infinity", ErrorCodes.MATH_ERROR.code))
+		error(StarknetError.validation("Pedersen: hash resulted in point at infinity", ErrorCodes.MATH_ERROR.code))
 	end
 	return (result :: AffinePoint).x
 end

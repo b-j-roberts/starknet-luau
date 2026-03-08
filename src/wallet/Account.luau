@@ -155,10 +155,9 @@ local function validatePaymasterCalls(submittedCalls: { any }, typedData: { [str
 	local valid = OutsideExecution.validateCalls(submittedOutsideCalls, returnedCalls)
 	if not valid then
 		error(
-			StarknetError.new(
+			StarknetError.paymaster(
 				"returned calls from paymaster do not match submitted calls",
-				ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code,
-				"PaymasterError"
+				ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code
 			)
 		)
 	end

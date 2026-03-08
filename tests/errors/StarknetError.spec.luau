@@ -142,6 +142,23 @@ describe("StarknetError", function()
 		end)
 	end)
 
+	describe("StarknetError.paymaster", function()
+		it("creates a PaymasterError with code and data", function()
+			local err = StarknetError.paymaster("token not supported", 7002, { token = "0xabc" })
+			expect(err._type):toBe("PaymasterError")
+			expect(err.message):toBe("token not supported")
+			expect(err.code):toBe(7002)
+			expect(err.data.token):toBe("0xabc")
+		end)
+
+		it("works without optional fields", function()
+			local err = StarknetError.paymaster("paymaster down")
+			expect(err._type):toBe("PaymasterError")
+			expect(err.code == nil):toBeTruthy()
+			expect(err.data == nil):toBeTruthy()
+		end)
+	end)
+
 	-- ============================================================
 	-- :is() type hierarchy
 	-- ============================================================
@@ -192,6 +209,18 @@ describe("StarknetError", function()
 			expect(err:is("StarknetError")):toBeTruthy()
 		end)
 
+		it("PaymasterError is PaymasterError and StarknetError", function()
+			local err = StarknetError.paymaster("msg")
+			expect(err:is("PaymasterError")):toBeTruthy()
+			expect(err:is("StarknetError")):toBeTruthy()
+		end)
+
+		it("PaymasterError is not RpcError or TransactionError", function()
+			local err = StarknetError.paymaster("msg")
+			expect(err:is("RpcError")):toBeFalsy()
+			expect(err:is("TransactionError")):toBeFalsy()
+		end)
+
 		it("unknown type returns false", function()
 			local err = StarknetError.new("msg")
 			expect(err:is("UnknownType")):toBeFalsy()
@@ -203,12 +232,15 @@ describe("StarknetError", function()
 			local abi = StarknetError.abi("msg")
 			local validation = StarknetError.validation("msg")
 			local tx = StarknetError.transaction("msg")
+			local pm = StarknetError.paymaster("msg")
 
 			expect(rpc:is("SigningError")):toBeFalsy()
 			expect(signing:is("AbiError")):toBeFalsy()
 			expect(abi:is("ValidationError")):toBeFalsy()
 			expect(validation:is("TransactionError")):toBeFalsy()
 			expect(tx:is("RpcError")):toBeFalsy()
+			expect(pm:is("RpcError")):toBeFalsy()
+			expect(pm:is("TransactionError")):toBeFalsy()
 		end)
 	end)
 
@@ -236,6 +268,11 @@ describe("StarknetError", function()
 			local err = StarknetError.signing("bad key")
 			expect(tostring(err)):toBe("SigningError: bad key")
 		end)
+
+		it("formats PaymasterError with code", function()
+			local err = StarknetError.paymaster("token rejected", 7002)
+			expect(tostring(err)):toBe("PaymasterError [7002]: token rejected")
+		end)
 	end)
 
 	-- ============================================================
@@ -254,6 +291,7 @@ describe("StarknetError", function()
 			expect(StarknetError.isStarknetError(StarknetError.abi("msg"))):toBeTruthy()
 			expect(StarknetError.isStarknetError(StarknetError.validation("msg"))):toBeTruthy()
 			expect(StarknetError.isStarknetError(StarknetError.transaction("msg"))):toBeTruthy()
+			expect(StarknetError.isStarknetError(StarknetError.paymaster("msg"))):toBeTruthy()
 		end)
 
 		it("returns false for plain string", function()

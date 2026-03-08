@@ -231,7 +231,7 @@ end
 --- Determine whether a paymaster error should be retried.
 --- Returns false for deterministic paymaster-specific errors.
 local function shouldRetryPaymasterError(err: any): boolean
-	if typeof(err) == "table" and err._type == "RpcError" then
+	if typeof(err) == "table" and type(err.is) == "function" and err:is("RpcError") then
 		if ErrorCodes.isNonRetryablePaymaster(err.code or 0) then
 			return false
 		end

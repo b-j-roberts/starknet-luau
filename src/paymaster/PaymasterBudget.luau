@@ -301,7 +301,7 @@ function BudgetProto:consumeTransaction(playerId: number, txCost: number?): numb
 
 	if data.balance < cost then
 		error(
-			StarknetError.new(
+			StarknetError.paymaster(
 				"Insufficient paymaster tokens: need "
 					.. tostring(cost)
 					.. " but player "

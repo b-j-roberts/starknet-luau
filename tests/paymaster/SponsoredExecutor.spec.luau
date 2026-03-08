@@ -1332,7 +1332,7 @@ describe("SponsoredExecutor — Transient error detection", function()
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				attemptCount += 1
 				return MockPromise.reject(
-					StarknetError.new("calls mismatch", ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code)
+					StarknetError.paymaster("calls mismatch", ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code)
 				)
 			end,
 		})

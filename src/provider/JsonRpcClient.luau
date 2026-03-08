@@ -276,7 +276,8 @@ function JsonRpcClientClass:_requestWithRetry(method: string, params: any): any
 			-- Default: don't retry on RPC errors (they're deterministic)
 			if
 				typeof(result) == "table"
-				and result._type == "RpcError"
+				and type(result.is) == "function"
+				and result:is("RpcError")
 				and result.code == ErrorCodes.RPC_ERROR.code
 			then
 				error(result)
