@@ -584,12 +584,12 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 ### R.5.3 Expand Error System Tests
 
 **Requirements**:
-- [ ] Test 26 untested error codes: 2010-2015, 5002-5003, 6000-6004, 7000-7020 ranges (ref: 02-errors.md §ErrorCodes [test])
-- [ ] Add code uniqueness assertion (no duplicate numeric codes) (ref: 02-errors.md §ErrorCodes [test])
-- [ ] Add `tostring` tests for `ValidationError`, `AbiError`, `TransactionError` subtypes (ref: 02-errors.md §StarknetError [test])
-- [ ] Add negative test for `isStarknetError` with table that has `_type`+`message` but no `is` function (ref: 02-errors.md §StarknetError [test])
-- [ ] Add test for `:is()` with manually-constructed object whose `_type` is not in `TYPE_HIERARCHY` (ref: 02-errors.md §StarknetError [test])
-- [ ] Update constants.spec.luau completeness test to include `ANY_CALLER`, `ARGENT_ACCOUNT_CLASS_HASH`, `BRAAVOS_ACCOUNT_CLASS_HASH`, `BRAAVOS_BASE_ACCOUNT_CLASS_HASH` (ref: 09-root.md §constant tests [test])
+- [x] Test 26 untested error codes: 2010-2015, 5002-5003, 6000-6004, 7000-7020 ranges (ref: 02-errors.md §ErrorCodes [test])
+- [x] Add code uniqueness assertion (no duplicate numeric codes) (ref: 02-errors.md §ErrorCodes [test])
+- [x] Add `tostring` tests for `ValidationError`, `AbiError`, `TransactionError` subtypes (ref: 02-errors.md §StarknetError [test])
+- [x] Add negative test for `isStarknetError` with table that has `_type`+`message` but no `is` function (ref: 02-errors.md §StarknetError [test])
+- [x] Add test for `:is()` with manually-constructed object whose `_type` is not in `TYPE_HIERARCHY` (ref: 02-errors.md §StarknetError [test])
+- [x] Update constants.spec.luau completeness test to include `ANY_CALLER`, `ARGENT_ACCOUNT_CLASS_HASH`, `BRAAVOS_ACCOUNT_CLASS_HASH`, `BRAAVOS_BASE_ACCOUNT_CLASS_HASH` (ref: 09-root.md §constant tests [test])
 
 ---
 

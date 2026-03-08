@@ -25,6 +25,24 @@ describe("Constants - Class Hashes", function()
 			"0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
 		)
 	end)
+
+	it("ARGENT_ACCOUNT_CLASS_HASH matches known Argent X Cairo 1 class hash", function()
+		expect(Constants.ARGENT_ACCOUNT_CLASS_HASH):toBe(
+			"0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
+		)
+	end)
+
+	it("BRAAVOS_ACCOUNT_CLASS_HASH matches known Braavos implementation class hash", function()
+		expect(Constants.BRAAVOS_ACCOUNT_CLASS_HASH):toBe(
+			"0x03957f9f5a1cbfe918cedc2015c85200ca51a5f7506ecb6de98a5207b759bf8a"
+		)
+	end)
+
+	it("BRAAVOS_BASE_ACCOUNT_CLASS_HASH matches known Braavos base class hash", function()
+		expect(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH):toBe(
+			"0x03d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201"
+		)
+	end)
 end)
 
 --------------------------------------------------------------------------------
@@ -70,6 +88,16 @@ describe("Constants - Transaction Versions", function()
 end)
 
 --------------------------------------------------------------------------------
+-- Outside Execution (SNIP-9) tests
+--------------------------------------------------------------------------------
+
+describe("Constants - Outside Execution", function()
+	it("ANY_CALLER is ASCII encoding of 'ANY_CALLER'", function()
+		expect(Constants.ANY_CALLER):toBe("0x414e595f43414c4c4552")
+	end)
+end)
+
+--------------------------------------------------------------------------------
 -- Completeness test
 --------------------------------------------------------------------------------
 
@@ -80,6 +108,9 @@ describe("Constants - Module Completeness", function()
 		expect(Constants.SN_SEPOLIA ~= nil):toBe(true)
 		-- Class hashes
 		expect(Constants.OZ_ACCOUNT_CLASS_HASH ~= nil):toBe(true)
+		expect(Constants.ARGENT_ACCOUNT_CLASS_HASH ~= nil):toBe(true)
+		expect(Constants.BRAAVOS_ACCOUNT_CLASS_HASH ~= nil):toBe(true)
+		expect(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH ~= nil):toBe(true)
 		-- Prefix
 		expect(Constants.CONTRACT_ADDRESS_PREFIX ~= nil):toBe(true)
 		-- Token addresses
@@ -89,5 +120,7 @@ describe("Constants - Module Completeness", function()
 		expect(Constants.INVOKE_TX_V3 ~= nil):toBe(true)
 		expect(Constants.DEPLOY_ACCOUNT_TX_V3 ~= nil):toBe(true)
 		expect(Constants.DECLARE_TX_V3 ~= nil):toBe(true)
+		-- Outside Execution
+		expect(Constants.ANY_CALLER ~= nil):toBe(true)
 	end)
 end)

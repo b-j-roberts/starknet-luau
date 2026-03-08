@@ -23,6 +23,13 @@ describe("StarknetError", function()
 			expect(ErrorCodes.TRANSACTION_REJECTED.code):toBe(2005)
 		end)
 
+		it("has queue/batch/nonce codes in 2010-2015 range", function()
+			expect(ErrorCodes.QUEUE_FULL.code):toBe(2010)
+			expect(ErrorCodes.BATCH_ERROR.code):toBe(2011)
+			expect(ErrorCodes.NONCE_FETCH_ERROR.code):toBe(2013)
+			expect(ErrorCodes.NONCE_MANAGER_ERROR.code):toBe(2015)
+		end)
+
 		it("has signing codes in 3000 range", function()
 			expect(ErrorCodes.SIGNING_ERROR.code):toBe(3000)
 			expect(ErrorCodes.INVALID_PRIVATE_KEY.code):toBe(3001)
@@ -47,11 +54,48 @@ describe("StarknetError", function()
 			expect(ErrorCodes.NONCE_EXHAUSTED.code):toBe(5004)
 		end)
 
+		it("has outside execution codes in 6000 range", function()
+			expect(ErrorCodes.INVALID_VERSION.code):toBe(6001)
+			expect(ErrorCodes.CALL_VALIDATION_FAILED.code):toBe(6002)
+			expect(ErrorCodes.MISSING_FEE_MODE.code):toBe(6003)
+			expect(ErrorCodes.INVALID_TIME_BOUNDS.code):toBe(6004)
+		end)
+
+		it("has paymaster codes in 7000 range", function()
+			expect(ErrorCodes.PAYMASTER_ERROR.code):toBe(7000)
+			expect(ErrorCodes.PAYMASTER_UNAVAILABLE.code):toBe(7001)
+			expect(ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code):toBe(7002)
+			expect(ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code):toBe(7003)
+			expect(ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code):toBe(7004)
+			expect(ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code):toBe(7005)
+			expect(ErrorCodes.PAYMASTER_EXECUTION_ERROR.code):toBe(7006)
+			expect(ErrorCodes.PAYMASTER_INVALID_ADDRESS.code):toBe(7007)
+			expect(ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code):toBe(7008)
+			expect(ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED.code):toBe(7009)
+			expect(ErrorCodes.PAYMASTER_POLICY_REJECTED.code):toBe(7010)
+			expect(ErrorCodes.BUDGET_ERROR.code):toBe(7011)
+			expect(ErrorCodes.INSUFFICIENT_BUDGET.code):toBe(7012)
+			expect(ErrorCodes.DATASTORE_ERROR.code):toBe(7013)
+			expect(ErrorCodes.INVALID_AMOUNT.code):toBe(7014)
+			expect(ErrorCodes.SPONSORED_EXECUTION_FAILED.code):toBe(7020)
+		end)
+
 		it("removed dead codes do not exist", function()
 			expect((ErrorCodes :: any).OUT_OF_RANGE == nil):toBeTruthy()
 			expect((ErrorCodes :: any).INSUFFICIENT_BALANCE == nil):toBeTruthy()
 			expect((ErrorCodes :: any).CACHE_ERROR == nil):toBeTruthy()
 			expect((ErrorCodes :: any).OUTSIDE_EXECUTION_ERROR == nil):toBeTruthy()
+		end)
+
+		it("has no duplicate numeric codes", function()
+			local seen: { [number]: string } = {}
+			for key, entry in pairs(ErrorCodes) do
+				if type(entry) == "table" and entry.code then
+					local existing = seen[entry.code]
+					expect(existing == nil):toBeTruthy()
+					seen[entry.code] = key
+				end
+			end
 		end)
 
 		it("auto-generates name from table key", function()
@@ -60,6 +104,34 @@ describe("StarknetError", function()
 			expect(ErrorCodes.SIGNING_ERROR.name):toBe("SIGNING_ERROR")
 			expect(ErrorCodes.NONCE_EXHAUSTED.name):toBe("NONCE_EXHAUSTED")
 			expect(ErrorCodes.PAYMASTER_ERROR.name):toBe("PAYMASTER_ERROR")
+			expect(ErrorCodes.QUEUE_FULL.name):toBe("QUEUE_FULL")
+			expect(ErrorCodes.INVALID_VERSION.name):toBe("INVALID_VERSION")
+			expect(ErrorCodes.SPONSORED_EXECUTION_FAILED.name):toBe("SPONSORED_EXECUTION_FAILED")
+		end)
+
+		it("isTransient identifies retryable error codes", function()
+			expect(ErrorCodes.isTransient(ErrorCodes.NETWORK_ERROR.code)):toBeTruthy()
+			expect(ErrorCodes.isTransient(ErrorCodes.RATE_LIMIT.code)):toBeTruthy()
+			expect(ErrorCodes.isTransient(ErrorCodes.PAYMASTER_UNAVAILABLE.code)):toBeTruthy()
+			-- Non-transient codes
+			expect(ErrorCodes.isTransient(ErrorCodes.RPC_ERROR.code)):toBeFalsy()
+			expect(ErrorCodes.isTransient(ErrorCodes.INVALID_ARGUMENT.code)):toBeFalsy()
+			expect(ErrorCodes.isTransient(ErrorCodes.SIGNING_ERROR.code)):toBeFalsy()
+		end)
+
+		it("isNonRetryablePaymaster identifies deterministic paymaster errors", function()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_ERROR.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_EXECUTION_ERROR.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_INVALID_ADDRESS.code)):toBeTruthy()
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code)):toBeTruthy()
+			-- Retryable paymaster code
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.PAYMASTER_UNAVAILABLE.code)):toBeFalsy()
+			-- Non-paymaster codes
+			expect(ErrorCodes.isNonRetryablePaymaster(ErrorCodes.RPC_ERROR.code)):toBeFalsy()
 		end)
 	end)
 
@@ -289,6 +361,36 @@ describe("StarknetError", function()
 			local err = StarknetError.paymaster("token rejected", 7002)
 			expect(tostring(err)):toBe("PaymasterError [7002]: token rejected")
 		end)
+
+		it("formats ValidationError with code", function()
+			local err = StarknetError.validation("missing address", 1001, "Pass address in config")
+			expect(tostring(err)):toBe("ValidationError [1001]: missing address")
+		end)
+
+		it("formats ValidationError without code", function()
+			local err = StarknetError.validation("bad input")
+			expect(tostring(err)):toBe("ValidationError: bad input")
+		end)
+
+		it("formats AbiError with code", function()
+			local err = StarknetError.abi("unknown type 'Foo'", 4001)
+			expect(tostring(err)):toBe("AbiError [4001]: unknown type 'Foo'")
+		end)
+
+		it("formats AbiError without code", function()
+			local err = StarknetError.abi("encoding failed")
+			expect(tostring(err)):toBe("AbiError: encoding failed")
+		end)
+
+		it("formats TransactionError with code", function()
+			local err = StarknetError.transaction("tx reverted", 2004, "out of gas")
+			expect(tostring(err)):toBe("TransactionError [2004]: tx reverted")
+		end)
+
+		it("formats TransactionError without code", function()
+			local err = StarknetError.transaction("rejected")
+			expect(tostring(err)):toBe("TransactionError: rejected")
+		end)
 	end)
 
 	-- ============================================================
@@ -328,6 +430,27 @@ describe("StarknetError", function()
 
 		it("returns false for table with unknown _type", function()
 			expect(StarknetError.isStarknetError({ _type = "FakeError", message = "test", is = function() end })):toBeFalsy()
+		end)
+
+		it("returns false for table with _type and message but no is function", function()
+			expect(StarknetError.isStarknetError({ _type = "StarknetError", message = "test" })):toBeFalsy()
+		end)
+	end)
+
+	-- ============================================================
+	-- :is() edge cases
+	-- ============================================================
+
+	describe(":is() edge cases", function()
+		it("_type not in TYPE_HIERARCHY matches own type but not parents", function()
+			-- Manually construct an object with ErrorProto's metatable but unknown _type
+			local real = StarknetError.new("base")
+			local fake = setmetatable({ _type = "MadeUpType", message = "fake" }, getmetatable(real))
+			-- Direct comparison matches own _type
+			expect(fake:is("MadeUpType")):toBeTruthy()
+			-- But hierarchy walk stops — no parents found
+			expect(fake:is("StarknetError")):toBeFalsy()
+			expect(fake:is("RpcError")):toBeFalsy()
 		end)
 	end)
 
