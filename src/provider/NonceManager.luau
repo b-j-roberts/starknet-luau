@@ -14,6 +14,7 @@ local ErrorCodes = StarknetError.ErrorCodes
 type NonceState = {
 	nextNonce: number, -- Next nonce to reserve (0-indexed)
 	pending: { [number]: boolean }, -- Set of reserved-but-unconfirmed nonces
+	pendingCount: number, -- Incrementally tracked count of pending nonces (avoids O(n) iteration)
 	initialized: boolean, -- Whether we've fetched from chain at least once
 	dirty: boolean, -- Needs re-sync before next reserve
 }
@@ -64,15 +65,6 @@ local function parseNonceHex(nonceHex: string): number
 	return n
 end
 
---- Internal: Count pending nonces for an address state.
-local function countPending(state: NonceState): number
-	local count = 0
-	for _ in state.pending do
-		count += 1
-	end
-	return count
-end
-
 --- Internal: Fetch the on-chain nonce for an address.
 --- Uses "pending" block tag to include sequencer-accepted but not-yet-included transactions.
 function NonceManager:_fetchOnChainNonce(address: string): string
@@ -114,14 +106,15 @@ function NonceManager:reserve(address: string): any
 			state = {
 				nextNonce = onChainNonce,
 				pending = {},
+				pendingCount = 0,
 				initialized = true,
 				dirty = false,
 			}
 			self._states[address] = state
 		end
 
-		-- Check backpressure
-		local pendingCount = countPending(state)
+		-- Check backpressure (O(1) via incremental counter)
+		local pendingCount = state.pendingCount
 		if pendingCount >= self._maxPendingNonces then
 			reject(
 				StarknetError.transaction(
@@ -139,6 +132,7 @@ function NonceManager:reserve(address: string): any
 		local nonce = state.nextNonce
 		state.nextNonce += 1
 		state.pending[nonce] = true
+		state.pendingCount += 1
 
 		self._metrics.totalReserved += 1
 
@@ -159,6 +153,7 @@ function NonceManager:confirm(address: string, nonceHex: string)
 
 	if state.pending[nonce] then
 		state.pending[nonce] = nil
+		state.pendingCount -= 1
 		self._metrics.totalConfirmed += 1
 	end
 end
@@ -175,6 +170,7 @@ function NonceManager:reject(address: string, nonceHex: string)
 
 	if state.pending[nonce] then
 		state.pending[nonce] = nil
+		state.pendingCount -= 1
 		self._metrics.totalRejected += 1
 	end
 
@@ -208,6 +204,7 @@ function NonceManager:resync(address: string): any
 		self._states[address] = {
 			nextNonce = onChainNonce,
 			pending = {},
+			pendingCount = 0,
 			initialized = true,
 			dirty = false,
 		}
@@ -234,7 +231,7 @@ function NonceManager:getPendingCount(address: string): number
 	if not state then
 		return 0
 	end
-	return countPending(state)
+	return state.pendingCount
 end
 
 --- Get a snapshot of nonce manager metrics.

@@ -187,9 +187,33 @@ function RpcProviderClass:getPromise(): any
 	return self._client:getPromise()
 end
 
---- Internal: JSON encode (used by fetch cache key computation and _dispatchBatch)
+--- Internal: JSON encode (used by _dispatchBatch)
 function RpcProviderClass:_jsonEncode(value: any): string
 	return self._client:_jsonEncode(value)
+end
+
+--- Internal: Build a cache key for RPC params.
+--- Fast path for simple params (arrays of strings/numbers/booleans) avoids full JSON serialization.
+--- Falls back to _jsonEncode for nested tables.
+--- Always preserves "method:" prefix so invalidateByPrefix() continues to work.
+function RpcProviderClass:_buildCacheKey(method: string, params: any): string
+	if type(params) ~= "table" then
+		return method .. ":" .. tostring(params)
+	end
+	-- Fast path: check if all elements are simple scalars
+	local parts: { string } = {}
+	for _, v in params :: { any } do
+		local t = type(v)
+		if t == "string" then
+			table.insert(parts, v)
+		elseif t == "number" or t == "boolean" then
+			table.insert(parts, tostring(v))
+		else
+			-- Nested table: fall back to full JSON encode
+			return method .. ":" .. self:_jsonEncode(params)
+		end
+	end
+	return method .. ":" .. table.concat(parts, "\0")
 end
 
 --- Internal: JSON decode (used by _dispatchBatch)
@@ -227,7 +251,7 @@ function RpcProviderClass:fetch(method: string, params: any, options: RpcTypes.F
 	if cache and not bypassCache then
 		local ttl = cache:getTTLForMethod(method)
 		if ttl ~= nil then
-			local cacheKey = method .. ":" .. self:_jsonEncode(params)
+			local cacheKey = self:_buildCacheKey(method, params)
 			local cached = cache:get(cacheKey)
 			if cached ~= nil then
 				return Promise.resolve(cached)

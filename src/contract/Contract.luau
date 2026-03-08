@@ -86,19 +86,29 @@ type ParsedFunction = {
 	selector: string, -- hex string of the snKeccak selector
 }
 
+--- Compute and cache the selector for a parsed function on first access.
+local function getSelector(fn: ParsedFunction): string
+	local sel = fn.selector
+	if sel == "" then
+		sel = StarkField.toHex(Keccak.getSelectorFromName(fn.name))
+		fn.selector = sel
+	end
+	return sel
+end
+
 --- Parse an ABI array into a lookup table of functions keyed by name.
 --- Also extracts functions from "interface" entries (nested items).
+--- Selector computation is deferred to first use via getSelector() for large ABIs.
 local function parseAbi(abi: Abi): ({ [string]: ParsedFunction }, AbiCodec.TypeMap)
 	local functions: { [string]: ParsedFunction } = {}
 
 	local function addFunction(entry: AbiFunction)
-		local selector = Keccak.getSelectorFromName(entry.name)
 		functions[entry.name] = {
 			name = entry.name,
 			inputs = entry.inputs or {},
 			outputs = entry.outputs or {},
 			stateMutability = entry.state_mutability or "external",
-			selector = StarkField.toHex(selector),
+			selector = "", -- lazy: computed on first use via getSelector()
 		}
 	end
 
@@ -329,7 +339,7 @@ function Contract:call(method: string, args: { any }?, blockId: string?): any
 
 	local request = {
 		contract_address = self_.address,
-		entry_point_selector = fn.selector,
+		entry_point_selector = getSelector(fn),
 		calldata = calldata,
 	}
 
@@ -389,10 +399,15 @@ function Contract:getFunctions(): { string }
 end
 
 --- Get parsed function metadata by name.
+--- Ensures the selector is computed before returning.
 function Contract:getFunction(name: string): ParsedFunction?
 	local self_: any = self
 	local functions: { [string]: ParsedFunction } = self_._functions
-	return functions[name]
+	local fn = functions[name]
+	if fn then
+		getSelector(fn) -- ensure selector is populated
+	end
+	return fn
 end
 
 --- Check if a function exists in the ABI.

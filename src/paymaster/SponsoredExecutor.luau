@@ -139,14 +139,36 @@ local function getOrCreatePlayerMetrics(metrics: ExecutorMetrics, playerId: numb
 	return metrics.byPlayer[playerId]
 end
 
+-- Maximum number of distinct keys tracked in byContract/byMethod metrics maps.
+-- Prevents unbounded memory growth from diverse contract/method combinations.
+local MAX_METRICS_KEYS = 256
+
+--- Increment a capped metrics map. Existing keys are always incremented;
+--- new keys are only added if the map hasn't reached MAX_METRICS_KEYS.
+local function incrementCapped(map: { [string]: number }, key: string)
+	local existing = map[key]
+	if existing then
+		map[key] = existing + 1
+	else
+		-- Count entries before inserting a new key
+		local count = 0
+		for _ in map do
+			count += 1
+			if count >= MAX_METRICS_KEYS then
+				return -- at cap, drop this new key
+			end
+		end
+		map[key] = 1
+	end
+end
+
 --- Record per-contract and per-method metrics for calls.
 local function recordCallMetrics(metrics: ExecutorMetrics, calls: { Interfaces.Call })
 	for _, call in calls do
 		local addr = call.contractAddress or ""
-		metrics.byContract[addr] = (metrics.byContract[addr] or 0) + 1
+		incrementCapped(metrics.byContract, addr)
 		local method = call.entrypoint or ""
-		local key = addr .. ":" .. method
-		metrics.byMethod[key] = (metrics.byMethod[key] or 0) + 1
+		incrementCapped(metrics.byMethod, addr .. ":" .. method)
 	end
 end
 

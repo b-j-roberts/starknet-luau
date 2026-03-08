@@ -8,6 +8,15 @@ local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 local Defaults = require("../shared/TestableDefaults")
 
+-- Cache the serde module at module level to avoid re-requiring on every encode/decode call
+local _cachedSerde: any = nil
+local function getSerde(): any
+	if not _cachedSerde then
+		_cachedSerde = require("@lune/serde") :: any
+	end
+	return _cachedSerde
+end
+
 --------------------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------------------
@@ -149,9 +158,7 @@ end
 --- JSON encode
 function JsonRpcClientClass:_jsonEncode(value: any): string
 	if self._httpRequest then
-		-- In test/Lune environment, use the injected serde
-		local serde = require("@lune/serde") :: any
-		return serde.encode("json", value)
+		return getSerde().encode("json", value)
 	end
 	local HttpService = (game :: any):GetService("HttpService")
 	return HttpService:JSONEncode(value)
@@ -160,8 +167,7 @@ end
 --- JSON decode
 function JsonRpcClientClass:_jsonDecode(json: string): any
 	if self._httpRequest then
-		local serde = require("@lune/serde") :: any
-		return serde.decode("json", json)
+		return getSerde().decode("json", json)
 	end
 	local HttpService = (game :: any):GetService("HttpService")
 	return HttpService:JSONDecode(json)

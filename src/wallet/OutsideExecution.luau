@@ -347,6 +347,20 @@ function OutsideExecution.getTypedData(config: GetTypedDataConfig): { [string]: 
 	}
 end
 
+--- Normalize a call's hex fields once, returning a canonical representation.
+local function normalizeCall(call: { [string]: any }): { to: string, selector: string, calldata: { string } }
+	local cd = (call.calldata or {}) :: { string }
+	local normalizedCd: { string } = table.create(#cd)
+	for i, felt in cd do
+		normalizedCd[i] = normalizeHex(felt)
+	end
+	return {
+		to = normalizeHex(call.to or call.contractAddress),
+		selector = normalizeHex(call.selector),
+		calldata = normalizedCd,
+	}
+end
+
 --- Validate that returned calls match submitted calls.
 --- Returns true if:
 --- 1. All calls match exactly (hex-normalized comparison), OR
@@ -355,32 +369,41 @@ function OutsideExecution.validateCalls(
 	submittedCalls: { { [string]: any } },
 	returnedCalls: { { [string]: any } }
 ): boolean
-	local function callsMatch(a: { { [string]: any } }, b: { { [string]: any } }): boolean
-		if #a ~= #b then
+	-- Pre-normalize all calls once upfront
+	local normSubmitted: { { to: string, selector: string, calldata: { string } } } = table.create(#submittedCalls)
+	for i, call in submittedCalls do
+		normSubmitted[i] = normalizeCall(call)
+	end
+	local normReturned: { { to: string, selector: string, calldata: { string } } } = table.create(#returnedCalls)
+	for i, call in returnedCalls do
+		normReturned[i] = normalizeCall(call)
+	end
+
+	local function callsMatch(
+		a: { { to: string, selector: string, calldata: { string } } },
+		aLen: number,
+		b: { { to: string, selector: string, calldata: { string } } },
+		bLen: number
+	): boolean
+		if aLen ~= bLen then
 			return false
 		end
-		for i, callA in a do
+		for i = 1, aLen do
+			local callA = a[i]
 			local callB = b[i]
-
-			local toA = normalizeHex(callA.to or callA.contractAddress)
-			local toB = normalizeHex(callB.to or callB.contractAddress)
-			if toA ~= toB then
+			if callA.to ~= callB.to then
 				return false
 			end
-
-			local selA = normalizeHex(callA.selector)
-			local selB = normalizeHex(callB.selector)
-			if selA ~= selB then
+			if callA.selector ~= callB.selector then
 				return false
 			end
-
-			local cdA = (callA.calldata or {}) :: { string }
-			local cdB = (callB.calldata or {}) :: { string }
+			local cdA = callA.calldata
+			local cdB = callB.calldata
 			if #cdA ~= #cdB then
 				return false
 			end
-			for j, feltA in cdA do
-				if normalizeHex(feltA) ~= normalizeHex(cdB[j]) then
+			for j = 1, #cdA do
+				if cdA[j] ~= cdB[j] then
 					return false
 				end
 			end
@@ -389,17 +412,13 @@ function OutsideExecution.validateCalls(
 	end
 
 	-- Case 1: exact match
-	if callsMatch(submittedCalls, returnedCalls) then
+	if callsMatch(normSubmitted, #normSubmitted, normReturned, #normReturned) then
 		return true
 	end
 
 	-- Case 2: returned = submitted + 1 appended transfer call
-	if #returnedCalls == #submittedCalls + 1 then
-		local withoutLast: { { [string]: any } } = {}
-		for i = 1, #returnedCalls - 1 do
-			table.insert(withoutLast, returnedCalls[i])
-		end
-		if callsMatch(submittedCalls, withoutLast) then
+	if #normReturned == #normSubmitted + 1 then
+		if callsMatch(normSubmitted, #normSubmitted, normReturned, #normSubmitted) then
 			return true
 		end
 	end
