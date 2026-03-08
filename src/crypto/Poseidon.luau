@@ -19,14 +19,22 @@ local HALF_FULL = 4
 local ROUNDS_PARTIAL = 83
 local TOTAL_ROUNDS = 91
 
--- Parse round constants at load time
-local RC: { { buffer } } = {}
-for i = 1, TOTAL_ROUNDS do
-	local row: { buffer } = {}
-	for j = 1, 3 do
-		row[j] = StarkField.fromHex(RC_HEX[i][j])
+-- Round constants (lazily initialized on first use to avoid 273 StarkField.fromHex() calls at require time)
+local RC: { { buffer } }? = nil
+
+local function ensureConstants(): { { buffer } }
+	if RC == nil then
+		local parsed: { { buffer } } = {}
+		for i = 1, TOTAL_ROUNDS do
+			local row: { buffer } = {}
+			for j = 1, 3 do
+				row[j] = StarkField.fromHex(RC_HEX[i][j])
+			end
+			parsed[i] = row
+		end
+		RC = parsed
 	end
-	RC[i] = row
+	return RC :: { { buffer } }
 end
 
 --------------------------------------------------------------------------------
@@ -64,14 +72,15 @@ end
 --------------------------------------------------------------------------------
 
 local function permute(s0: buffer, s1: buffer, s2: buffer): (buffer, buffer, buffer)
+	local rc = ensureConstants()
 	local round = 1
 
 	-- First 4 full rounds
 	for _ = 1, HALF_FULL do
 		-- Add round constants
-		s0 = StarkField.add(s0, RC[round][1])
-		s1 = StarkField.add(s1, RC[round][2])
-		s2 = StarkField.add(s2, RC[round][3])
+		s0 = StarkField.add(s0, rc[round][1])
+		s1 = StarkField.add(s1, rc[round][2])
+		s2 = StarkField.add(s2, rc[round][3])
 		-- S-box on all elements
 		s0 = sbox(s0)
 		s1 = sbox(s1)
@@ -84,9 +93,9 @@ local function permute(s0: buffer, s1: buffer, s2: buffer): (buffer, buffer, buf
 	-- 83 partial rounds (S-box only on s2)
 	for _ = 1, ROUNDS_PARTIAL do
 		-- Add round constants
-		s0 = StarkField.add(s0, RC[round][1])
-		s1 = StarkField.add(s1, RC[round][2])
-		s2 = StarkField.add(s2, RC[round][3])
+		s0 = StarkField.add(s0, rc[round][1])
+		s1 = StarkField.add(s1, rc[round][2])
+		s2 = StarkField.add(s2, rc[round][3])
 		-- S-box only on last element
 		s2 = sbox(s2)
 		-- MDS
@@ -97,9 +106,9 @@ local function permute(s0: buffer, s1: buffer, s2: buffer): (buffer, buffer, buf
 	-- Last 4 full rounds
 	for _ = 1, HALF_FULL do
 		-- Add round constants
-		s0 = StarkField.add(s0, RC[round][1])
-		s1 = StarkField.add(s1, RC[round][2])
-		s2 = StarkField.add(s2, RC[round][3])
+		s0 = StarkField.add(s0, rc[round][1])
+		s1 = StarkField.add(s1, rc[round][2])
+		s2 = StarkField.add(s2, rc[round][3])
 		-- S-box on all elements
 		s0 = sbox(s0)
 		s1 = sbox(s1)

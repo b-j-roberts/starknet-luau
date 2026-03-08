@@ -55,9 +55,16 @@ local P3: AffinePoint = {
 }
 
 --------------------------------------------------------------------------------
--- Precomputed lookup tables (lazily initialized)
+-- Precomputed lookup tables (lazily initialized on first hash call)
 -- POINTS1[j] = 2^(j-1) * P0 for j=1..248, 2^(j-249) * P1 for j=249..252
 -- POINTS2[j] = 2^(j-1) * P2 for j=1..248, 2^(j-249) * P3 for j=249..252
+--
+-- Memory cost: 504 JacobianPoints (252 per table × 2 tables).
+-- Each JacobianPoint holds 3 BigInt buffers (x, y, z) at 88 bytes each = 264 bytes.
+-- Raw buffer data: 504 × 264 = ~130 KB.
+-- With Luau table/GC overhead (~500 bytes per point for table headers, metatables,
+-- and GC bookkeeping): total ~388 KB.
+-- This is allocated once on first use and retained for the lifetime of the module.
 --------------------------------------------------------------------------------
 
 local POINTS1: { JacobianPoint }? = nil
