@@ -34,13 +34,22 @@ export type TypeDef = {
 
 export type TypeMap = { [string]: TypeDef }
 
+--- ABI function entry (used in interface items)
+type AbiFunction = {
+	type: string,
+	name: string?,
+	inputs: { { name: string, type: string } }?,
+	outputs: { { name: string, type: string } }?,
+	state_mutability: string?,
+}
+
 --- ABI entry types we handle
 type AbiEntry = {
 	type: string,
 	name: string?,
 	members: { { name: string, type: string } }?,
 	variants: { { name: string, type: string } }?,
-	items: { any }?,
+	items: { AbiFunction }?,
 	inputs: { { name: string, type: string } }?,
 	outputs: { { name: string, type: string } }?,
 	state_mutability: string?,

@@ -20,6 +20,24 @@ local TYPE_HIERARCHY: { [string]: { string } } = {
 }
 
 --------------------------------------------------------------------------------
+-- Exported error instance type
+--------------------------------------------------------------------------------
+
+--- Structural type for all StarknetError instances returned by factory constructors.
+--- Subtypes (RpcError, SigningError, etc.) share this shape; _type discriminates them.
+export type StarknetErrorInstance = {
+	_type: string,
+	message: string,
+	code: number?,
+	data: { [string]: any }?,
+	rpcCode: number?,
+	hint: string?,
+	revertReason: string?,
+	executionTrace: { [string]: any }?,
+	is: (self: StarknetErrorInstance, errorType: string) -> boolean,
+}
+
+--------------------------------------------------------------------------------
 -- Error prototype (shared metatable)
 --------------------------------------------------------------------------------
 
@@ -61,33 +79,43 @@ StarknetError.ErrorCodes = ErrorCodes
 -- Internal helper: creates an error table with the given type and fields
 --------------------------------------------------------------------------------
 
-local function createError(errorType: string, fields: { [string]: any }): any
+local function createError(errorType: string, fields: { [string]: any }): StarknetErrorInstance
 	fields._type = errorType
-	return setmetatable(fields, ErrorProto)
+	return setmetatable(fields, ErrorProto) :: any
 end
 
 --- Create a base StarknetError.
-function StarknetError.new(message: string, code: number?, data: any?): any
+function StarknetError.new(message: string, code: number?, data: { [string]: any }?): StarknetErrorInstance
 	return createError("StarknetError", { message = message, code = code, data = data })
 end
 
 --- Create an RpcError (network / JSON-RPC errors).
-function StarknetError.rpc(message: string, sdkCode: number?, rpcCode: number?, data: any?): any
+function StarknetError.rpc(
+	message: string,
+	sdkCode: number?,
+	rpcCode: number?,
+	data: { [string]: any }?
+): StarknetErrorInstance
 	return createError("RpcError", { message = message, code = sdkCode, rpcCode = rpcCode, data = data })
 end
 
 --- Create a SigningError (ECDSA / key errors).
-function StarknetError.signing(message: string, code: number?, data: any?): any
+function StarknetError.signing(message: string, code: number?, data: { [string]: any }?): StarknetErrorInstance
 	return createError("SigningError", { message = message, code = code, data = data })
 end
 
 --- Create an AbiError (encoding / decoding / type resolution errors).
-function StarknetError.abi(message: string, code: number?, data: any?): any
+function StarknetError.abi(message: string, code: number?, data: { [string]: any }?): StarknetErrorInstance
 	return createError("AbiError", { message = message, code = code, data = data })
 end
 
 --- Create a ValidationError (input validation / required field errors).
-function StarknetError.validation(message: string, code: number?, hint: string?, data: any?): any
+function StarknetError.validation(
+	message: string,
+	code: number?,
+	hint: string?,
+	data: { [string]: any }?
+): StarknetErrorInstance
 	return createError("ValidationError", { message = message, code = code, hint = hint, data = data })
 end
 
@@ -96,9 +124,9 @@ function StarknetError.transaction(
 	message: string,
 	code: number?,
 	revertReason: string?,
-	executionTrace: any?,
-	data: any?
-): any
+	executionTrace: { [string]: any }?,
+	data: { [string]: any }?
+): StarknetErrorInstance
 	return createError("TransactionError", {
 		message = message,
 		code = code,
@@ -109,7 +137,7 @@ function StarknetError.transaction(
 end
 
 --- Create a PaymasterError (paymaster / sponsored execution errors).
-function StarknetError.paymaster(message: string, code: number?, data: any?): any
+function StarknetError.paymaster(message: string, code: number?, data: { [string]: any }?): StarknetErrorInstance
 	return createError("PaymasterError", { message = message, code = code, data = data })
 end
 

@@ -107,12 +107,24 @@ export type PaymasterDetails = {
 }
 
 --------------------------------------------------------------------------------
+-- Call type (shared across policy, executor, and contract modules)
+--------------------------------------------------------------------------------
+
+--- A single Starknet contract call.
+--- contractAddress must be a hex string with "0x" prefix.
+export type Call = {
+	contractAddress: string, -- hex felt with "0x" prefix
+	entrypoint: string,
+	calldata: { string },
+}
+
+--------------------------------------------------------------------------------
 -- Policy & Budget interfaces (used by SponsoredExecutor)
 --------------------------------------------------------------------------------
 
 --- Policy interface: validate player actions and record usage.
 export type PolicyInterface = {
-	validate: (self: PolicyInterface, playerId: number, calls: { any }) -> { allowed: boolean, reason: string? },
+	validate: (self: PolicyInterface, playerId: number, calls: { Call }) -> { allowed: boolean, reason: string? },
 	recordUsage: (self: PolicyInterface, playerId: number) -> (),
 }
 

@@ -13,7 +13,7 @@ local ErrorCodes = StarknetError.ErrorCodes
 export type QueueItem = {
 	method: string,
 	params: any,
-	priority: string, -- "high" | "normal" | "low"
+	priority: "high" | "normal" | "low",
 	resolve: (any) -> (),
 	reject: (any) -> (),
 	id: number,

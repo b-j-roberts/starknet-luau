@@ -46,6 +46,10 @@ function StarkSignerClass.new(privateKeyHex: string): StarkSigner
 		_publicKey = nil :: StarkCurve.AffinePoint?,
 	}, StarkSignerClass)
 
+	-- Known Luau strict mode limitation: setmetatable returns a table type that
+	-- includes private fields (_privateKey, _publicKey) not in the public StarkSigner
+	-- interface. Luau cannot prove the metatable-bound methods satisfy the interface,
+	-- so :: any is required to bridge the internal implementation to the public type.
 	return self :: any
 end
 

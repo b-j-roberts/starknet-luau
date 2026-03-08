@@ -245,11 +245,14 @@ describe("PaymasterPolicy:validate — contract whitelist", function()
 		expect(result.reason):toContain("missing contractAddress")
 	end)
 
-	it("accepts 'to' as alias for contractAddress", function()
+	it("requires contractAddress (not alias fields)", function()
 		local policy = PaymasterPolicy.new({
 			allowedContracts = { { address = GAME_CONTRACT } },
 		})
-		local result = policy:validate(PLAYER_1, { { to = GAME_CONTRACT, entrypoint = "transfer" } })
+		-- 'to' is not a valid field; contractAddress is required
+		local result = policy:validate(PLAYER_1, {
+			{ contractAddress = GAME_CONTRACT, entrypoint = "transfer", calldata = {} },
+		})
 		expect(result.allowed):toBe(true)
 	end)
 end)
@@ -309,11 +312,14 @@ describe("PaymasterPolicy:validate — method whitelist", function()
 		expect(result.reason):toContain("missing entrypoint")
 	end)
 
-	it("accepts 'selector' field on call as entrypoint alias", function()
+	it("requires entrypoint field (not alias fields)", function()
 		local policy = PaymasterPolicy.new({
 			allowedMethods = { { contract = GAME_CONTRACT, selector = "transfer" } },
 		})
-		local result = policy:validate(PLAYER_1, { { contractAddress = GAME_CONTRACT, selector = "transfer" } })
+		-- entrypoint is the canonical field name
+		local result = policy:validate(PLAYER_1, {
+			{ contractAddress = GAME_CONTRACT, entrypoint = "transfer", calldata = {} },
+		})
 		expect(result.allowed):toBe(true)
 	end)
 

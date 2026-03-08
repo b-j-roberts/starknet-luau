@@ -20,7 +20,7 @@ export type SubmittedInfo = {
 	playerId: number,
 	transactionHash: string,
 	trackingId: string?,
-	calls: { any },
+	calls: { Interfaces.Call },
 	tokensCost: number,
 }
 
@@ -28,13 +28,13 @@ export type SubmittedInfo = {
 export type ConfirmedInfo = {
 	playerId: number,
 	transactionHash: string,
-	calls: { any },
+	calls: { Interfaces.Call },
 }
 
 --- Info passed to the onTransactionFailed callback.
 export type FailedInfo = {
 	playerId: number,
-	calls: { any },
+	calls: { Interfaces.Call },
 	error: any,
 	retryCount: number,
 	tokensRefunded: number,
@@ -88,7 +88,7 @@ export type SponsoredExecutorConfig = {
 export type ExecuteOptions = {
 	txCost: number?,
 	gasUsed: number?,
-	deploymentData: any?,
+	deploymentData: PaymasterRpc.DeploymentData?,
 	waitForConfirmation: boolean?,
 }
 
@@ -143,7 +143,7 @@ local function getOrCreatePlayerMetrics(metrics: ExecutorMetrics, playerId: numb
 end
 
 --- Record per-contract and per-method metrics for calls.
-local function recordCallMetrics(metrics: ExecutorMetrics, calls: { any })
+local function recordCallMetrics(metrics: ExecutorMetrics, calls: { Interfaces.Call })
 	for _, call in calls do
 		local addr = call.contractAddress or ""
 		metrics.byContract[addr] = (metrics.byContract[addr] or 0) + 1
@@ -172,13 +172,20 @@ end
 -- SponsoredExecutor
 --------------------------------------------------------------------------------
 
-local SponsoredExecutor = {}
+--- Public interface for SponsoredExecutor instances.
+export type SponsoredExecutor = {
+	execute: (self: SponsoredExecutor, playerId: number, calls: { Interfaces.Call }, options: ExecuteOptions?) -> any,
+	getMetrics: (self: SponsoredExecutor) -> ExecutorMetrics,
+	resetMetrics: (self: SponsoredExecutor) -> (),
+}
+
+local SponsoredExecutorModule = {}
 local ExecutorProto = {}
 ExecutorProto.__index = ExecutorProto
 
 --- Create a new SponsoredExecutor.
 --- @param config SponsoredExecutorConfig — required fields: account, paymaster, feeMode
-function SponsoredExecutor.new(config: SponsoredExecutorConfig)
+function SponsoredExecutorModule.new(config: SponsoredExecutorConfig): SponsoredExecutor
 	if not config then
 		error(StarknetError.validation("SponsoredExecutor: config is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
@@ -223,7 +230,7 @@ function SponsoredExecutor.new(config: SponsoredExecutorConfig)
 		_metrics = createMetrics(),
 	}, ExecutorProto)
 
-	return self
+	return self :: any
 end
 
 --- Get the current execution metrics.
@@ -239,7 +246,7 @@ end
 --- Execute sponsored calls for a player.
 --- Flow: Policy check → Budget check → Paymaster build+sign+execute (with retry) → Budget deduct/refund.
 --- Returns a Promise resolving to SponsoredExecuteResult.
-function ExecutorProto:execute(playerId: number, calls: { any }, options: ExecuteOptions?): any
+function ExecutorProto:execute(playerId: number, calls: { Interfaces.Call }, options: ExecuteOptions?): any
 	if type(playerId) ~= "number" then
 		error(
 			StarknetError.validation("SponsoredExecutor: playerId must be a number", ErrorCodes.INVALID_ARGUMENT.code)
@@ -477,4 +484,4 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 	end)
 end
 
-return SponsoredExecutor
+return SponsoredExecutorModule

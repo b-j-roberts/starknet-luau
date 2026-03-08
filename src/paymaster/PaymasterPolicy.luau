@@ -8,6 +8,7 @@ local BigInt = require("../crypto/BigInt")
 local Keccak = require("../crypto/Keccak")
 local StarkField = require("../crypto/StarkField")
 local HexUtils = require("../shared/HexUtils")
+local Interfaces = require("../shared/interfaces")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 local Defaults = require("../shared/TestableDefaults")
@@ -52,14 +53,23 @@ end
 -- PaymasterPolicy
 --------------------------------------------------------------------------------
 
-local PaymasterPolicy = {}
+--- Public interface for PaymasterPolicy instances.
+export type PaymasterPolicy = {
+	validate: (self: PaymasterPolicy, playerId: number, calls: { Interfaces.Call }) -> ValidationResult,
+	validateFee: (self: PaymasterPolicy, playerId: number, feeAmount: string | buffer) -> ValidationResult,
+	recordUsage: (self: PaymasterPolicy, playerId: number) -> (),
+	resetUsage: (self: PaymasterPolicy, playerId: number?) -> (),
+	getUsageCount: (self: PaymasterPolicy, playerId: number) -> number,
+}
+
+local PaymasterPolicyModule = {}
 local PolicyProto = {}
 PolicyProto.__index = PolicyProto
 
 --- Create a new PaymasterPolicy with the given configuration.
 --- @param config PolicyConfig — usage rules for the paymaster
 --- @return PaymasterPolicy instance
-function PaymasterPolicy.new(config: PolicyConfig)
+function PaymasterPolicyModule.new(config: PolicyConfig): PaymasterPolicy
 	if config == nil then
 		error(StarknetError.validation("PaymasterPolicy config is required", ErrorCodes.REQUIRED_FIELD.code))
 	end
@@ -174,7 +184,7 @@ function PaymasterPolicy.new(config: PolicyConfig)
 		_clock = config._clock or Defaults.clock,
 	}, PolicyProto)
 
-	return self
+	return self :: any
 end
 
 --- Check player whitelist. Returns a rejection result if blocked, or nil if allowed.
@@ -194,7 +204,7 @@ end
 --- @param playerId number — Roblox player ID
 --- @param calls table — array of Call objects ({ contractAddress, entrypoint, calldata })
 --- @return ValidationResult — { allowed: boolean, reason: string? }
-function PolicyProto:validate(playerId: number, calls: { any }): ValidationResult
+function PolicyProto:validate(playerId: number, calls: { Interfaces.Call }): ValidationResult
 	local playerCheck = self:_checkPlayerWhitelist(playerId)
 	if playerCheck then
 		return playerCheck
@@ -206,35 +216,33 @@ function PolicyProto:validate(playerId: number, calls: { any }): ValidationResul
 	end
 
 	for i, call in calls do
-		local contractAddress = call.contractAddress or call.to
-		if not contractAddress then
+		if not call.contractAddress or call.contractAddress == "" then
 			return { allowed = false, reason = "Call " .. tostring(i) .. " is missing contractAddress" }
 		end
 
-		local normalizedAddr = normalizeHex(contractAddress)
+		local normalizedAddr = normalizeHex(call.contractAddress)
 
 		-- Check contract whitelist
 		if self._contractsRestricted then
 			if not self._allowedContracts[normalizedAddr] then
 				return {
 					allowed = false,
-					reason = "Contract " .. contractAddress .. " is not in the allowed contracts list",
+					reason = "Contract " .. call.contractAddress .. " is not in the allowed contracts list",
 				}
 			end
 		end
 
 		-- Check method whitelist
 		if self._methodsRestricted then
-			local entrypoint = call.entrypoint or call.selector
-			if not entrypoint then
+			if not call.entrypoint or call.entrypoint == "" then
 				return { allowed = false, reason = "Call " .. tostring(i) .. " is missing entrypoint" }
 			end
-			local normalizedEntrypoint = normalizeSelector(entrypoint)
+			local normalizedEntrypoint = normalizeSelector(call.entrypoint)
 			local key = normalizedAddr .. ":" .. normalizedEntrypoint
 			if not self._allowedMethods[key] then
 				return {
 					allowed = false,
-					reason = "Method " .. entrypoint .. " on contract " .. contractAddress .. " is not allowed",
+					reason = "Method " .. call.entrypoint .. " on contract " .. call.contractAddress .. " is not allowed",
 				}
 			end
 		end
@@ -349,4 +357,4 @@ function PolicyProto:getUsageCount(playerId: number): number
 	return count
 end
 
-return PaymasterPolicy
+return PaymasterPolicyModule

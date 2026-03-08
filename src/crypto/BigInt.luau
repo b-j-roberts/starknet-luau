@@ -21,6 +21,10 @@ local WIDE_BUF_SIZE = WIDE_LIMBS * LIMB_BYTES -- 176 bytes
 local HALF_BITS = 12
 local HALF_BASE: number = 2 ^ HALF_BITS -- 4096
 
+--- BigInt is aliased to buffer — a known Luau limitation.
+--- Luau's structural type system cannot create nominal wrappers around primitives,
+--- so `BigInt` and raw `buffer` are interchangeable at the type level.
+--- Use the `BigInt` alias in function signatures to convey intent.
 export type BigInt = buffer
 
 export type BarrettCtx = {

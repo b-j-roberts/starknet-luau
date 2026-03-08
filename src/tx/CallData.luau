@@ -17,7 +17,7 @@ local CallData = {}
 --------------------------------------------------------------------------------
 
 export type Call = {
-	contractAddress: string,
+	contractAddress: string, -- hex felt with "0x" prefix (validated at encoding time via normalizeHex)
 	entrypoint: string,
 	calldata: { string },
 }
@@ -115,6 +115,34 @@ function CallData.encodeMulticall(calls: { Call }): { string }
 	end
 
 	return result
+end
+
+--------------------------------------------------------------------------------
+-- Validation
+--------------------------------------------------------------------------------
+
+--- Validate a Call object's contractAddress and entrypoint fields.
+--- Ensures contractAddress is a non-empty hex string with "0x" prefix.
+--- @param call -- Call to validate
+function CallData.validateCall(call: Call): ()
+	if not call.contractAddress or call.contractAddress == "" then
+		error(
+			StarknetError.validation(
+				"Call.contractAddress is required and must be non-empty",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if string.sub(call.contractAddress, 1, 2) ~= "0x" and string.sub(call.contractAddress, 1, 2) ~= "0X" then
+		error(
+			StarknetError.validation(
+				`Call.contractAddress must be a hex string with "0x" prefix, got "{call.contractAddress}"`,
+				ErrorCodes.INVALID_FORMAT.code
+			)
+		)
+	end
+	-- normalizeHex will validate the remaining hex characters
+	normalizeHex(call.contractAddress)
 end
 
 --------------------------------------------------------------------------------

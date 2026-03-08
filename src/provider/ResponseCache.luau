@@ -77,6 +77,19 @@ local DEFAULT_TTLS: { [string]: number } = {
 	callTTL = 30,
 }
 
+--- Configuration for ResponseCache TTL overrides and capacity.
+export type CacheConfig = {
+	maxEntries: number?,
+	chainIdTTL: number?,
+	specVersionTTL: number?,
+	blockNumberTTL: number?,
+	blockTTL: number?,
+	classHashTTL: number?,
+	classTTL: number?,
+	storageTTL: number?,
+	callTTL: number?,
+}
+
 --------------------------------------------------------------------------------
 -- ResponseCache class
 --------------------------------------------------------------------------------
@@ -87,7 +100,7 @@ ResponseCacheClass.__index = ResponseCacheClass
 --- Create a new ResponseCache.
 --- @param config -- CacheConfig with optional TTL overrides and maxEntries
 --- @param clockFn -- injectable clock for testability (defaults to os.clock)
-function ResponseCacheClass.new(config: { [string]: any }?, clockFn: (() -> number)?): ResponseCache
+function ResponseCacheClass.new(config: CacheConfig?, clockFn: (() -> number)?): ResponseCache
 	local cfg = config or {}
 
 	-- Resolve TTLs: user config overrides defaults
