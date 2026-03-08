@@ -130,7 +130,7 @@ local function getPlayerScore(playerAddress: string)
 		:get_score(playerAddress)
 		:andThen(function(score: string)
 			-- Score is returned as a hex string (single felt)
-			local numericScore = tonumber(score, 16) or 0
+			local numericScore = tonumber(score) or 0
 			print(`[Leaderboard] Score for {playerAddress}: {numericScore}`)
 		end)
 		:catch(function(err)
@@ -153,7 +153,7 @@ local function getHighScore()
 	leaderboardReader
 		:get_high_score()
 		:andThen(function(score: string)
-			local numericScore = tonumber(score, 16) or 0
+			local numericScore = tonumber(score) or 0
 			print(`[Leaderboard] High score: {numericScore}`)
 		end)
 		:catch(function(err)

@@ -26,7 +26,7 @@ local Constants = StarknetLuau.constants
 local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
 -- Address to check (replace with any Starknet address)
-local TARGET_ADDRESS = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+local TARGET_ADDRESS = "0x_YOUR_STARKNET_ADDRESS_HERE"
 
 --------------------------------------------------------------------------------
 -- Setup

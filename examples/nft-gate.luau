@@ -55,7 +55,7 @@ local function checkNFTOwnership(playerAddress: string, requiredCount: number): 
 	return nftContract:balance_of(playerAddress):andThen(function(balance)
 		-- balance is { low: string, high: string } (u256)
 		-- For NFT counts, the low field is sufficient (high will be "0x0")
-		local count = tonumber(balance.low, 16) or 0
+		local count = tonumber(balance.low) or 0
 		print(`[NFT Gate] Address {playerAddress} owns {count} NFTs`)
 		return count >= requiredCount
 	end)
@@ -101,9 +101,6 @@ getAddress.OnServerInvoke = function(player: Player, address: string): boolean
 
 	-- Check balance-based ownership
 	local hasNFT = checkNFTOwnership(address, REQUIRED_NFT_COUNT)
-		:andThen(function(result: boolean)
-			return result
-		end)
 		:catch(function(err)
 			warn(`[NFT Gate] Verification failed for {player.Name}:`, tostring(err))
 			return false

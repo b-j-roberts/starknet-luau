@@ -71,8 +71,8 @@ ethToken
 		print("[Send] Current ETH balance (low):", balance.low)
 
 		-- Verify we have enough balance
-		local balanceNum = tonumber(balance.low, 16) or 0
-		local transferNum = tonumber(TRANSFER_AMOUNT, 16) or 0
+		local balanceNum = tonumber(balance.low) or 0
+		local transferNum = tonumber(TRANSFER_AMOUNT) or 0
 		if balanceNum < transferNum then
 			error(`Insufficient balance: have {balanceNum}, need {transferNum}`)
 		end
