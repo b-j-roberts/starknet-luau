@@ -600,15 +600,15 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 
 ---
 
-### R.5.5 Signer & Crypto Edge Case Tests
+### R.5.5 Signer & Crypto Edge Case Tests ✅
 
 **Requirements**:
-- [ ] Test `key == N-1` (valid) and `key == N+1` (invalid) boundary in StarkSigner constructor (ref: 03-signer.md §StarkSigner [test])
-- [ ] Test `signRaw(BigInt.zero())` and `signRaw(BigInt.fromHex(N_hex))` for extreme hash values (ref: 03-signer.md §StarkSigner [test])
-- [ ] Add more Pedersen hash vectors (only 5 explicit tests currently) (ref: 01-crypto.md §Pedersen [test])
-- [ ] Test `hashMany` with larger inputs (8+, 16+, 100+ elements) for Poseidon sponge padding (ref: 01-crypto.md §Poseidon [test])
-- [ ] Add TransactionHash fuzz/property test for hash determinism (same inputs → same output) (ref: 05-tx.md §TransactionHash [test])
-- [ ] Add integration tests between crypto modules (e.g., Poseidon→StarkField→BigInt pipeline, ECDSA→StarkCurve→StarkScalarField pipeline) (ref: 12-tests.md §crypto [test])
+- [x] Test `key == N-1` (valid) and `key == N+1` (invalid) boundary in StarkSigner constructor (ref: 03-signer.md §StarkSigner [test])
+- [x] Test `signRaw(BigInt.zero())` and `signRaw(BigInt.fromHex(N_hex))` for extreme hash values (ref: 03-signer.md §StarkSigner [test])
+- [x] Add more Pedersen hash vectors (only 5 explicit tests currently) (ref: 01-crypto.md §Pedersen [test])
+- [x] Test `hashMany` with larger inputs (8+, 16+, 100+ elements) for Poseidon sponge padding (ref: 01-crypto.md §Poseidon [test])
+- [x] Add TransactionHash fuzz/property test for hash determinism (same inputs → same output) (ref: 05-tx.md §TransactionHash [test])
+- [x] Add integration tests between crypto modules (e.g., Poseidon→StarkField→BigInt pipeline, ECDSA→StarkCurve→StarkScalarField pipeline) (ref: 12-tests.md §crypto [test])
 
 ---
 
