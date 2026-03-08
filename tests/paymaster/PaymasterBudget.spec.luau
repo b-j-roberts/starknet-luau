@@ -1,5 +1,6 @@
 --!strict
 local PaymasterBudget = require("../../src/paymaster/PaymasterBudget")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -1309,7 +1310,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:grantTokens(PLAYER_1, 0 / 0)
-		end):toThrow("amount must be a valid number")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("rejects NaN in revokeTokens", function()
@@ -1321,7 +1322,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:revokeTokens(PLAYER_1, 0 / 0)
-		end):toThrow("amount must be a valid number")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("rejects string input in grantTokens", function()
@@ -1332,7 +1333,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:grantTokens(PLAYER_1, "100" :: any)
-		end):toThrow("amount must be a valid number")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("rejects string input in revokeTokens", function()
@@ -1344,7 +1345,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:revokeTokens(PLAYER_1, "50" :: any)
-		end):toThrow("amount must be a valid number")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("rejects negative amount in grantTokens", function()
@@ -1355,7 +1356,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:grantTokens(PLAYER_1, -10)
-		end):toThrow("amount must be non-negative")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("rejects negative amount in revokeTokens", function()
@@ -1367,7 +1368,7 @@ describe("PaymasterBudget - NaN input values", function()
 
 		expect(function()
 			budget:revokeTokens(PLAYER_1, -10)
-		end):toThrow("amount must be non-negative")
+		end):toThrowCode(ErrorCodes.INVALID_AMOUNT.code)
 	end)
 
 	it("accepts zero amount in grantTokens (no-op)", function()

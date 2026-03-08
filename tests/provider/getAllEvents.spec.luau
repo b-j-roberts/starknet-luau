@@ -214,7 +214,7 @@ describe("RpcProvider:getAllEvents - error handling", function()
 					address = "0xcontract1",
 				})
 				:expect()
-		end):toThrow()
+		end):toThrowType("RpcError")
 	end)
 
 	it("rejects on network error during pagination", function()
@@ -239,7 +239,7 @@ describe("RpcProvider:getAllEvents - error handling", function()
 					address = "0xc1",
 				})
 				:expect()
-		end):toThrow()
+		end):toThrowType("RpcError")
 	end)
 end)
 

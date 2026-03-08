@@ -1,5 +1,6 @@
 --!strict
 local RequestQueue = require("../../src/provider/RequestQueue")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -364,7 +365,7 @@ describe("RequestQueue - backpressure", function()
 		q:enqueue("starknet_chainId", {}, function() end, rejectFn)
 		local rejected = getRejected()
 		expect(rejected ~= nil):toBe(true)
-		expect((rejected :: any).code):toBe(2010) -- QUEUE_FULL
+		expect((rejected :: any).code):toBe(ErrorCodes.QUEUE_FULL.code)
 	end)
 
 	it("accepts after dequeue frees space", function()

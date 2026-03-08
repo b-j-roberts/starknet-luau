@@ -1,5 +1,6 @@
 --!strict
 local Contract = require("../../src/contract/Contract")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local Keccak = require("../../src/crypto/Keccak")
 local StarkField = require("../../src/crypto/StarkField")
 local TestUtils = require("../helpers/TestUtils")
@@ -859,7 +860,7 @@ describe("Contract:parseEvents - error handling", function()
 
 		expect(function()
 			contract:parseEvents(receipt, { strict = true })
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.DECODE_ERROR.code)
 	end)
 
 	it("mixes successful and failed events correctly", function()

@@ -1,6 +1,7 @@
 --!strict
 local Account = require("../../src/wallet/Account")
 local Constants = require("../../src/constants")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local MockPromise = require("../helpers/MockPromise")
 local TestUtils = require("../helpers/TestUtils")
@@ -526,7 +527,7 @@ describe("Account.fromPrivateKey - Argent X", function()
 				accountType = "oz",
 				guardian = "0xdeadbeef",
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -604,7 +605,7 @@ describe("Account.fromPrivateKey - Braavos", function()
 				accountType = "braavos",
 				guardian = "0xdeadbeef",
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -623,7 +624,7 @@ describe("Account.fromPrivateKey - accountType validation", function()
 				provider = provider,
 				accountType = "unknown",
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("errors on empty string accountType", function()
@@ -636,7 +637,7 @@ describe("Account.fromPrivateKey - accountType validation", function()
 				provider = provider,
 				accountType = "",
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -1316,7 +1317,7 @@ describe("Account:waitForReceipt", function()
 		-- waitForReceipt rejects on REVERTED execution status
 		expect(function()
 			account:waitForReceipt("0xfailed"):expect()
-		end):toThrow("reverted")
+		end):toThrowType("TransactionError")
 	end)
 
 	it("works with options parameter", function()
@@ -1523,7 +1524,7 @@ describe("Account:estimatePaymasterFee - validation", function()
 			account:estimatePaymasterFee(createTestCalls(), {
 				feeMode = { mode = "sponsored" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode is missing", function()
@@ -1536,7 +1537,7 @@ describe("Account:estimatePaymasterFee - validation", function()
 			account:estimatePaymasterFee(createTestCalls(), {
 				paymaster = paymaster,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
@@ -1550,7 +1551,7 @@ describe("Account:estimatePaymasterFee - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "default" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
@@ -1564,7 +1565,7 @@ describe("Account:estimatePaymasterFee - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "invalid" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -1751,7 +1752,7 @@ describe("Account:executePaymaster - validation", function()
 			account:executePaymaster(createTestCalls(), {
 				feeMode = { mode = "sponsored" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode is missing", function()
@@ -1764,7 +1765,7 @@ describe("Account:executePaymaster - validation", function()
 			account:executePaymaster(createTestCalls(), {
 				paymaster = paymaster,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when calls is empty", function()
@@ -1778,7 +1779,7 @@ describe("Account:executePaymaster - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "sponsored" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode.mode is 'default' but gasToken is missing", function()
@@ -1792,7 +1793,7 @@ describe("Account:executePaymaster - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "default" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
@@ -1806,7 +1807,7 @@ describe("Account:executePaymaster - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "bogus" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 
@@ -2286,7 +2287,7 @@ describe("Account:deployWithPaymaster - validation", function()
 			account:deployWithPaymaster({
 				feeMode = { mode = "sponsored" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode is missing", function()
@@ -2299,7 +2300,7 @@ describe("Account:deployWithPaymaster - validation", function()
 			account:deployWithPaymaster({
 				paymaster = paymaster,
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when feeMode.mode is invalid", function()
@@ -2313,7 +2314,7 @@ describe("Account:deployWithPaymaster - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "invalid" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 
 	it("rejects when default mode is missing gasToken", function()
@@ -2327,7 +2328,7 @@ describe("Account:deployWithPaymaster - validation", function()
 				paymaster = paymaster,
 				feeMode = { mode = "default" },
 			})
-		end):toThrow()
+		end):toThrowType("ValidationError")
 	end)
 end)
 

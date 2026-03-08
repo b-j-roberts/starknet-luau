@@ -1,6 +1,7 @@
 --!strict
 local Contract = require("../../src/contract/Contract")
 local Account = require("../../src/wallet/Account")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -491,7 +492,7 @@ describe("Contract:call - view functions", function()
 
 		expect(function()
 			contract:call("nonexistent")
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.FUNCTION_NOT_FOUND.code)
 	end)
 
 	it("errors when wrong number of arguments provided", function()
@@ -505,7 +506,7 @@ describe("Contract:call - view functions", function()
 
 		expect(function()
 			contract:call("balance_of") -- missing required account arg
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.ARGUMENT_COUNT.code)
 	end)
 
 	it("errors when too many arguments provided", function()
@@ -519,7 +520,7 @@ describe("Contract:call - view functions", function()
 
 		expect(function()
 			contract:call("name", { "0xextra" }) -- name takes 0 args
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.ARGUMENT_COUNT.code)
 	end)
 end)
 
@@ -591,7 +592,7 @@ describe("Contract:populate - build Call objects", function()
 
 		expect(function()
 			contract:populate("nonexistent")
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.FUNCTION_NOT_FOUND.code)
 	end)
 
 	it("errors for wrong argument count", function()
@@ -605,7 +606,7 @@ describe("Contract:populate - build Call objects", function()
 
 		expect(function()
 			contract:populate("transfer", { "0xabcdef1234567890" }) -- missing amount
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.ARGUMENT_COUNT.code)
 	end)
 
 	it("can be used for multicall batching", function()
@@ -678,7 +679,7 @@ describe("Contract:invoke - write transactions", function()
 
 		expect(function()
 			contract:invoke("transfer", { "0xabcdef1234567890", "0x3e8" })
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
 	it("errors when invoking a non-existent function", function()
@@ -694,7 +695,7 @@ describe("Contract:invoke - write transactions", function()
 
 		expect(function()
 			contract:invoke("nonexistent", { "0x1" })
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.FUNCTION_NOT_FOUND.code)
 	end)
 
 	it("sends the correct contract address in the call", function()

@@ -1,6 +1,7 @@
 --!strict
 local ERC721 = require("../../src/contract/ERC721")
 local Account = require("../../src/wallet/Account")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -64,13 +65,13 @@ describe("ERC721.new - constructor", function()
 
 		expect(function()
 			ERC721.new(nil :: any, provider)
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
 	it("errors when provider is missing", function()
 		expect(function()
 			ERC721.new(NFT_ADDR, nil :: any)
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 end)
 
@@ -381,7 +382,7 @@ describe("ERC721 - write methods (external)", function()
 
 		expect(function()
 			nft:transfer_from(OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1)
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
 	it("transfer_from sends addInvokeTransaction to provider", function()

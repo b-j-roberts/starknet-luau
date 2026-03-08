@@ -1,6 +1,7 @@
 --!strict
 local ERC20 = require("../../src/contract/ERC20")
 local Account = require("../../src/wallet/Account")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -60,13 +61,13 @@ describe("ERC20.new - constructor", function()
 
 		expect(function()
 			ERC20.new(nil :: any, provider)
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
 	it("errors when provider is missing", function()
 		expect(function()
 			ERC20.new(TOKEN_ADDR, nil :: any)
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 end)
 
@@ -330,7 +331,7 @@ describe("ERC20 - write methods (external)", function()
 
 		expect(function()
 			token:transfer(RECIPIENT_ADDR, "0x3e8")
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 
 	it("transfer sends correct calldata (recipient + u256 amount)", function()

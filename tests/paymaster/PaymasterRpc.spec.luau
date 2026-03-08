@@ -2,6 +2,7 @@
 local serde = require("@lune/serde")
 
 local PaymasterRpc = require("../../src/paymaster/PaymasterRpc")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local MockPromise = require("../helpers/MockPromise")
 local TestUtils = require("../helpers/TestUtils")
 
@@ -734,7 +735,7 @@ describe("PaymasterRpc - error handling", function()
 		local promise = pm:getSupportedTokens()
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7002)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED.code)
 		expect(err:is("RpcError")):toBe(true)
 	end)
 
@@ -761,7 +762,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7003)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_INVALID_SIGNATURE.code)
 	end)
 
 	it("maps MAX_AMOUNT_TOO_LOW (154) to PAYMASTER_MAX_AMOUNT_TOO_LOW", function()
@@ -787,7 +788,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7004)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW.code)
 	end)
 
 	it("maps CLASS_HASH_NOT_SUPPORTED (155) to PAYMASTER_CLASS_HASH_NOT_SUPPORTED", function()
@@ -814,7 +815,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7008)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED.code)
 	end)
 
 	it("maps TRANSACTION_EXECUTION_ERROR (156) to PAYMASTER_EXECUTION_ERROR", function()
@@ -840,7 +841,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7006)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_EXECUTION_ERROR.code)
 	end)
 
 	it("maps INVALID_DEPLOYMENT_DATA (158) to PAYMASTER_INVALID_DEPLOYMENT_DATA", function()
@@ -873,7 +874,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7005)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA.code)
 	end)
 
 	it("maps unknown error code to PAYMASTER_ERROR", function()
@@ -896,7 +897,7 @@ describe("PaymasterRpc - error handling", function()
 		local promise = pm:fetch("paymaster_getSupportedTokens", {})
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7000)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_ERROR.code)
 	end)
 
 	it("handles HTTP-level errors", function()
@@ -932,7 +933,7 @@ describe("PaymasterRpc - error handling", function()
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
 		expect(err:is("RpcError")):toBe(true)
-		expect(err.code):toBe(2001) -- NETWORK_ERROR
+		expect(err.code):toBe(ErrorCodes.NETWORK_ERROR.code)
 	end)
 
 	it("preserves error data from paymaster", function()
@@ -962,7 +963,7 @@ describe("PaymasterRpc - error handling", function()
 		)
 		expect(promise:getStatus()):toBe("Rejected")
 		local err = (promise :: any)._value
-		expect(err.code):toBe(7006)
+		expect(err.code):toBe(ErrorCodes.PAYMASTER_EXECUTION_ERROR.code)
 		expect(err.data):toBeTruthy()
 		expect(err.data.revert_reason):toBe("insufficient balance")
 	end)
@@ -1105,7 +1106,7 @@ describe("PaymasterRpc - fetch (raw)", function()
 		local pm = createTestPaymaster()
 		expect(function()
 			pm:fetch("paymaster_unknownMethod", {}):expect()
-		end):toThrow()
+		end):toThrowType("RpcError")
 	end)
 end)
 
@@ -1307,7 +1308,7 @@ describe("PaymasterRpc - rate limiter timeout", function()
 		-- Second request should timeout waiting for a rate limit token
 		expect(function()
 			pm:fetch("paymaster_isAvailable", {}):expect()
-		end):toThrow("Rate limit exceeded")
+		end):toThrowCode(ErrorCodes.RATE_LIMIT.code)
 	end)
 
 	it("succeeds when tokens refill before timeout", function()

@@ -1,5 +1,6 @@
 --!strict
 local CallData = require("../../src/tx/CallData")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local StarkField = require("../../src/crypto/StarkField")
 local BigInt = require("../../src/crypto/BigInt")
 local Keccak = require("../../src/crypto/Keccak")
@@ -108,14 +109,14 @@ describe("CallData - encodeShortString", function()
 	it("rejects string longer than 31 chars", function()
 		expect(function()
 			CallData.encodeShortString(string.rep("a", 32))
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.INVALID_FORMAT.code)
 	end)
 
 	it("rejects non-ASCII characters", function()
 		-- 0x80 = 128, first non-ASCII byte
 		expect(function()
 			CallData.encodeShortString("hello\128")
-		end):toThrow()
+		end):toThrowCode(ErrorCodes.INVALID_FORMAT.code)
 	end)
 end)
 
