@@ -154,6 +154,59 @@ function CallData.numberToHex(n: number): string
 	return StarkField.toHex(StarkField.fromNumber(n))
 end
 
+-- Compile raw values into a flat calldata array of hex felt strings.
+-- Accepts mixed types: hex strings, numbers, booleans, arrays (length-prefixed),
+-- and tables/structs (values flattened in key order). Recursively flattens nested structures.
+-- This is the general-purpose encoder — no ABI, selectors, or call structure involved.
+-- Reference: starknet.js CallData.compile
+function CallData.compile(rawArgs: { any }): { string }
+	local result: { string } = {}
+
+	local function compileValue(value: any)
+		local t = type(value)
+		if t == "string" then
+			table.insert(result, normalizeHex(value))
+		elseif t == "number" then
+			table.insert(result, string.format("0x%x", value))
+		elseif t == "boolean" then
+			table.insert(result, if value then "0x1" else "0x0")
+		elseif t == "table" then
+			local arr = value :: { any }
+			-- Distinguish array vs struct: array has sequential integer keys starting at 1
+			if #arr > 0 or next(arr) == nil then
+				-- Array: length-prefix then recurse each element
+				table.insert(result, string.format("0x%x", #arr))
+				for _, elem in arr do
+					compileValue(elem)
+				end
+			else
+				-- Struct/object: flatten values in sorted key order (deterministic)
+				local keys: { string } = {}
+				for k in arr :: any do
+					table.insert(keys, tostring(k))
+				end
+				table.sort(keys)
+				for _, k in keys do
+					compileValue((arr :: any)[k])
+				end
+			end
+		else
+			error(
+				StarknetError.validation(
+					`CallData.compile: unsupported value type "{t}"`,
+					ErrorCodes.INVALID_FORMAT.code
+				)
+			)
+		end
+	end
+
+	for _, arg in rawArgs do
+		compileValue(arg)
+	end
+
+	return result
+end
+
 -- Concatenate multiple encoded results into a single calldata array
 function CallData.concat(...: { string }): { string }
 	local result: { string } = {}

@@ -596,7 +596,7 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 ### R.5.4 Add Barrel Export Smoke Test
 
 **Requirements**:
-- [ ] Create `tests/init.spec.luau` that validates main barrel exports all 9 expected namespace keys with expected sub-module keys (ref: 09-root.md §init.luau tests [test])
+- [x] Create `tests/init.spec.luau` that validates main barrel exports all 9 expected namespace keys with expected sub-module keys (ref: 09-root.md §init.luau tests [test])
 
 ---
 

@@ -391,3 +391,146 @@ describe("CallData - concat", function()
 		expect(multicall[7]):toBe("0x0")
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- compile
+--------------------------------------------------------------------------------
+
+describe("CallData - compile (hex strings)", function()
+	it("compiles empty args", function()
+		local result = CallData.compile({})
+		expect(#result):toBe(0)
+	end)
+
+	it("compiles single hex felt", function()
+		local result = CallData.compile({ "0x123" })
+		expect(#result):toBe(1)
+		expect(result[1]):toBe("0x123")
+	end)
+
+	it("normalizes hex values", function()
+		local result = CallData.compile({ "0x00ABC" })
+		expect(result[1]):toBe("0xabc")
+	end)
+
+	it("compiles multiple hex felts", function()
+		local result = CallData.compile({ "0x1", "0x2", "0x3" })
+		expect(#result):toBe(3)
+		expect(result[1]):toBe("0x1")
+		expect(result[2]):toBe("0x2")
+		expect(result[3]):toBe("0x3")
+	end)
+end)
+
+describe("CallData - compile (numbers)", function()
+	it("compiles zero", function()
+		local result = CallData.compile({ 0 })
+		expect(result[1]):toBe("0x0")
+	end)
+
+	it("compiles small number", function()
+		local result = CallData.compile({ 42 })
+		expect(result[1]):toBe("0x2a")
+	end)
+
+	it("compiles large number", function()
+		local result = CallData.compile({ 10000000 })
+		expect(result[1]):toBe("0x989680")
+	end)
+end)
+
+describe("CallData - compile (booleans)", function()
+	it("compiles true as 0x1", function()
+		local result = CallData.compile({ true })
+		expect(result[1]):toBe("0x1")
+	end)
+
+	it("compiles false as 0x0", function()
+		local result = CallData.compile({ false })
+		expect(result[1]):toBe("0x0")
+	end)
+end)
+
+describe("CallData - compile (arrays)", function()
+	it("compiles empty array with length prefix", function()
+		local result = CallData.compile({ {} })
+		expect(#result):toBe(1)
+		expect(result[1]):toBe("0x0") -- length=0
+	end)
+
+	it("compiles array of hex strings with length prefix", function()
+		local result = CallData.compile({ { "0xa", "0xb", "0xc" } })
+		expect(#result):toBe(4)
+		expect(result[1]):toBe("0x3") -- length
+		expect(result[2]):toBe("0xa")
+		expect(result[3]):toBe("0xb")
+		expect(result[4]):toBe("0xc")
+	end)
+
+	it("compiles array of numbers with length prefix", function()
+		local result = CallData.compile({ { 1, 2, 3 } })
+		expect(#result):toBe(4)
+		expect(result[1]):toBe("0x3")
+		expect(result[2]):toBe("0x1")
+		expect(result[3]):toBe("0x2")
+		expect(result[4]):toBe("0x3")
+	end)
+
+	it("compiles nested arrays", function()
+		-- Outer array with one element that is itself an array
+		local result = CallData.compile({ { { "0x1", "0x2" } } })
+		-- outer: length=1, then inner: length=2, 0x1, 0x2
+		expect(#result):toBe(4)
+		expect(result[1]):toBe("0x1") -- outer length
+		expect(result[2]):toBe("0x2") -- inner length
+		expect(result[3]):toBe("0x1")
+		expect(result[4]):toBe("0x2")
+	end)
+end)
+
+describe("CallData - compile (structs)", function()
+	it("compiles struct with sorted string keys", function()
+		local result = CallData.compile({ { b = "0x2", a = "0x1" } })
+		-- keys sorted: a, b → values: 0x1, 0x2
+		expect(#result):toBe(2)
+		expect(result[1]):toBe("0x1")
+		expect(result[2]):toBe("0x2")
+	end)
+
+	it("compiles struct with nested values", function()
+		local result = CallData.compile({ { amount = 100, recipient = "0xdead" } })
+		-- keys sorted: amount, recipient
+		expect(#result):toBe(2)
+		expect(result[1]):toBe("0x64") -- amount=100
+		expect(result[2]):toBe("0xdead")
+	end)
+end)
+
+describe("CallData - compile (mixed types)", function()
+	it("compiles mixed args: hex, number, bool, array", function()
+		local result = CallData.compile({ "0xabc", 42, true, { "0x1", "0x2" } })
+		-- 0xabc, 0x2a, 0x1, [length=2, 0x1, 0x2]
+		expect(#result):toBe(6)
+		expect(result[1]):toBe("0xabc")
+		expect(result[2]):toBe("0x2a")
+		expect(result[3]):toBe("0x1") -- true
+		expect(result[4]):toBe("0x2") -- array length
+		expect(result[5]):toBe("0x1")
+		expect(result[6]):toBe("0x2")
+	end)
+
+	it("practical: compile ERC-20 transfer args", function()
+		-- transfer(recipient: felt, amount_low: felt, amount_high: felt)
+		local result = CallData.compile({ "0xdeadbeef", "0x100", "0x0" })
+		expect(#result):toBe(3)
+		expect(result[1]):toBe("0xdeadbeef")
+		expect(result[2]):toBe("0x100")
+		expect(result[3]):toBe("0x0")
+	end)
+
+	it("rejects unsupported types", function()
+		expect(function()
+			CallData.compile({ CallData.compile :: any })
+		end):toThrowCode(ErrorCodes.INVALID_FORMAT.code)
+	end)
+end)
