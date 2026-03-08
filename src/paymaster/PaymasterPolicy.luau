@@ -242,7 +242,11 @@ function PolicyProto:validate(playerId: number, calls: { Interfaces.Call }): Val
 			if not self._allowedMethods[key] then
 				return {
 					allowed = false,
-					reason = "Method " .. call.entrypoint .. " on contract " .. call.contractAddress .. " is not allowed",
+					reason = "Method "
+						.. call.entrypoint
+						.. " on contract "
+						.. call.contractAddress
+						.. " is not allowed",
 				}
 			end
 		end

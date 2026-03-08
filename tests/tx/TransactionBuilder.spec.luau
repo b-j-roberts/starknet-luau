@@ -1043,3 +1043,108 @@ describe("TransactionBuilder - RPC call sequence", function()
 		expect(submitIdx > feeIdx):toBeTruthy()
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- execute - maxFee option
+--------------------------------------------------------------------------------
+
+describe("TransactionBuilder - execute maxFee", function()
+	it("caps resource bounds when maxFee is below estimated fee", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		-- Default estimate: gas_consumed=0x1000 * 1.5x = 0x1800, gas_price=0x100 * 1.5x = 0x180
+		-- Total = 0x1800 * 0x180 = 0x240000
+		-- Set maxFee = 0x100000 (below estimated total)
+		-- Expected capped maxAmount = 0x100000 / 0x180 = 0xaaa (approx)
+		builder:execute(account, calls, { maxFee = "0x100000" }):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addInvokeTransaction" then
+				local tx = req.params[1]
+				-- maxAmount should be less than 0x1800 (uncapped estimated amount)
+				local maxAmount = BigInt.fromHex(tx.resource_bounds.l1_gas.max_amount)
+				local uncappedAmount = BigInt.fromHex("0x1800")
+				expect(BigInt.cmp(maxAmount, uncappedAmount) < 0):toBeTruthy()
+				-- maxPricePerUnit should remain 0x180 (from estimate * multiplier)
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+				break
+			end
+		end
+	end)
+
+	it("does not cap when maxFee is above estimated fee", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		-- Total estimated fee = 0x1800 * 0x180 = 0x240000
+		-- Set maxFee = 0xffffff (well above estimated total)
+		builder:execute(account, calls, { maxFee = "0xffffff" }):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addInvokeTransaction" then
+				local tx = req.params[1]
+				-- Should use normal estimated bounds (not capped)
+				expect(tx.resource_bounds.l1_gas.max_amount):toBe("0x1800")
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+				break
+			end
+		end
+	end)
+
+	it("maxFee is ignored when resourceBounds is explicitly provided", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		local customBounds = {
+			l1Gas = { maxAmount = "0x9999", maxPricePerUnit = "0x8888" },
+			l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+		}
+
+		builder:execute(account, calls, {
+			maxFee = "0x1",
+			resourceBounds = customBounds,
+		}):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addInvokeTransaction" then
+				local tx = req.params[1]
+				-- resourceBounds takes precedence over maxFee
+				expect(tx.resource_bounds.l1_gas.max_amount):toBe("0x9999")
+				expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x8888")
+				break
+			end
+		end
+	end)
+
+	it("caps maxAmount in dryRun mode", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		local result = builder:execute(account, calls, { maxFee = "0x100000", dryRun = true }):expect()
+
+		-- dryRun returns the signed transaction — verify resource bounds are capped
+		local tx = result.transaction
+		local maxAmount = BigInt.fromHex(tx.resource_bounds.l1_gas.max_amount)
+		local uncappedAmount = BigInt.fromHex("0x1800")
+		expect(BigInt.cmp(maxAmount, uncappedAmount) < 0):toBeTruthy()
+		expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+	end)
+end)

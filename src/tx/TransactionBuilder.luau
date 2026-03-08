@@ -452,6 +452,27 @@ function TransactionBuilder:execute(account: Account, calls: { Call }, options: 
 		formatResult = function(submitResult: any): any
 			return { transactionHash = submitResult.transaction_hash }
 		end,
+		applyPostEstimate = if opts.maxFee
+			then function(resourceBounds: TransactionHash.ResourceBounds): TransactionHash.ResourceBounds
+				local maxFeeBig = BigInt.fromHex(opts.maxFee :: string)
+				local priceBig = BigInt.fromHex(resourceBounds.l1Gas.maxPricePerUnit)
+				if not BigInt.isZero(priceBig) then
+					local cappedMaxAmount = BigInt.div(maxFeeBig, priceBig)
+					local currentMaxAmount = BigInt.fromHex(resourceBounds.l1Gas.maxAmount)
+					if BigInt.cmp(currentMaxAmount, cappedMaxAmount) > 0 then
+						return {
+							l1Gas = {
+								maxAmount = BigInt.toHex(cappedMaxAmount),
+								maxPricePerUnit = resourceBounds.l1Gas.maxPricePerUnit,
+							},
+							l2Gas = resourceBounds.l2Gas,
+							l1DataGas = resourceBounds.l1DataGas,
+						}
+					end
+				end
+				return resourceBounds
+			end
+			else nil,
 	}, opts)
 end
 
