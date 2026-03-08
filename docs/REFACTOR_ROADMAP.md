@@ -94,7 +94,7 @@ Eliminate DRY violations across the codebase. Estimated ~2,500 lines eliminable 
 - [ ] Create `src/crypto/FieldFactory.luau` with `createField(modulus, modulusMinus2, barrettCtx, name)` that generates all shared methods: `reduce`, `powmodBarrett`, `zero`, `one`, `fromNumber`, `fromHex`, `add`, `sub`, `mul`, `square`, `neg`, `inv`, `toHex`, `toBigInt`, `eq`, `isZero` (ref: 01-crypto.md §StarkField [refactor], §StarkScalarField [refactor])
 - [ ] Refactor `StarkField.luau` to use the factory, adding `sqrt()` as an extension (ref: 01-crypto.md §StarkField [refactor])
 - [ ] Refactor `StarkScalarField.luau` to use the factory (ref: 01-crypto.md §StarkScalarField [refactor])
-- [ ] Move `powmodBarrett()` to `BigInt.powmodB(a, e, ctx)` so callers don't reimplement the loop (ref: 01-crypto.md §priority actions #5; see also R.4.6 for performance motivation)
+- [x] Move `powmodBarrett()` to `BigInt.powmodB(a, e, ctx)` so callers don't reimplement the loop (ref: 01-crypto.md §priority actions #5; see also R.4.6 for performance motivation)
 - [ ] Extract parameterized field test suite `fieldTestSuite(Field, modulus, name)` and run against both fields (ref: 01-crypto.md §StarkScalarField [test])
 
 **Implementation Notes**:
@@ -528,7 +528,7 @@ Optimization opportunities identified during the audit. All are low priority sin
 **Description**: `BigInt.powmod()` uses division-based `mulmod()` instead of Barrett reduction.
 
 **Requirements**:
-- [ ] Add `BigInt.powmodB(a, e, ctx)` so callers outside field modules can use the fast path (ref: 01-crypto.md §BigInt [perf]; see also R.1.4 for DRY motivation — same work item)
+- [x] Add `BigInt.powmodB(a, e, ctx)` so callers outside field modules can use the fast path (ref: 01-crypto.md §BigInt [perf]; see also R.1.4 for DRY motivation — same work item)
 
 ---
 
