@@ -312,6 +312,7 @@ end
 
 --- Record a transaction for rate limiting purposes.
 --- Call this after a successful sponsored transaction.
+--- Prunes expired timestamps to prevent unbounded growth.
 --- @param playerId number — Roblox player ID
 function PolicyProto:recordUsage(playerId: number): ()
 	if not self._maxTxPerPlayer or not self._timeWindow then
@@ -325,6 +326,16 @@ function PolicyProto:recordUsage(playerId: number): ()
 		self._playerRecords[playerId] = record
 	end
 	table.insert(record.timestamps, now)
+
+	-- Prune expired timestamps to prevent unbounded growth
+	local cutoff = now - self._timeWindow
+	local pruned = {}
+	for _, ts in record.timestamps do
+		if ts > cutoff then
+			table.insert(pruned, ts)
+		end
+	end
+	record.timestamps = pruned
 end
 
 --- Reset usage records for a specific player or all players.

@@ -868,3 +868,170 @@ describe("PaymasterPolicy — integration scenario", function()
 		expect(f1.allowed):toBe(false)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Tests: Timestamp pruning
+--------------------------------------------------------------------------------
+
+describe("PaymasterPolicy — timestamp pruning", function()
+	it("prunes expired timestamps on recordUsage", function()
+		local currentTime = 1000
+		local clock = function()
+			return currentTime
+		end
+		local policy = PaymasterPolicy.new({
+			maxTxPerPlayer = 100,
+			timeWindow = 60,
+			_clock = clock,
+		})
+
+		-- Record 50 timestamps at t=1000
+		for _ = 1, 50 do
+			policy:recordUsage(PLAYER_1)
+		end
+		expect(policy:getUsageCount(PLAYER_1)):toBe(50)
+
+		-- Advance past the time window
+		currentTime = 1061
+
+		-- Record one more — this should prune the 50 expired timestamps
+		policy:recordUsage(PLAYER_1)
+
+		-- Only the new timestamp should remain
+		expect(policy:getUsageCount(PLAYER_1)):toBe(1)
+
+		-- Access internal state to verify array length was actually pruned
+		local record = (policy :: any)._playerRecords[PLAYER_1]
+		expect(#record.timestamps):toBe(1)
+	end)
+
+	it("keeps non-expired timestamps during pruning", function()
+		local currentTime = 1000
+		local clock = function()
+			return currentTime
+		end
+		local policy = PaymasterPolicy.new({
+			maxTxPerPlayer = 100,
+			timeWindow = 60,
+			_clock = clock,
+		})
+
+		-- Record at t=1000
+		policy:recordUsage(PLAYER_1)
+		policy:recordUsage(PLAYER_1)
+
+		-- Record at t=1040
+		currentTime = 1040
+		policy:recordUsage(PLAYER_1)
+
+		-- Advance to t=1061 — first two expire, third still valid
+		currentTime = 1061
+
+		-- Record another — triggers pruning
+		policy:recordUsage(PLAYER_1)
+
+		-- Should have: t=1040 + t=1061 = 2 entries
+		expect(policy:getUsageCount(PLAYER_1)):toBe(2)
+		local record = (policy :: any)._playerRecords[PLAYER_1]
+		expect(#record.timestamps):toBe(2)
+	end)
+
+	it("high-activity player does not accumulate unbounded timestamps", function()
+		local currentTime = 1000
+		local clock = function()
+			return currentTime
+		end
+		local policy = PaymasterPolicy.new({
+			maxTxPerPlayer = 1000,
+			timeWindow = 60,
+			_clock = clock,
+		})
+
+		-- Simulate 500 transactions over 10 minutes (1 per 1.2 seconds)
+		for i = 1, 500 do
+			currentTime = 1000 + (i * 1.2)
+			policy:recordUsage(PLAYER_1)
+		end
+
+		-- With a 60-second window and 1.2s intervals, at most ~50 timestamps
+		-- should be in-window at any given time. Pruning on each recordUsage
+		-- ensures the array never exceeds ~50 entries.
+		local record = (policy :: any)._playerRecords[PLAYER_1]
+		expect(#record.timestamps <= 51):toBe(true)
+	end)
+
+	it("pruning does not affect validate correctness", function()
+		local currentTime = 1000
+		local clock = function()
+			return currentTime
+		end
+		local policy = PaymasterPolicy.new({
+			maxTxPerPlayer = 3,
+			timeWindow = 60,
+			_clock = clock,
+		})
+
+		-- Record 3 at t=1000
+		policy:recordUsage(PLAYER_1)
+		policy:recordUsage(PLAYER_1)
+		policy:recordUsage(PLAYER_1)
+
+		-- At limit — reject
+		local r1 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
+		expect(r1.allowed):toBe(false)
+
+		-- Advance to t=1061, record new — prunes old 3, adds 1
+		currentTime = 1061
+		policy:recordUsage(PLAYER_1)
+
+		-- 1 usage in window — allow
+		local r2 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
+		expect(r2.allowed):toBe(true)
+
+		-- Record 2 more
+		policy:recordUsage(PLAYER_1)
+		policy:recordUsage(PLAYER_1)
+
+		-- 3 usage in window — reject
+		local r3 = policy:validate(PLAYER_1, { makeCall(GAME_CONTRACT, "transfer") })
+		expect(r3.allowed):toBe(false)
+	end)
+
+	it("pruning is per-player", function()
+		local currentTime = 1000
+		local clock = function()
+			return currentTime
+		end
+		local policy = PaymasterPolicy.new({
+			maxTxPerPlayer = 100,
+			timeWindow = 60,
+			_clock = clock,
+		})
+
+		-- Both players record at t=1000
+		for _ = 1, 10 do
+			policy:recordUsage(PLAYER_1)
+			policy:recordUsage(PLAYER_2)
+		end
+
+		-- Advance past window
+		currentTime = 1061
+
+		-- Only record for PLAYER_1 — triggers pruning only for PLAYER_1
+		policy:recordUsage(PLAYER_1)
+
+		local record1 = (policy :: any)._playerRecords[PLAYER_1]
+		expect(#record1.timestamps):toBe(1)
+
+		-- PLAYER_2 not pruned yet (no recordUsage call), but getUsageCount still correct
+		expect(policy:getUsageCount(PLAYER_2)):toBe(0)
+
+		-- PLAYER_2's array is still 10 entries until next recordUsage
+		local record2 = (policy :: any)._playerRecords[PLAYER_2]
+		expect(#record2.timestamps):toBe(10)
+
+		-- Recording for PLAYER_2 prunes their expired timestamps
+		policy:recordUsage(PLAYER_2)
+		expect(#record2.timestamps):toBe(1)
+	end)
+end)
