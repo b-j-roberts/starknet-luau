@@ -136,7 +136,13 @@ describe("StarknetError", function()
 
 	describe("StarknetError.transaction", function()
 		it("creates a TransactionError with revertReason and executionTrace", function()
-			local err = StarknetError.transaction("tx reverted", 2004, "out of gas", { trace = "..." }, { hash = "0x1" })
+			local err = StarknetError.transaction(
+				"tx reverted",
+				2004,
+				"out of gas",
+				{ trace = "..." },
+				{ hash = "0x1" }
+			)
 			expect(err._type):toBe("TransactionError")
 			expect(err.message):toBe("tx reverted")
 			expect(err.code):toBe(2004)

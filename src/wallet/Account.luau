@@ -339,11 +339,13 @@ function Account.checkDeploymentBalance(config: {
 		-- Fetch balance via direct provider:call (avoids contract-layer dependency)
 		local selector = StarkField.toHex(Keccak.getSelectorFromName("balance_of"))
 		local balOk, balResult = pcall(function()
-			return config.provider:call({
-				contract_address = tokenAddress,
-				entry_point_selector = selector,
-				calldata = { config.address },
-			}):expect()
+			return config.provider
+				:call({
+					contract_address = tokenAddress,
+					entry_point_selector = selector,
+					calldata = { config.address },
+				})
+				:expect()
 		end)
 		if not balOk then
 			reject(balResult)

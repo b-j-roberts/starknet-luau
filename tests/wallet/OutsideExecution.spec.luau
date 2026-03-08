@@ -38,18 +38,16 @@ local function makeTestOptions(): { caller: string, execute_after: number | stri
 end
 
 --- Build a GetTypedDataConfig from common test params.
-local function makeConfig(
-	overrides: {
-		chainId: string?,
-		caller: string?,
-		execute_after: (number | string)?,
-		execute_before: (number | string)?,
-		nonce: (number | string)?,
-		calls: { { [string]: any } }?,
-		version: string?,
-		feeMode: { [string]: any }?,
-	}?
-): OutsideExecution.GetTypedDataConfig
+local function makeConfig(overrides: {
+	chainId: string?,
+	caller: string?,
+	execute_after: (number | string)?,
+	execute_before: (number | string)?,
+	nonce: (number | string)?,
+	calls: { { [string]: any } }?,
+	version: string?,
+	feeMode: { [string]: any }?,
+}?): OutsideExecution.GetTypedDataConfig
 	local o = overrides or {}
 	return {
 		chainId = o.chainId or TEST_CHAIN_ID,
@@ -148,7 +146,8 @@ describe("OutsideExecution.getOutsideCall", function()
 		}
 		local oc = OutsideExecution.getOutsideCall(call)
 		-- Should normalize the hex
-		local expected = BigInt.toHex(BigInt.fromHex("0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e"))
+		local expected =
+			BigInt.toHex(BigInt.fromHex("0x83afd3f4caedc6eebf44246fe54e38c95e3179a5ec9ea81740eca5b482d12e"))
 		expect(oc.selector):toBe(expected)
 	end)
 
@@ -317,7 +316,8 @@ describe("OutsideExecution.getTypedData - V2", function()
 
 	it("encodeType produces correct V2 string", function()
 		local encoded = TypedData.encodeType(OutsideExecution.TYPES_V2, "OutsideExecution", "1")
-		local expected = '"OutsideExecution"("Caller":"ContractAddress","Nonce":"felt","Execute After":"u128","Execute Before":"u128","Calls":"Call*")"Call"("To":"ContractAddress","Selector":"selector","Calldata":"felt*")'
+		local expected =
+			'"OutsideExecution"("Caller":"ContractAddress","Nonce":"felt","Execute After":"u128","Execute Before":"u128","Calls":"Call*")"Call"("To":"ContractAddress","Selector":"selector","Calldata":"felt*")'
 		expect(encoded):toBe(expected)
 	end)
 end)
@@ -542,16 +542,14 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 	}
 
 	it("targets signer address", function()
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1")
 		expect(result.contractAddress):toBe(TEST_ACCOUNT_ADDR)
 	end)
 
 	it("uses correct V1 entrypoint", function()
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1")
 		expect(result.entrypoint):toBe("execute_from_outside")
 	end)
 
@@ -565,9 +563,8 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 				{ To = "0xabc", Selector = "0x123", Calldata = { "0x1" } },
 			},
 		}
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, v2Execution, { "0xr", "0xs" }, "2"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, v2Execution, { "0xr", "0xs" }, "2")
 		expect(result.entrypoint):toBe("execute_from_outside_v2")
 	end)
 
@@ -582,39 +579,36 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 			},
 			Fee = { ["No Fee"] = {} },
 		}
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3")
 		expect(result.entrypoint):toBe("execute_from_outside_v3")
 	end)
 
 	it("encodes calls with length prefix", function()
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1")
 		local cd = result.calldata :: { string }
 		-- calldata: [caller, nonce, exec_after, exec_before, calls_len(1), to, selector, cd_len(2), 0x1, 0x2, sig_len(2), 0xr, 0xs]
-		expect(cd[1]):toBe(TEST_CALLER)         -- caller
-		expect(cd[2]):toBe("0x1")               -- nonce
-		expect(cd[3]):toBe("0x0")               -- execute_after
-		expect(cd[4]):toBe("0x3b9ac9ff")        -- execute_before
-		expect(cd[5]):toBe("0x1")               -- calls_len = 1
-		expect(cd[6]):toBe("0xabc")             -- call.to
-		expect(cd[7]):toBe("0x123")             -- call.selector
-		expect(cd[8]):toBe("0x2")               -- calldata_len = 2
-		expect(cd[9]):toBe("0x1")               -- calldata[1]
-		expect(cd[10]):toBe("0x2")              -- calldata[2]
+		expect(cd[1]):toBe(TEST_CALLER) -- caller
+		expect(cd[2]):toBe("0x1") -- nonce
+		expect(cd[3]):toBe("0x0") -- execute_after
+		expect(cd[4]):toBe("0x3b9ac9ff") -- execute_before
+		expect(cd[5]):toBe("0x1") -- calls_len = 1
+		expect(cd[6]):toBe("0xabc") -- call.to
+		expect(cd[7]):toBe("0x123") -- call.selector
+		expect(cd[8]):toBe("0x2") -- calldata_len = 2
+		expect(cd[9]):toBe("0x1") -- calldata[1]
+		expect(cd[10]):toBe("0x2") -- calldata[2]
 	end)
 
 	it("encodes signature with length prefix", function()
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, simpleExecution, { "0xr", "0xs" }, "1")
 		local cd = result.calldata :: { string }
 		-- Last 3 elements: sig_len, r, s
-		expect(cd[#cd - 2]):toBe("0x2")   -- signature length
-		expect(cd[#cd - 1]):toBe("0xr")   -- r
-		expect(cd[#cd]):toBe("0xs")       -- s
+		expect(cd[#cd - 2]):toBe("0x2") -- signature length
+		expect(cd[#cd - 1]):toBe("0xr") -- r
+		expect(cd[#cd]):toBe("0xs") -- s
 	end)
 
 	it("encodes V3 NoFee variant", function()
@@ -628,9 +622,8 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 			},
 			Fee = { ["No Fee"] = {} },
 		}
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3")
 		local cd = result.calldata :: { string }
 		-- After calls: fee variant (0x0), then sig
 		-- calls_len=1, to, selector, cd_len=0 → indices 5,6,7,8
@@ -660,17 +653,16 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 				},
 			},
 		}
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3"
-		)
+		local result =
+			OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, v3Execution, { "0xr", "0xs" }, "3")
 		local cd = result.calldata :: { string }
 		-- After calls: fee variant (0x1), token_address, amount_low, amount_high, receiver, then sig
-		expect(cd[9]):toBe("0x1")        -- PayFee variant index
-		expect(cd[10]):toBe("0xtoken")   -- token_address
-		expect(cd[11]):toBe("0x1000")    -- amount.low
-		expect(cd[12]):toBe("0x0")       -- amount.high
+		expect(cd[9]):toBe("0x1") -- PayFee variant index
+		expect(cd[10]):toBe("0xtoken") -- token_address
+		expect(cd[11]):toBe("0x1000") -- amount.low
+		expect(cd[12]):toBe("0x0") -- amount.high
 		expect(cd[13]):toBe("0xreceiver") -- receiver
-		expect(cd[14]):toBe("0x2")       -- sig_len
+		expect(cd[14]):toBe("0x2") -- sig_len
 	end)
 
 	it("handles numeric nonce and timestamps", function()
@@ -685,13 +677,11 @@ describe("OutsideExecution.buildExecuteFromOutsideCall", function()
 		execution.calls = {
 			{ to = "0xabc", selector = "0x123", calldata = {} },
 		}
-		local result = OutsideExecution.buildExecuteFromOutsideCall(
-			TEST_ACCOUNT_ADDR, execution, { "0xsig" }, "1"
-		)
+		local result = OutsideExecution.buildExecuteFromOutsideCall(TEST_ACCOUNT_ADDR, execution, { "0xsig" }, "1")
 		local cd = result.calldata :: { string }
-		expect(cd[2]):toBe("0x2a")       -- nonce = 42
-		expect(cd[3]):toBe("0x0")        -- execute_after = 0
-		expect(cd[4]):toBe("0x3e8")      -- execute_before = 1000
+		expect(cd[2]):toBe("0x2a") -- nonce = 42
+		expect(cd[3]):toBe("0x0") -- execute_after = 0
+		expect(cd[4]):toBe("0x3e8") -- execute_before = 1000
 	end)
 end)
 

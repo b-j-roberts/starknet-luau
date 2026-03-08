@@ -192,4 +192,3 @@ describe("Keccak - edge cases", function()
 		expect(allZero):toBe(false)
 	end)
 end)
-

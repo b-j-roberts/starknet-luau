@@ -33,9 +33,7 @@ end)
 
 describe("Constants - Contract Address Prefix", function()
 	it("CONTRACT_ADDRESS_PREFIX is ASCII encoding of 'STARKNET_CONTRACT_ADDRESS'", function()
-		expect(Constants.CONTRACT_ADDRESS_PREFIX):toBe(
-			"0x535441524b4e45545f434f4e54524143545f41444452455353"
-		)
+		expect(Constants.CONTRACT_ADDRESS_PREFIX):toBe("0x535441524b4e45545f434f4e54524143545f41444452455353")
 	end)
 end)
 
@@ -45,15 +43,11 @@ end)
 
 describe("Constants - Token Addresses", function()
 	it("ETH_TOKEN_ADDRESS matches well-known Starknet ETH address", function()
-		expect(Constants.ETH_TOKEN_ADDRESS):toBe(
-			"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-		)
+		expect(Constants.ETH_TOKEN_ADDRESS):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 
 	it("STRK_TOKEN_ADDRESS matches well-known Starknet STRK address", function()
-		expect(Constants.STRK_TOKEN_ADDRESS):toBe(
-			"0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-		)
+		expect(Constants.STRK_TOKEN_ADDRESS):toBe("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
 	end)
 end)
 

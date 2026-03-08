@@ -596,11 +596,13 @@ describe("Contract:queryEvents", function()
 			provider = provider,
 		})
 
-		contract:queryEvents({
-			from_block = { block_number = 50 },
-			to_block = { block_number = 100 },
-			chunk_size = 25,
-		}):expect()
+		contract
+			:queryEvents({
+				from_block = { block_number = 50 },
+				to_block = { block_number = 100 },
+				chunk_size = 25,
+			})
+			:expect()
 
 		local found = false
 		for _, entry in requestLog do
@@ -652,9 +654,11 @@ describe("Contract:queryEvents", function()
 			provider = provider,
 		})
 
-		contract:queryEvents({
-			keys = { { TRANSFER_SELECTOR } },
-		}):expect()
+		contract
+			:queryEvents({
+				keys = { { TRANSFER_SELECTOR } },
+			})
+			:expect()
 
 		for _, entry in requestLog do
 			if entry.method == "starknet_getEvents" then

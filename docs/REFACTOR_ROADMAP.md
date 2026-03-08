@@ -547,26 +547,26 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 
 ---
 
-### R.5.1 Fill Critical Test Coverage Gaps
+### R.5.1 Fill Critical Test Coverage Gaps ✅
 
 **Requirements**:
-- [ ] Test `addDeployAccountTransaction` at provider level (only indirectly exercised) (ref: 12-tests.md §provider [fix])
-- [ ] Test `Account:deployAccount()` directly in Account.spec (only tested via BatchDeploy/AccountFactory) (ref: 12-tests.md §wallet [test])
-- [ ] Test `Account:waitForReceipt()` (not tested anywhere) (ref: 12-tests.md §wallet [test])
-- [ ] Test `Account:execute()` with NonceManager integration (ref: 12-tests.md §wallet [test], 06-wallet.md §16)
-- [ ] Test multicall (2+ calls) through `Account:execute()` (ref: 06-wallet.md §16)
-- [ ] Add AbiCodec error path tests (4 error branches untested: invalid Result, unknown enum variant, non-table enum, invalid variant index) (ref: 12-tests.md §contract [fix], 07-contract.md §AbiCodec [test])
-- [ ] Test `Contract:call()` blockId parameter (never exercised) (ref: 12-tests.md §contract [test])
-- [ ] Test `toRpcResourceBounds()` dropping `l1DataGas` (ref: 12-tests.md §tx [fix])
-- [ ] Test `skipValidate=false` in execute/deploy (ref: 12-tests.md §tx [test])
-- [ ] Test `CallData.encodeMulticall()` with malformed Call objects (missing fields, wrong types) (ref: 05-tx.md §CallData [test])
-- [ ] Test `queryEvents` continuation_token passthrough (ref: 12-tests.md §contract [test])
-- [ ] Test interface ABI parsing (nested `items` extraction) (ref: 12-tests.md §contract [test])
-- [ ] Test `AbiCodec.decodeEvent()` directly (currently only tested indirectly through Contract) (ref: 12-tests.md §contract [test])
-- [ ] Test `AbiCodec.resolveType()` fallback with unknown type names (ref: 07-contract.md §AbiCodec [test])
-- [ ] Test `PaymasterBudget` with NaN input values (ref: 12-tests.md §paymaster [test])
-- [ ] Test `PaymasterRpc` rate limiter timeout branch (never triggered in current tests) (ref: 12-tests.md §paymaster [test])
-- [ ] Test `estimateMessageFee` priority classification in RequestQueue (ref: 12-tests.md §provider [test])
+- [x] Test `addDeployAccountTransaction` at provider level (only indirectly exercised) (ref: 12-tests.md §provider [fix])
+- [x] Test `Account:deployAccount()` directly in Account.spec (only tested via BatchDeploy/AccountFactory) (ref: 12-tests.md §wallet [test])
+- [x] Test `Account:waitForReceipt()` (not tested anywhere) (ref: 12-tests.md §wallet [test])
+- [x] Test `Account:execute()` with NonceManager integration (ref: 12-tests.md §wallet [test], 06-wallet.md §16)
+- [x] Test multicall (2+ calls) through `Account:execute()` (ref: 06-wallet.md §16)
+- [x] Add AbiCodec error path tests (4 error branches untested: invalid Result, unknown enum variant, non-table enum, invalid variant index) (ref: 12-tests.md §contract [fix], 07-contract.md §AbiCodec [test])
+- [x] Test `Contract:call()` blockId parameter (never exercised) (ref: 12-tests.md §contract [test])
+- [x] Test `toRpcResourceBounds()` dropping `l1DataGas` (ref: 12-tests.md §tx [fix])
+- [x] Test `skipValidate=false` in execute/deploy (ref: 12-tests.md §tx [test])
+- [x] Test `CallData.encodeMulticall()` with malformed Call objects (missing fields, wrong types) (ref: 05-tx.md §CallData [test])
+- [x] Test `queryEvents` continuation_token passthrough (ref: 12-tests.md §contract [test])
+- [x] Test interface ABI parsing (nested `items` extraction) (ref: 12-tests.md §contract [test])
+- [x] Test `AbiCodec.decodeEvent()` directly (currently only tested indirectly through Contract) (ref: 12-tests.md §contract [test])
+- [x] Test `AbiCodec.resolveType()` fallback with unknown type names (ref: 07-contract.md §AbiCodec [test])
+- [x] Test `PaymasterBudget` with NaN input values (ref: 12-tests.md §paymaster [test])
+- [x] Test `PaymasterRpc` rate limiter timeout branch (never triggered in current tests) (ref: 12-tests.md §paymaster [test])
+- [x] Test `estimateMessageFee` priority classification in RequestQueue (ref: 12-tests.md §provider [test])
 
 ---
 
@@ -892,84 +892,3 @@ Items identified during review that are intentionally deferred — v2 API design
 - [ ] Test runner: `run.luau` test-vectors.luau only consumed by cross-reference.spec — 40 other specs hardcode vectors inline (broader than R.5.7 centralization) (ref: 12-tests.md §test-vectors [test])
 - [ ] `getAllEvents()` pagination in RpcProvider duplicates EventPoller pagination logic (ref: 04-provider.md §RpcProvider [refactor])
 - [ ] `RequestQueue.dequeue()` uses `table.remove(_, 1)` which is O(n) — acceptable for current max queue depth of 100 (ref: 04-provider.md §RequestQueue [perf])
-
-
-4.1 Encrypted Key Store (Player-Linked Accounts)
-
-  Description: Secure DataStoreService-backed persistence for player private keys, enabling
-  automatic account recovery across sessions. Keys are encrypted at rest using a
-  server-managed secret so that raw private keys are never stored in plaintext in Roblox's
-  DataStore.
-
-  Requirements:
-  - KeyStore.new(config) — encrypted key persistence via DataStoreService
-    - config.serverSecret: hex string from a private ServerStorage config module (minimum 32
-  bytes, validated on construction)
-    - config.dataStoreName: DataStore name (default: "StarknetKeyStore")
-    - config.accountType: account type for generated accounts (default: "OZ")
-    - config._dataStore: injectable DataStoreLike for testing (same pattern as
-  PaymasterBudget)
-  - keyStore:generateAndStore(playerId, provider) → { account, address } — generate new
-  keypair, encrypt, persist, return hydrated Account
-  - keyStore:loadAccount(playerId, provider) → Account? — load encrypted key from DataStore,
-  decrypt, return hydrated Account (or nil if no key exists)
-  - keyStore:getOrCreate(playerId, provider) → { account, isNew: boolean } — load existing or
-   generate + store new key (onboarding convenience)
-  - keyStore:hasAccount(playerId) → boolean — check existence without decrypting
-  - keyStore:deleteKey(playerId) — remove key from DataStore (account deletion / GDPR)
-  - Encryption: ciphertext = XOR(privateKey, HMAC-SHA256(serverSecret, tostring(playerId)))
-    - Deterministic per-player keystream — no IV/nonce storage needed since each playerId is
-  unique
-    - Uses existing SHA256.hmac() from crypto layer
-  - Validation: reject serverSecret shorter than 64 hex chars (32 bytes); error on empty or
-  obvious values
-  - Never log, print, or expose decrypted private keys in error messages or DataStore error
-  context
-
-  Server Secret Configuration:
-  - Developer creates a private ModuleScript in ServerStorage (not checked into source
-  control):
-  -- ServerStorage/StarknetConfig (PRIVATE — do not commit)
-  return {
-      serverSecret = "0xabc123...64+ hex chars...",
-  }
-  - KeyStore constructed on server startup:
-  local config = require(game.ServerStorage.StarknetConfig)
-  local keyStore = KeyStore.new({ serverSecret = config.serverSecret })
-  - Note: HttpService:GetSecret() returns an opaque Secret object that cannot be used as raw
-  bytes in Luau — it only works with RequestAsync headers. Our HMAC requires actual bytes, so
-   a private config module is the pragmatic approach.
-  - SDK docs must emphasize: never commit the config module, never pass the secret to
-  clients, treat it like a database encryption key
-
-  Security Model:
-  - Roblox (infrastructure): can read DataStore, sees only encrypted blobs — cannot decrypt
-  without serverSecret
-  - Game developer: holds serverSecret, can decrypt all player keys — this is the trust
-  boundary
-  - Players: cannot access ServerStorage, DataStore, or server memory
-  - Key rotation: keyStore:rotateSecret(oldSecret, newSecret, playerIds) — re-encrypts
-  specified keys with new secret
-  - Tradeoff: This is a custodial model — the game developer is the custodian. SDK docs
-  should point developers toward relay server mode (5.1) or wallet linking (5.6) for
-  non-custodial alternatives
-
-  DataStore Format:
-  {
-      version = 1,           -- schema version for future migration
-      encrypted = "0x...",   -- XOR-encrypted private key (hex)
-      address = "0x...",     -- public address (plaintext, it's public)
-      accountType = "OZ",    -- account type used for construction
-      createdAt = 1234567,   -- os.time() at creation
-  }
-
-  Implementation Notes:
-  - Same DataStoreLike injection pattern as PaymasterBudget — fully testable in Lune
-  - address stored in plaintext — enables hasAccount and address lookups without decryption
-  - getOrCreate is the primary onboarding API — game servers call it on PlayerAdded
-  - Integration with Account.fromPrivateKey() — decrypt → construct Account → return
-  - Consider rate limiting DataStore reads via existing ResponseCache pattern if many players
-   join simultaneously
-
-  Dependencies: SHA256 + HMAC ✅, Account.fromPrivateKey() ✅, PaymasterBudget DataStoreLike
-  pattern ✅

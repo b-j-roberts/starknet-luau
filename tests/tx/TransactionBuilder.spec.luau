@@ -571,18 +571,22 @@ describe("TransactionBuilder - execute dryRun", function()
 		}
 
 		-- dryRun
-		local dryResult = builder:execute(account, calls, {
-			dryRun = true,
-			nonce = opts.nonce,
-			resourceBounds = opts.resourceBounds,
-		}):expect()
+		local dryResult = builder
+			:execute(account, calls, {
+				dryRun = true,
+				nonce = opts.nonce,
+				resourceBounds = opts.resourceBounds,
+			})
+			:expect()
 
 		-- Actual execution with same options
 		rpc.clearRequestLog()
-		local execResult = builder:execute(account, calls, {
-			nonce = opts.nonce,
-			resourceBounds = opts.resourceBounds,
-		}):expect()
+		local execResult = builder
+			:execute(account, calls, {
+				nonce = opts.nonce,
+				resourceBounds = opts.resourceBounds,
+			})
+			:expect()
 
 		-- The submitted transaction should match the dry run transaction
 		for _, req in requestLog do
@@ -778,17 +782,21 @@ describe("TransactionBuilder - transaction hash determinism", function()
 			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 		}
 
-		local result1 = builder:execute(account, calls, {
-			nonce = "0x1",
-			dryRun = true,
-			resourceBounds = baseBounds,
-		}):expect()
+		local result1 = builder
+			:execute(account, calls, {
+				nonce = "0x1",
+				dryRun = true,
+				resourceBounds = baseBounds,
+			})
+			:expect()
 
-		local result2 = builder:execute(account, calls, {
-			nonce = "0x2",
-			dryRun = true,
-			resourceBounds = baseBounds,
-		}):expect()
+		local result2 = builder
+			:execute(account, calls, {
+				nonce = "0x2",
+				dryRun = true,
+				resourceBounds = baseBounds,
+			})
+			:expect()
 
 		expect(result1.transactionHash ~= result2.transactionHash):toBeTruthy()
 	end)
@@ -807,11 +815,13 @@ describe("TransactionBuilder - transaction hash determinism", function()
 			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 		}
 
-		local result = builder:execute(account, calls, {
-			nonce = nonce,
-			dryRun = true,
-			resourceBounds = resourceBounds,
-		}):expect()
+		local result = builder
+			:execute(account, calls, {
+				nonce = nonce,
+				dryRun = true,
+				resourceBounds = resourceBounds,
+			})
+			:expect()
 
 		-- Compute the expected hash manually
 		local calldata = CallData.encodeMulticall(calls)
@@ -910,10 +920,12 @@ describe("TransactionBuilder - RPC call sequence", function()
 		local account = createTestAccount()
 		local calls = createTestCalls()
 
-		builder:execute(account, calls, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-		}):expect()
+		builder
+			:execute(account, calls, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+			})
+			:expect()
 
 		local foundTx = nil
 		for _, req in requestLog do
@@ -935,10 +947,12 @@ describe("TransactionBuilder - RPC call sequence", function()
 		local account = createTestAccount()
 		local calls = createTestCalls()
 
-		builder:execute(account, calls, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-		}):expect()
+		builder
+			:execute(account, calls, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+			})
+			:expect()
 
 		local foundTx = nil
 		for _, req in requestLog do
@@ -981,20 +995,24 @@ describe("TransactionBuilder - RPC call sequence", function()
 		local calls = createTestCalls()
 
 		-- dryRun with non-zero DA modes
-		local result = builder:execute(account, calls, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-			dryRun = true,
-		}):expect()
+		local result = builder
+			:execute(account, calls, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+				dryRun = true,
+			})
+			:expect()
 
 		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
 		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
 
 		-- dryRun with default DA modes (same nonce to compare)
-		local defaultResult = builder:execute(account, calls, {
-			nonce = result.transaction.nonce,
-			dryRun = true,
-		}):expect()
+		local defaultResult = builder
+			:execute(account, calls, {
+				nonce = result.transaction.nonce,
+				dryRun = true,
+			})
+			:expect()
 
 		-- Hashes must differ since DA modes differ
 		expect(result.transactionHash ~= defaultResult.transactionHash):toBeTruthy()
@@ -1114,10 +1132,12 @@ describe("TransactionBuilder - execute maxFee", function()
 			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 		}
 
-		builder:execute(account, calls, {
-			maxFee = "0x1",
-			resourceBounds = customBounds,
-		}):expect()
+		builder
+			:execute(account, calls, {
+				maxFee = "0x1",
+				resourceBounds = customBounds,
+			})
+			:expect()
 
 		for _, req in requestLog do
 			if req.method == "starknet_addInvokeTransaction" then
@@ -1146,5 +1166,195 @@ describe("TransactionBuilder - execute maxFee", function()
 		local uncappedAmount = BigInt.fromHex("0x1800")
 		expect(BigInt.cmp(maxAmount, uncappedAmount) < 0):toBeTruthy()
 		expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBe("0x180")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- toRpcResourceBounds - l1DataGas dropped
+--------------------------------------------------------------------------------
+
+describe("TransactionBuilder - toRpcResourceBounds drops l1DataGas", function()
+	it("RPC transaction only has l1_gas and l2_gas (no l1_data_gas)", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		local result = builder:execute(account, calls, { dryRun = true }):expect()
+		local tx = result.transaction
+
+		-- Verify only l1_gas and l2_gas in resource_bounds (no l1_data_gas)
+		expect(tx.resource_bounds.l1_gas):toBeTruthy()
+		expect(tx.resource_bounds.l2_gas):toBeTruthy()
+		expect(tx.resource_bounds.l1_data_gas):toBeNil()
+		expect(tx.resource_bounds.l1DataGas):toBeNil()
+
+		-- Verify the snake_case format
+		expect(tx.resource_bounds.l1_gas.max_amount):toBeTruthy()
+		expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBeTruthy()
+		expect(tx.resource_bounds.l2_gas.max_amount):toBeTruthy()
+		expect(tx.resource_bounds.l2_gas.max_price_per_unit):toBeTruthy()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- skipValidate=false
+--------------------------------------------------------------------------------
+
+describe("TransactionBuilder - skipValidate=false", function()
+	it("sends empty simulation flags when skipValidate=false", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls, { skipValidate = false }):expect()
+
+		-- Find the estimateFee request and check simulation_flags
+		for _, entry in requestLog do
+			if entry.method == "starknet_estimateFee" then
+				local simFlags = entry.params[2]
+				expect(#simFlags):toBe(0)
+			end
+		end
+	end)
+
+	it("sends SKIP_VALIDATE by default (skipValidate not set)", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls):expect()
+
+		for _, entry in requestLog do
+			if entry.method == "starknet_estimateFee" then
+				local simFlags = entry.params[2]
+				expect(#simFlags):toBe(1)
+				expect(simFlags[1]):toBe("SKIP_VALIDATE")
+			end
+		end
+	end)
+
+	it("sends SKIP_VALIDATE when skipValidate=true", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls, { skipValidate = true }):expect()
+
+		for _, entry in requestLog do
+			if entry.method == "starknet_estimateFee" then
+				local simFlags = entry.params[2]
+				expect(#simFlags):toBe(1)
+				expect(simFlags[1]):toBe("SKIP_VALIDATE")
+			end
+		end
+	end)
+
+	it("works with deploy account and skipValidate=false", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xdeployed",
+				contract_address = "0xaddr",
+			}
+		end
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = {
+			classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+			constructorCalldata = { "0xpubkey" },
+			addressSalt = "0xsalt",
+			contractAddress = "0xaddr",
+		}
+
+		builder:deployAccount(account, params, { skipValidate = false }):expect()
+
+		for _, entry in requestLog do
+			if entry.method == "starknet_estimateFee" then
+				local simFlags = entry.params[2]
+				expect(#simFlags):toBe(0)
+			end
+		end
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- CallData.encodeMulticall - malformed Call objects
+--------------------------------------------------------------------------------
+
+describe("CallData.encodeMulticall - malformed calls", function()
+	it("errors when contractAddress is nil", function()
+		expect(function()
+			CallData.encodeMulticall({
+				{ contractAddress = nil :: any, entrypoint = "transfer", calldata = {} },
+			})
+		end):toThrow()
+	end)
+
+	it("handles call with empty calldata", function()
+		local result = CallData.encodeMulticall({
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "get_value",
+				calldata = {},
+			},
+		})
+		-- Should encode as: [1 call, address, selector, 0 calldata items]
+		expect(result[1]):toBe("0x1") -- num calls
+		expect(result[3]):toBeTruthy() -- selector
+		expect(result[4]):toBe("0x0") -- calldata length = 0
+	end)
+
+	it("errors when contractAddress is nil in second call", function()
+		expect(function()
+			CallData.encodeMulticall({
+				{
+					contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+					entrypoint = "transfer",
+					calldata = { "0x1" },
+				},
+				{ contractAddress = nil :: any, entrypoint = "approve", calldata = {} },
+			})
+		end):toThrow()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- CallData.validateCall - malformed Call objects
+--------------------------------------------------------------------------------
+
+describe("CallData.validateCall - malformed calls", function()
+	it("errors when contractAddress is empty", function()
+		expect(function()
+			CallData.validateCall({ contractAddress = "", entrypoint = "transfer", calldata = {} })
+		end):toThrow("required and must be non-empty")
+	end)
+
+	it("errors when contractAddress lacks 0x prefix", function()
+		expect(function()
+			CallData.validateCall({ contractAddress = "notahex", entrypoint = "transfer", calldata = {} })
+		end):toThrow("hex string")
+	end)
+
+	it("succeeds with valid call", function()
+		-- Should not throw
+		CallData.validateCall({
+			contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			entrypoint = "transfer",
+			calldata = { "0x1" },
+		})
 	end)
 end)

@@ -60,8 +60,8 @@ local function createQueueProvider(overrides: { [string]: any }?)
 		end
 	end
 
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
+	local provider = RpcProvider.new(config);
+	(provider :: any)._PromiseModule = MockPromise
 
 	local function drainDeferred()
 		while #deferFns > 0 do

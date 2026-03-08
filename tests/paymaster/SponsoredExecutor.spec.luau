@@ -698,9 +698,7 @@ describe("SponsoredExecutor — Retry logic", function()
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				attemptCount += 1
 				if attemptCount == 1 then
-					return MockPromise.reject(
-						StarknetError.rpc("Service down", ErrorCodes.PAYMASTER_UNAVAILABLE.code)
-					)
+					return MockPromise.reject(StarknetError.rpc("Service down", ErrorCodes.PAYMASTER_UNAVAILABLE.code))
 				end
 				return MockPromise.resolve({ transactionHash = "0xback" })
 			end,
@@ -780,9 +778,7 @@ describe("SponsoredExecutor — Callbacks", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 7 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
-				return MockPromise.reject(
-					StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156)
-				)
+				return MockPromise.reject(StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156))
 			end,
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -1000,9 +996,7 @@ describe("SponsoredExecutor — Metrics", function()
 	it("totalFailed incremented on failure", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
-				return MockPromise.reject(
-					StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156)
-				)
+				return MockPromise.reject(StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156))
 			end,
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -1035,9 +1029,7 @@ describe("SponsoredExecutor — Metrics", function()
 		local budget = createMockBudget({ balance = 100, costPerTransaction = 8 })
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
-				return MockPromise.reject(
-					StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156)
-				)
+				return MockPromise.reject(StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156))
 			end,
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -1066,10 +1058,12 @@ describe("SponsoredExecutor — Metrics", function()
 
 	it("per-contract metrics tracked", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
-		executor:execute(1, {
-			{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
-			{ contractAddress = "0xbbb", entrypoint = "approve", calldata = {} },
-		}):expect()
+		executor
+			:execute(1, {
+				{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
+				{ contractAddress = "0xbbb", entrypoint = "approve", calldata = {} },
+			})
+			:expect()
 		local m = executor:getMetrics()
 		expect(m.byContract["0xaaa"]):toBe(1)
 		expect(m.byContract["0xbbb"]):toBe(1)
@@ -1077,9 +1071,11 @@ describe("SponsoredExecutor — Metrics", function()
 
 	it("per-method metrics tracked", function()
 		local executor = SponsoredExecutor.new(minimalConfig())
-		executor:execute(1, {
-			{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
-		}):expect()
+		executor
+			:execute(1, {
+				{ contractAddress = "0xaaa", entrypoint = "transfer", calldata = {} },
+			})
+			:expect()
 		local m = executor:getMetrics()
 		expect(m.byMethod["0xaaa:transfer"]):toBe(1)
 	end)
@@ -1107,9 +1103,7 @@ describe("SponsoredExecutor — Metrics", function()
 	it("failed execution increments player failed count", function()
 		local account = createMockAccount({
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
-				return MockPromise.reject(
-					StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156)
-				)
+				return MockPromise.reject(StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156))
 			end,
 		})
 		local executor = SponsoredExecutor.new(minimalConfig({
@@ -1207,9 +1201,7 @@ describe("SponsoredExecutor — Integration scenarios", function()
 			executePaymaster = function(_self: any, _calls: any, _pd: any)
 				callCount += 1
 				if callCount == 2 then
-					return MockPromise.reject(
-						StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156)
-					)
+					return MockPromise.reject(StarknetError.rpc("fail", ErrorCodes.PAYMASTER_EXECUTION_ERROR.code, 156))
 				end
 				return MockPromise.resolve({ transactionHash = "0x" .. tostring(callCount) })
 			end,

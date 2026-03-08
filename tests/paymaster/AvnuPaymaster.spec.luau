@@ -183,8 +183,8 @@ local function createTestAvnuPaymaster(overrides: { [string]: any }?): any
 		end
 	end
 
-	local pm = AvnuPaymaster.new(config)
-	;(pm :: any)._inner._PromiseModule = MockPromise
+	local pm = AvnuPaymaster.new(config);
+	(pm :: any)._inner._PromiseModule = MockPromise
 	return pm
 end
 
@@ -507,18 +507,13 @@ describe("AvnuPaymaster - delegated methods", function()
 		resetPaymasterHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass",
-					calldata = { "0xpk" },
-					salt = "0xsalt",
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass",
+				calldata = { "0xpk" },
+				salt = "0xsalt",
+			},
+		}):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
@@ -912,11 +907,13 @@ describe("AvnuPaymaster - integration with fee modes", function()
 		rpc.clearRequestLog()
 		local pm = createTestAvnuPaymaster() -- no apiKey
 		local ethAddr = pm:getTokenAddress("ETH")
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			ethAddr :: string
-		):expect()
+		pm
+			:buildTypedData(
+				"0xuser",
+				{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
+				ethAddr :: string
+			)
+			:expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[2].fee_mode.mode):toBe("default")

@@ -681,16 +681,18 @@ describe("batchDeploy - progress callback", function()
 		local accounts = factory:batchCreate(3, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3 },
 		})
-		factory:batchDeploy(accounts, {
-			dryRun = true,
-			onDeployProgress = function(index: number, total: number, result: any)
-				table.insert(progressCalls, {
-					index = index,
-					total = total,
-					status = result.status,
-				})
-			end,
-		}):expect()
+		factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				onDeployProgress = function(index: number, total: number, result: any)
+					table.insert(progressCalls, {
+						index = index,
+						total = total,
+						status = result.status,
+					})
+				end,
+			})
+			:expect()
 
 		expect(#progressCalls):toBe(3)
 	end)
@@ -706,12 +708,14 @@ describe("batchDeploy - progress callback", function()
 		local accounts = factory:batchCreate(3, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3 },
 		})
-		factory:batchDeploy(accounts, {
-			dryRun = true,
-			onDeployProgress = function(index: number, total: number, _result: any)
-				table.insert(calls, { index = index, total = total })
-			end,
-		}):expect()
+		factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				onDeployProgress = function(index: number, total: number, _result: any)
+					table.insert(calls, { index = index, total = total })
+				end,
+			})
+			:expect()
 
 		-- Sequential: called in order 1, 2, 3
 		expect(calls[1].index):toBe(1)
@@ -733,12 +737,14 @@ describe("batchDeploy - progress callback", function()
 		local accounts = factory:batchCreate(2, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2 },
 		})
-		factory:batchDeploy(accounts, {
-			dryRun = true,
-			onDeployProgress = function(_index: number, _total: number, result: any)
-				table.insert(statuses, result.status)
-			end,
-		}):expect()
+		factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				onDeployProgress = function(_index: number, _total: number, result: any)
+					table.insert(statuses, result.status)
+				end,
+			})
+			:expect()
 
 		expect(statuses[1]):toBe("deployed")
 		expect(statuses[2]):toBe("deployed")
@@ -759,12 +765,14 @@ describe("batchDeploy - progress callback", function()
 		local accounts = factory:batchCreate(2, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2 },
 		})
-		factory:batchDeploy(accounts, {
-			waitForConfirmation = false,
-			onDeployProgress = function(_index: number, _total: number, _result: any)
-				callCount += 1
-			end,
-		}):expect()
+		factory
+			:batchDeploy(accounts, {
+				waitForConfirmation = false,
+				onDeployProgress = function(_index: number, _total: number, _result: any)
+					callCount += 1
+				end,
+			})
+			:expect()
 
 		expect(callCount):toBe(2)
 	end)
@@ -784,10 +792,12 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 		local accounts = factory:batchCreate(4, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3, PRIVKEY_4 },
 		})
-		local report = factory:batchDeploy(accounts, {
-			dryRun = true,
-			maxConcurrency = 2,
-		}):expect()
+		local report = factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				maxConcurrency = 2,
+			})
+			:expect()
 
 		expect(report.deployed):toBe(4)
 		expect(report.failed):toBe(0)
@@ -804,10 +814,12 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 		local accounts = factory:batchCreate(3, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3 },
 		})
-		local report = factory:batchDeploy(accounts, {
-			dryRun = true,
-			maxConcurrency = 3,
-		}):expect()
+		local report = factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				maxConcurrency = 3,
+			})
+			:expect()
 
 		expect(report.deployed):toBe(3)
 		expect(report.failed):toBe(0)
@@ -822,10 +834,12 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 		local accounts = factory:batchCreate(2, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2 },
 		})
-		local report = factory:batchDeploy(accounts, {
-			dryRun = true,
-			maxConcurrency = 10,
-		}):expect()
+		local report = factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				maxConcurrency = 10,
+			})
+			:expect()
 
 		expect(report.deployed):toBe(2)
 	end)
@@ -852,10 +866,12 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 		local accounts = factory:batchCreate(3, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3 },
 		})
-		local report = factory:batchDeploy(accounts, {
-			waitForConfirmation = false,
-			maxConcurrency = 2,
-		}):expect()
+		local report = factory
+			:batchDeploy(accounts, {
+				waitForConfirmation = false,
+				maxConcurrency = 2,
+			})
+			:expect()
 
 		expect(report.deployed + report.failed):toBe(3)
 		expect(report.failed):toBe(1)
@@ -872,13 +888,15 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 		local accounts = factory:batchCreate(4, {
 			privateKeys = { PRIVKEY_1, PRIVKEY_2, PRIVKEY_3, PRIVKEY_4 },
 		})
-		factory:batchDeploy(accounts, {
-			dryRun = true,
-			maxConcurrency = 2,
-			onDeployProgress = function(_index: number, _total: number, _result: any)
-				progressCount += 1
-			end,
-		}):expect()
+		factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				maxConcurrency = 2,
+				onDeployProgress = function(_index: number, _total: number, _result: any)
+					progressCount += 1
+				end,
+			})
+			:expect()
 
 		expect(progressCount):toBe(4)
 	end)
@@ -893,10 +911,12 @@ describe("batchDeploy - parallel (maxConcurrency)", function()
 			privateKeys = { PRIVKEY_1, PRIVKEY_2 },
 		})
 		-- maxConcurrency 2.9 should be floored to 2
-		local report = factory:batchDeploy(accounts, {
-			dryRun = true,
-			maxConcurrency = 2.9,
-		}):expect()
+		local report = factory
+			:batchDeploy(accounts, {
+				dryRun = true,
+				maxConcurrency = 2.9,
+			})
+			:expect()
 
 		expect(report.deployed):toBe(2)
 	end)

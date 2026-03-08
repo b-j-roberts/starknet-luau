@@ -69,8 +69,8 @@ local function createSepoliaProvider(): any
 		_clock = os.clock,
 	}
 
-	local provider = RpcProvider.new(config)
-	;(provider :: any)._PromiseModule = MockPromise
+	local provider = RpcProvider.new(config);
+	(provider :: any)._PromiseModule = MockPromise
 	return provider
 end
 
@@ -105,11 +105,13 @@ describe("Integration: Sepolia - Provider basics", function()
 		local selectorFelt = Keccak.getSelectorFromName("balanceOf")
 		local selector = StarkField.toHex(selectorFelt)
 
-		local result = provider:call({
-			contract_address = ETH_ADDRESS,
-			entry_point_selector = selector,
-			calldata = { "0x0" }, -- address 0
-		}):expect()
+		local result = provider
+			:call({
+				contract_address = ETH_ADDRESS,
+				entry_point_selector = selector,
+				calldata = { "0x0" }, -- address 0
+			})
+			:expect()
 
 		-- Should return at least 1 result element (the balance)
 		expect(type(result)):toBe("table")

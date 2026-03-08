@@ -364,10 +364,7 @@ describe("CallData - concat", function()
 		local amount = "0x100" -- 256
 
 		-- Compose: felt(recipient) + u256(amount)
-		local calldata = CallData.concat(
-			CallData.encodeFelt(recipient),
-			CallData.encodeU256(amount)
-		)
+		local calldata = CallData.concat(CallData.encodeFelt(recipient), CallData.encodeU256(amount))
 
 		-- Expected: [recipient, amount_low, amount_high]
 		expect(#calldata):toBe(3)

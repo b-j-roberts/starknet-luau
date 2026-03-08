@@ -678,9 +678,7 @@ describe("Account.detectAccountType", function()
 
 	it("handles padded class hash (leading zeros)", function()
 		-- Same hash but with leading zero differences — BigInt normalization should handle it
-		local result = Account.detectAccountType(
-			"0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
-		)
+		local result = Account.detectAccountType("0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f")
 		expect(result):toBe("argent")
 	end)
 end)
@@ -889,10 +887,12 @@ describe("Account:execute", function()
 		})
 
 		local calls = createTestCalls()
-		local result = account:execute(calls, {
-			nonce = "0x10",
-			feeMultiplier = 2.0,
-		}):expect()
+		local result = account
+			:execute(calls, {
+				nonce = "0x10",
+				feeMultiplier = 2.0,
+			})
+			:expect()
 		expect(result.transactionHash):toBeTruthy()
 	end)
 
@@ -982,6 +982,354 @@ describe("Account:execute", function()
 				expect(tx.sender_address):toBe(EXPECTED_ADDR_1_BRAAVOS)
 			end
 		end
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:execute - multicall (2+ calls)
+--------------------------------------------------------------------------------
+
+describe("Account:execute - multicall", function()
+	it("executes 2 calls in a single transaction", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local calls = {
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient1", "0x100", "0x0" },
+			},
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "approve",
+				calldata = { "0xspender", "0x200", "0x0" },
+			},
+		}
+
+		local result = account:execute(calls):expect()
+		expect(result.transactionHash):toBeTruthy()
+
+		-- Verify the invoke was submitted with multicall calldata
+		local found = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_addInvokeTransaction" then
+				found = true
+				local tx = entry.params[1]
+				-- Multicall calldata starts with "0x2" (2 calls)
+				expect(tx.calldata[1]):toBe("0x2")
+			end
+		end
+		expect(found):toBe(true)
+	end)
+
+	it("executes 3 calls in a single transaction", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local calls = {
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient1", "0x100", "0x0" },
+			},
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "approve",
+				calldata = { "0xspender", "0x200", "0x0" },
+			},
+			{
+				contractAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+				entrypoint = "transfer",
+				calldata = { "0xrecipient2", "0x300", "0x0" },
+			},
+		}
+
+		local result = account:execute(calls):expect()
+		expect(result.transactionHash):toBeTruthy()
+
+		for _, entry in requestLog do
+			if entry.method == "starknet_addInvokeTransaction" then
+				local tx = entry.params[1]
+				expect(tx.calldata[1]):toBe("0x3")
+			end
+		end
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:execute - NonceManager integration
+--------------------------------------------------------------------------------
+
+describe("Account:execute - NonceManager integration", function()
+	it("uses NonceManager when enabled", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider({ enableNonceManager = true })
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local calls = createTestCalls()
+		local result = account:execute(calls):expect()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("skips NonceManager when explicit nonce provided", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider({ enableNonceManager = true })
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local calls = createTestCalls()
+		local result = account:execute(calls, { nonce = "0x42" }):expect()
+		expect(result.transactionHash):toBeTruthy()
+
+		-- Verify the explicit nonce was used (sent in estimateFee or addInvokeTransaction)
+		local foundNonce = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_addInvokeTransaction" then
+				local tx = entry.params[1]
+				if tx.nonce == "0x42" then
+					foundNonce = true
+				end
+			end
+		end
+		expect(foundNonce):toBe(true)
+	end)
+
+	it("works without NonceManager (default provider)", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local calls = createTestCalls()
+		local result = account:execute(calls):expect()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:deployAccount - direct tests
+--------------------------------------------------------------------------------
+
+describe("Account:deployAccount - direct", function()
+	it("deploys a new account and returns transactionHash and contractAddress", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		-- getNonce should fail (account not deployed yet)
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("CONTRACT_NOT_FOUND")
+		end
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xdeployhash",
+				contract_address = "0xdeployaddr",
+			}
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local result = account:deployAccount({ waitForConfirmation = false }):expect()
+		expect(result.transactionHash):toBe("0xdeployhash")
+		expect(result.contractAddress):toBeTruthy()
+	end)
+
+	it("returns alreadyDeployed when account exists", function()
+		rpc.resetHandlers()
+		-- getNonce succeeds → account already deployed
+		mockHandlers["starknet_getNonce"] = function(_params)
+			return "0x5"
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.alreadyDeployed):toBe(true)
+		expect(result.transactionHash):toBe("0x0")
+		expect(result.contractAddress):toBe(account.address)
+	end)
+
+	it("supports dryRun mode", function()
+		rpc.resetHandlers()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("CONTRACT_NOT_FOUND")
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local result = account:deployAccount({ dryRun = true }):expect()
+		expect(result.transactionHash):toBeTruthy()
+		expect(result.transaction):toBeTruthy()
+		expect(result.signature):toBeTruthy()
+	end)
+
+	it("sends correct RPC method", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("CONTRACT_NOT_FOUND")
+		end
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xdeployed",
+				contract_address = "0xaddr",
+			}
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		account:deployAccount({ waitForConfirmation = false }):expect()
+
+		local foundDeploy = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_addDeployAccountTransaction" then
+				foundDeploy = true
+				local tx = entry.params[1]
+				expect(tx.type):toBe("DEPLOY_ACCOUNT")
+				expect(tx.version):toBe("0x3")
+				expect(tx.class_hash):toBeTruthy()
+				expect(tx.constructor_calldata):toBeTruthy()
+			end
+		end
+		expect(foundDeploy):toBe(true)
+	end)
+
+	it("waits for confirmation by default", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_getNonce"] = function(_params)
+			error("CONTRACT_NOT_FOUND")
+		end
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xwaitdeploy",
+				contract_address = "0xwaitaddr",
+			}
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local result = account:deployAccount():expect()
+		expect(result.transactionHash):toBe("0xwaitdeploy")
+
+		-- Verify waitForTransaction was called
+		local foundWait = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_getTransactionStatus" or entry.method == "starknet_getTransactionReceipt" then
+				foundWait = true
+			end
+		end
+		expect(foundWait):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Account:waitForReceipt
+--------------------------------------------------------------------------------
+
+describe("Account:waitForReceipt", function()
+	it("returns the receipt for a confirmed transaction", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local receipt = account:waitForReceipt("0xabc123"):expect()
+		expect(receipt):toBeTruthy()
+		expect(receipt.transaction_hash):toBe("0xabc123")
+		expect(receipt.execution_status):toBe("SUCCEEDED")
+		expect(receipt.finality_status):toBe("ACCEPTED_ON_L2")
+	end)
+
+	it("propagates errors for reverted transactions", function()
+		rpc.resetHandlers()
+		-- Status reports REVERTED
+		mockHandlers["starknet_getTransactionStatus"] = function(_params)
+			return {
+				finality_status = "ACCEPTED_ON_L2",
+				execution_status = "REVERTED",
+			}
+		end
+		mockHandlers["starknet_getTransactionReceipt"] = function(_params)
+			return {
+				transaction_hash = "0xfailed",
+				execution_status = "REVERTED",
+				finality_status = "ACCEPTED_ON_L2",
+				revert_reason = "Insufficient balance",
+				actual_fee = { amount = "0x0", unit = "WEI" },
+				events = {},
+			}
+		end
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		-- waitForReceipt rejects on REVERTED execution status
+		expect(function()
+			account:waitForReceipt("0xfailed"):expect()
+		end):toThrow("reverted")
+	end)
+
+	it("works with options parameter", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local account = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+		})
+
+		local receipt = account:waitForReceipt("0xabc123", { retryInterval = 0.01 }):expect()
+		expect(receipt.transaction_hash):toBe("0xabc123")
 	end)
 end)
 
@@ -1089,12 +1437,7 @@ local function createMockPaymaster(overrides: { [string]: any }?): any
 	paymaster._buildCalls = buildCalls
 	paymaster._executeCalls = executeCalls
 
-	function paymaster:buildTypedData(
-		userAddress: string,
-		calls: { any },
-		gasTokenAddress: string,
-		options: any?
-	): any
+	function paymaster:buildTypedData(userAddress: string, calls: { any }, gasTokenAddress: string, options: any?): any
 		table.insert(buildCalls, {
 			userAddress = userAddress,
 			calls = calls,
@@ -1120,13 +1463,14 @@ local function createMockPaymaster(overrides: { [string]: any }?): any
 		local returnedCalls = opts.returnedCalls or outsideCalls
 
 		local typedData = opts.typedData or makePaymasterTypedData(returnedCalls)
-		local feeEstimate = opts.feeEstimate or {
-			gasTokenPrice = "0x3e8",
-			estimatedFeeInStrk = "0x2710",
-			estimatedFeeInGasToken = "0x9c40",
-			suggestedMaxFeeInStrk = "0x3a98",
-			suggestedMaxFeeInGasToken = "0xea60",
-		}
+		local feeEstimate = opts.feeEstimate
+			or {
+				gasTokenPrice = "0x3e8",
+				estimatedFeeInStrk = "0x2710",
+				estimatedFeeInGasToken = "0x9c40",
+				suggestedMaxFeeInStrk = "0x3a98",
+				suggestedMaxFeeInGasToken = "0xea60",
+			}
 
 		return MockPromise.resolve({
 			typedData = typedData,
@@ -1135,7 +1479,13 @@ local function createMockPaymaster(overrides: { [string]: any }?): any
 		})
 	end
 
-	function paymaster:executeTransaction(userAddress: string, typedData: any, signature: { string }, gasTokenAddress: string?, options: any?): any
+	function paymaster:executeTransaction(
+		userAddress: string,
+		typedData: any,
+		signature: { string },
+		gasTokenAddress: string?,
+		options: any?
+	): any
 		table.insert(executeCalls, {
 			userAddress = userAddress,
 			typedData = typedData,
@@ -1148,10 +1498,11 @@ local function createMockPaymaster(overrides: { [string]: any }?): any
 			return MockPromise.reject(opts.executeError)
 		end
 
-		local result = opts.executeResult or {
-			transactionHash = "0xpaymaster_tx_hash_abc",
-			trackingId = "track-12345",
-		}
+		local result = opts.executeResult
+			or {
+				transactionHash = "0xpaymaster_tx_hash_abc",
+				trackingId = "track-12345",
+			}
 		return MockPromise.resolve(result)
 	end
 

@@ -51,10 +51,12 @@ describe("RpcProvider:getAllEvents - single page", function()
 		end
 
 		local provider = createTestProvider()
-		local events = provider:getAllEvents({
-			address = "0xcontract1",
-			chunk_size = 100,
-		}):expect()
+		local events = provider
+			:getAllEvents({
+				address = "0xcontract1",
+				chunk_size = 100,
+			})
+			:expect()
 
 		expect(#events):toBe(2)
 		expect(events[1].from_address):toBe("0xcontract1")
@@ -68,9 +70,11 @@ describe("RpcProvider:getAllEvents - single page", function()
 		end
 
 		local provider = createTestProvider()
-		local events = provider:getAllEvents({
-			address = "0xcontract1",
-		}):expect()
+		local events = provider
+			:getAllEvents({
+				address = "0xcontract1",
+			})
+			:expect()
 
 		expect(#events):toBe(0)
 	end)
@@ -130,10 +134,12 @@ describe("RpcProvider:getAllEvents - pagination", function()
 		end
 
 		local provider = createTestProvider()
-		local events = provider:getAllEvents({
-			address = "0xc1",
-			chunk_size = 1,
-		}):expect()
+		local events = provider
+			:getAllEvents({
+				address = "0xc1",
+				chunk_size = 1,
+			})
+			:expect()
 
 		expect(#events):toBe(3)
 		expect(pageCount):toBe(3)
@@ -151,13 +157,15 @@ describe("RpcProvider:getAllEvents - pagination", function()
 		end
 
 		local provider = createTestProvider()
-		provider:getAllEvents({
-			address = "0xcontract1",
-			from_block = { block_number = 50 },
-			to_block = { block_number = 200 },
-			keys = { { "0xselector" } },
-			chunk_size = 25,
-		}):expect()
+		provider
+			:getAllEvents({
+				address = "0xcontract1",
+				from_block = { block_number = 50 },
+				to_block = { block_number = 200 },
+				keys = { { "0xselector" } },
+				chunk_size = 25,
+			})
+			:expect()
 
 		expect(#requestLog >= 1):toBe(true)
 		local params = requestLog[1].params
@@ -177,9 +185,11 @@ describe("RpcProvider:getAllEvents - pagination", function()
 		end
 
 		local provider = createTestProvider()
-		provider:getAllEvents({
-			address = "0xcontract1",
-		}):expect()
+		provider
+			:getAllEvents({
+				address = "0xcontract1",
+			})
+			:expect()
 
 		local filter = requestLog[1].params[1].filter
 		expect(filter.chunk_size):toBe(100)
@@ -199,9 +209,11 @@ describe("RpcProvider:getAllEvents - error handling", function()
 
 		local provider = createTestProvider()
 		expect(function()
-			provider:getAllEvents({
-				address = "0xcontract1",
-			}):expect()
+			provider
+				:getAllEvents({
+					address = "0xcontract1",
+				})
+				:expect()
 		end):toThrow()
 	end)
 
@@ -222,9 +234,11 @@ describe("RpcProvider:getAllEvents - error handling", function()
 
 		local provider = createTestProvider()
 		expect(function()
-			provider:getAllEvents({
-				address = "0xc1",
-			}):expect()
+			provider
+				:getAllEvents({
+					address = "0xc1",
+				})
+				:expect()
 		end):toThrow()
 	end)
 end)
@@ -251,10 +265,12 @@ describe("RpcProvider:getAllEvents - initial continuation token", function()
 		end
 
 		local provider = createTestProvider()
-		local events = provider:getAllEvents({
-			address = "0xc1",
-			continuation_token = "start_here",
-		}):expect()
+		local events = provider
+			:getAllEvents({
+				address = "0xc1",
+				continuation_token = "start_here",
+			})
+			:expect()
 
 		expect(#events):toBe(1)
 		local filter = requestLog[1].params[1].filter

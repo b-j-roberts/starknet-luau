@@ -91,6 +91,14 @@ describe("RequestQueue - priority classification", function()
 	it("classifies unknown methods as normal", function()
 		expect(RequestQueue.getPriority("starknet_unknownMethod")):toBe("normal")
 	end)
+
+	it("classifies estimateMessageFee as high", function()
+		expect(RequestQueue.getPriority("starknet_estimateMessageFee")):toBe("high")
+	end)
+
+	it("classifies addDeployAccountTransaction as high", function()
+		expect(RequestQueue.getPriority("starknet_addDeployAccountTransaction")):toBe("high")
+	end)
 end)
 
 --------------------------------------------------------------------------------

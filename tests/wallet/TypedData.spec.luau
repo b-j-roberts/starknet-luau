@@ -507,8 +507,7 @@ describe("TypedData getStructHash", function()
 	end)
 
 	it("hashes StarknetDomain (ACTIVE)", function()
-		local hash =
-			TypedData.getStructHash(exampleBaseTypes.types, "StarknetDomain", exampleBaseTypes.domain, "1")
+		local hash = TypedData.getStructHash(exampleBaseTypes.types, "StarknetDomain", exampleBaseTypes.domain, "1")
 		expect(hash):toBe("0x555f72e550b308e50c1a4f8611483a174026c982a9893a05c185eeb85399657")
 	end)
 end)

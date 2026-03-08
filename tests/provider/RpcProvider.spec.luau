@@ -326,11 +326,13 @@ describe("RpcProvider - call", function()
 	it("returns an array of felt strings", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local result = provider:call({
-			contract_address = "0xcontract",
-			entry_point_selector = "0xselector",
-			calldata = { "0x1" },
-		}):expect()
+		local result = provider
+			:call({
+				contract_address = "0xcontract",
+				entry_point_selector = "0xselector",
+				calldata = { "0x1" },
+			})
+			:expect()
 		expect(#result):toBe(2)
 		expect(result[1]):toBe("0x1")
 		expect(result[2]):toBe("0x2")
@@ -340,11 +342,13 @@ describe("RpcProvider - call", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		provider:call({
-			contract_address = "0xcontract",
-			entry_point_selector = "0xselector",
-			calldata = { "0x1", "0x2" },
-		}):expect()
+		provider
+			:call({
+				contract_address = "0xcontract",
+				entry_point_selector = "0xselector",
+				calldata = { "0x1", "0x2" },
+			})
+			:expect()
 		local lastReq = requestLog[#requestLog]
 		expect(lastReq.method):toBe("starknet_call")
 		expect(lastReq.params[1].contract_address):toBe("0xcontract")
@@ -402,6 +406,134 @@ describe("RpcProvider - addInvokeTransaction", function()
 		}
 		local result = provider:addInvokeTransaction(tx):expect()
 		expect(result.transaction_hash):toBe("0xabc123")
+	end)
+end)
+
+describe("RpcProvider - addDeployAccountTransaction", function()
+	it("returns transaction hash and contract address", function()
+		resetHandlers()
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xdeploy123",
+				contract_address = "0xcontract456",
+			}
+		end
+		local provider = createTestProvider()
+		local tx = {
+			type = "DEPLOY_ACCOUNT",
+			version = "0x3",
+			class_hash = "0xclasshash",
+			constructor_calldata = { "0xpubkey" },
+			contract_address_salt = "0xsalt",
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "0x0",
+			fee_data_availability_mode = "0x0",
+		}
+		local result = provider:addDeployAccountTransaction(tx):expect()
+		expect(result.transaction_hash):toBe("0xdeploy123")
+		expect(result.contract_address):toBe("0xcontract456")
+	end)
+
+	it("sends correct JSON-RPC method and params", function()
+		resetHandlers()
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xdeploy789",
+				contract_address = "0xaddr",
+			}
+		end
+		rpc.clearRequestLog()
+		local provider = createTestProvider()
+		local tx = {
+			type = "DEPLOY_ACCOUNT",
+			version = "0x3",
+			class_hash = "0xmyclasshash",
+			constructor_calldata = { "0xpk1", "0xpk2" },
+			contract_address_salt = "0xmysalt",
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "0x0",
+			fee_data_availability_mode = "0x0",
+		}
+		provider:addDeployAccountTransaction(tx):expect()
+
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_addDeployAccountTransaction")
+		local sentTx = lastReq.params[1]
+		expect(sentTx.class_hash):toBe("0xmyclasshash")
+		expect(sentTx.contract_address_salt):toBe("0xmysalt")
+		expect(#sentTx.constructor_calldata):toBe(2)
+	end)
+
+	it("defaults contract_address to empty string when not returned", function()
+		resetHandlers()
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			return {
+				transaction_hash = "0xnoaddr",
+			}
+		end
+		local provider = createTestProvider()
+		local tx = {
+			type = "DEPLOY_ACCOUNT",
+			version = "0x3",
+			class_hash = "0xclasshash",
+			constructor_calldata = {},
+			contract_address_salt = "0xsalt",
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "0x0",
+			fee_data_availability_mode = "0x0",
+		}
+		local result = provider:addDeployAccountTransaction(tx):expect()
+		expect(result.transaction_hash):toBe("0xnoaddr")
+		expect(result.contract_address):toBe("")
+	end)
+
+	it("handles RPC error", function()
+		resetHandlers()
+		mockHandlers["starknet_addDeployAccountTransaction"] = function(_params)
+			error("CLASS_HASH_NOT_FOUND")
+		end
+		local provider = createTestProvider()
+		local tx = {
+			type = "DEPLOY_ACCOUNT",
+			version = "0x3",
+			class_hash = "0xbadclass",
+			constructor_calldata = {},
+			contract_address_salt = "0xsalt",
+			signature = { "0xr", "0xs" },
+			nonce = "0x0",
+			resource_bounds = {
+				l1_gas = { max_amount = "0x100", max_price_per_unit = "0x10" },
+				l2_gas = { max_amount = "0x0", max_price_per_unit = "0x0" },
+			},
+			tip = "0x0",
+			paymaster_data = {},
+			nonce_data_availability_mode = "0x0",
+			fee_data_availability_mode = "0x0",
+		}
+		expect(function()
+			provider:addDeployAccountTransaction(tx):expect()
+		end):toThrow()
 	end)
 end)
 
@@ -481,10 +613,12 @@ describe("RpcProvider - getEvents", function()
 	it("returns events matching filter", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local result = provider:getEvents({
-			address = "0xcontract1",
-			chunk_size = 10,
-		}):expect()
+		local result = provider
+			:getEvents({
+				address = "0xcontract1",
+				chunk_size = 10,
+			})
+			:expect()
 		expect(#result.events):toBe(1)
 		expect(result.events[1].from_address):toBe("0xcontract1")
 	end)
@@ -803,10 +937,12 @@ describe("RpcProvider - waitForTransaction", function()
 	it("returns receipt when transaction is confirmed", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local receipt = provider:waitForTransaction("0xabc123", {
-			retryInterval = 0.001,
-			maxAttempts = 3,
-		}):expect()
+		local receipt = provider
+			:waitForTransaction("0xabc123", {
+				retryInterval = 0.001,
+				maxAttempts = 3,
+			})
+			:expect()
 		expect(receipt.transaction_hash):toBe("0xabc123")
 		expect(receipt.execution_status):toBe("SUCCEEDED")
 	end)
@@ -822,10 +958,12 @@ describe("RpcProvider - waitForTransaction", function()
 			return { finality_status = "ACCEPTED_ON_L2", execution_status = "SUCCEEDED" }
 		end
 		local provider = createTestProvider()
-		local receipt = provider:waitForTransaction("0xabc123", {
-			retryInterval = 0.001,
-			maxAttempts = 10,
-		}):expect()
+		local receipt = provider
+			:waitForTransaction("0xabc123", {
+				retryInterval = 0.001,
+				maxAttempts = 10,
+			})
+			:expect()
 		expect(receipt.transaction_hash):toBe("0xabc123")
 		expect(pollCount):toBe(3)
 	end)
@@ -847,10 +985,12 @@ describe("RpcProvider - waitForTransaction", function()
 		end
 		local provider = createTestProvider()
 		expect(function()
-			provider:waitForTransaction("0xabc123", {
-				retryInterval = 0.001,
-				maxAttempts = 3,
-			}):expect()
+			provider
+				:waitForTransaction("0xabc123", {
+					retryInterval = 0.001,
+					maxAttempts = 3,
+				})
+				:expect()
 		end):toThrow()
 	end)
 
@@ -861,10 +1001,12 @@ describe("RpcProvider - waitForTransaction", function()
 		end
 		local provider = createTestProvider()
 		expect(function()
-			provider:waitForTransaction("0xabc123", {
-				retryInterval = 0.001,
-				maxAttempts = 3,
-			}):expect()
+			provider
+				:waitForTransaction("0xabc123", {
+					retryInterval = 0.001,
+					maxAttempts = 3,
+				})
+				:expect()
 		end):toThrow()
 	end)
 
@@ -875,10 +1017,12 @@ describe("RpcProvider - waitForTransaction", function()
 		end
 		local provider = createTestProvider()
 		expect(function()
-			provider:waitForTransaction("0xabc123", {
-				retryInterval = 0.001,
-				maxAttempts = 2,
-			}):expect()
+			provider
+				:waitForTransaction("0xabc123", {
+					retryInterval = 0.001,
+					maxAttempts = 2,
+				})
+				:expect()
 		end):toThrow()
 	end)
 
@@ -894,9 +1038,12 @@ describe("RpcProvider - Promise chaining", function()
 	it("supports andThen chaining", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local result = provider:getChainId():andThen(function(chainId)
-			return `chain:{chainId}`
-		end):expect()
+		local result = provider
+			:getChainId()
+			:andThen(function(chainId)
+				return `chain:{chainId}`
+			end)
+			:expect()
 		expect(result):toBe("chain:0x534e5f5345504f4c4941")
 	end)
 
@@ -906,20 +1053,27 @@ describe("RpcProvider - Promise chaining", function()
 			error("Test error")
 		end
 		local provider = createTestProvider()
-		local result = provider:getChainId():catch(function(_err)
-			return "fallback"
-		end):expect()
+		local result = provider
+			:getChainId()
+			:catch(function(_err)
+				return "fallback"
+			end)
+			:expect()
 		expect(result):toBe("fallback")
 	end)
 
 	it("supports multi-step chaining", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local result = provider:getChainId():andThen(function(chainId)
-			return string.len(chainId)
-		end):andThen(function(len)
-			return len > 0
-		end):expect()
+		local result = provider
+			:getChainId()
+			:andThen(function(chainId)
+				return string.len(chainId)
+			end)
+			:andThen(function(len)
+				return len > 0
+			end)
+			:expect()
 		expect(result):toBe(true)
 	end)
 end)
@@ -2046,12 +2200,14 @@ describe("RpcProvider - estimateMessageFee", function()
 	it("returns fee estimate for L1->L2 message", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local fee = provider:estimateMessageFee({
-			from_address = "0xL1Sender",
-			to_address = "0xL2Contract",
-			entry_point_selector = "0xselector1",
-			payload = { "0x1", "0x2" },
-		}):expect()
+		local fee = provider
+			:estimateMessageFee({
+				from_address = "0xL1Sender",
+				to_address = "0xL2Contract",
+				entry_point_selector = "0xselector1",
+				payload = { "0x1", "0x2" },
+			})
+			:expect()
 		expect(fee.gas_consumed):toBe("0x2000")
 		expect(fee.overall_fee):toBe("0x400000")
 		expect(fee.unit):toBe("WEI")
@@ -2061,12 +2217,14 @@ describe("RpcProvider - estimateMessageFee", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		provider:estimateMessageFee({
-			from_address = "0xL1Sender",
-			to_address = "0xL2Contract",
-			entry_point_selector = "0xselector1",
-			payload = { "0x1" },
-		}):expect()
+		provider
+			:estimateMessageFee({
+				from_address = "0xL1Sender",
+				to_address = "0xL2Contract",
+				entry_point_selector = "0xselector1",
+				payload = { "0x1" },
+			})
+			:expect()
 		local lastReq = requestLog[#requestLog]
 		expect(lastReq.method):toBe("starknet_estimateMessageFee")
 		expect(lastReq.params[1].from_address):toBe("0xL1Sender")
@@ -2080,12 +2238,14 @@ describe("RpcProvider - estimateMessageFee", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local provider = createTestProvider()
-		provider:estimateMessageFee({
-			from_address = "0xL1Sender",
-			to_address = "0xL2Contract",
-			entry_point_selector = "0xselector1",
-			payload = {},
-		}, "pending"):expect()
+		provider
+			:estimateMessageFee({
+				from_address = "0xL1Sender",
+				to_address = "0xL2Contract",
+				entry_point_selector = "0xselector1",
+				payload = {},
+			}, "pending")
+			:expect()
 		local lastReq = requestLog[#requestLog]
 		expect(lastReq.params[2]):toBe("pending")
 	end)
@@ -2108,12 +2268,14 @@ describe("RpcProvider - estimateMessageFee", function()
 	it("returns all fee fields", function()
 		resetHandlers()
 		local provider = createTestProvider()
-		local fee = provider:estimateMessageFee({
-			from_address = "0xL1Sender",
-			to_address = "0xL2Contract",
-			entry_point_selector = "0xselector1",
-			payload = {},
-		}):expect()
+		local fee = provider
+			:estimateMessageFee({
+				from_address = "0xL1Sender",
+				to_address = "0xL2Contract",
+				entry_point_selector = "0xselector1",
+				payload = {},
+			})
+			:expect()
 		expect(fee.gas_consumed):toBeTruthy()
 		expect(fee.gas_price):toBeTruthy()
 		expect(fee.overall_fee):toBeTruthy()
@@ -2176,12 +2338,14 @@ describe("RpcProvider - new methods work with queue", function()
 		expect(provider:getTransactionByHash("0xtx1"):expect()).toBeTruthy()
 		expect(provider:getClass("0xhash1"):expect()).toBeTruthy()
 		expect(provider:getClassAt("0xaddr1"):expect()).toBeTruthy()
-		expect(provider:estimateMessageFee({
-			from_address = "0xL1",
-			to_address = "0xL2",
-			entry_point_selector = "0xsel",
-			payload = {},
-		}):expect()).toBeTruthy()
+		expect(provider
+			:estimateMessageFee({
+				from_address = "0xL1",
+				to_address = "0xL2",
+				entry_point_selector = "0xsel",
+				payload = {},
+			})
+			:expect()).toBeTruthy()
 		expect(provider:getSyncingStats():expect()).toBeTruthy()
 	end)
 end)

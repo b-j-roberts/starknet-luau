@@ -130,9 +130,9 @@ describe("EventPoller - start/stop lifecycle", function()
 
 		-- Manually run one cycle by stopping immediately after first sleep
 		local sleepCount = 0
-		;(poller :: any)._sleep = function(_seconds: number)
+		(poller :: any)._sleep = function(_seconds: number)
 			sleepCount += 1
-			;(poller :: any)._running = false
+			(poller :: any)._running = false
 		end
 
 		poller:start()
@@ -148,8 +148,8 @@ describe("EventPoller - start/stop lifecycle", function()
 			filter = { address = "0xcontract1" },
 			onEvents = function(_events) end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 
@@ -167,8 +167,8 @@ describe("EventPoller - start/stop lifecycle", function()
 			filter = { address = "0xcontract1" },
 			onEvents = function(_events) end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			startCount += 1
 			poller:stop()
 		end
@@ -213,8 +213,8 @@ describe("EventPoller - event delivery", function()
 				end
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 
@@ -261,8 +261,8 @@ describe("EventPoller - event delivery", function()
 				end
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			sleepCount += 1
 			if sleepCount >= 2 then
 				poller:stop()
@@ -290,8 +290,8 @@ describe("EventPoller - event delivery", function()
 				callbackCalled = true
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 
@@ -325,8 +325,8 @@ describe("EventPoller - error handling", function()
 				errorReceived = err
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 
@@ -361,8 +361,8 @@ describe("EventPoller - error handling", function()
 				errorCount += 1
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			sleepCount += 1
 			if sleepCount >= 2 then
 				poller:stop()
@@ -402,8 +402,8 @@ describe("EventPoller - error handling", function()
 				errorReceived = err
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 
@@ -462,8 +462,8 @@ describe("EventPoller - pagination within poll cycle", function()
 				end
 			end,
 		})
-
-		;(poller :: any)._sleep = function(_seconds: number)
+;
+		(poller :: any)._sleep = function(_seconds: number)
 			poller:stop()
 		end
 

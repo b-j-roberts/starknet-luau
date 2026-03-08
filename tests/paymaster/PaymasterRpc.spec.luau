@@ -39,7 +39,9 @@ local function resetHandlers()
 	mockHandlers["paymaster_buildTypedData"] = function(params: any)
 		local transaction = params[1]
 		local _parameters = params[2]
-		local userAddr = if transaction.invoke then transaction.invoke.user_address else transaction.deploy_and_invoke.user_address
+		local userAddr = if transaction.invoke
+			then transaction.invoke.user_address
+			else transaction.deploy_and_invoke.user_address
 
 		return {
 			typed_data = {
@@ -137,8 +139,8 @@ local function createTestPaymaster(overrides: { [string]: any }?): any
 		end
 	end
 
-	local paymaster = PaymasterRpc.new(config)
-	;(paymaster :: any)._PromiseModule = MockPromise
+	local paymaster = PaymasterRpc.new(config);
+	(paymaster :: any)._PromiseModule = MockPromise
 	return paymaster
 end
 
@@ -316,17 +318,13 @@ describe("PaymasterRpc - buildTypedData", function()
 	it("returns typed data for invoke transaction", function()
 		resetHandlers()
 		local pm = createTestPaymaster()
-		local result = pm:buildTypedData(
-			"0xuser123",
+		local result = pm:buildTypedData("0xuser123", {
 			{
-				{
-					contractAddress = "0xcontract",
-					entrypoint = "transfer",
-					calldata = { "0x1", "0x2" },
-				},
+				contractAddress = "0xcontract",
+				entrypoint = "transfer",
+				calldata = { "0x1", "0x2" },
 			},
-			"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-		):expect()
+		}, "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"):expect()
 
 		expect(result):toBeTruthy()
 		expect(result.typedData):toBeTruthy()
@@ -335,11 +333,9 @@ describe("PaymasterRpc - buildTypedData", function()
 	it("returns fee estimate", function()
 		resetHandlers()
 		local pm = createTestPaymaster()
-		local result = pm:buildTypedData(
-			"0xuser123",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		local result =
+			pm:buildTypedData("0xuser123", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+				:expect()
 
 		expect(result.feeEstimate):toBeTruthy()
 		expect(result.feeEstimate.gasTokenPrice):toBe("0x3e8")
@@ -353,11 +349,8 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser123",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		pm:buildTypedData("0xuser123", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+			:expect()
 		expect(requestLog[#requestLog].method):toBe("paymaster_buildTypedData")
 	end)
 
@@ -393,11 +386,8 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+			:expect()
 
 		local params = requestLog[#requestLog].params
 		local parameters = params[2]
@@ -409,11 +399,7 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x0"
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x0"):expect()
 
 		local params = requestLog[#requestLog].params
 		local parameters = params[2]
@@ -424,11 +410,7 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			""
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, ""):expect()
 
 		local params = requestLog[#requestLog].params
 		local parameters = params[2]
@@ -439,19 +421,14 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass1",
-					calldata = { "0xpubkey" },
-					salt = "0xsalt1",
-					unique = true,
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass1",
+				calldata = { "0xpubkey" },
+				salt = "0xsalt1",
+				unique = true,
+			},
+		}):expect()
 
 		local params = requestLog[#requestLog].params
 		local transaction = params[1]
@@ -483,11 +460,9 @@ describe("PaymasterRpc - buildTypedData", function()
 	it("includes typed data domain and types in response", function()
 		resetHandlers()
 		local pm = createTestPaymaster()
-		local result = pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		local result =
+			pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+				:expect()
 
 		local td = result.typedData
 		expect(td.primaryType):toBe("OutsideExecution")
@@ -500,11 +475,8 @@ describe("PaymasterRpc - buildTypedData", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+			:expect()
 
 		local params = requestLog[#requestLog].params
 		expect(params[2].version):toBe("0x1")
@@ -541,11 +513,8 @@ describe("PaymasterRpc - executeTransaction", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:executeTransaction(
-			"0xuser",
-			{ types = {}, primaryType = "OE", domain = {}, message = {} },
-			{ "0xr", "0xs" }
-		):expect()
+		pm:executeTransaction("0xuser", { types = {}, primaryType = "OE", domain = {}, message = {} }, { "0xr", "0xs" })
+			:expect()
 		expect(requestLog[#requestLog].method):toBe("paymaster_executeTransaction")
 	end)
 
@@ -609,11 +578,8 @@ describe("PaymasterRpc - executeTransaction", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:executeTransaction(
-			"0xuser",
-			{ types = {}, primaryType = "OE", domain = {}, message = {} },
-			{ "0xr", "0xs" }
-		):expect()
+		pm:executeTransaction("0xuser", { types = {}, primaryType = "OE", domain = {}, message = {} }, { "0xr", "0xs" })
+			:expect()
 
 		local params = requestLog[#requestLog].params
 		expect(params[2].fee_mode.mode):toBe("sponsored")
@@ -743,11 +709,8 @@ describe("PaymasterRpc - error handling", function()
 		})
 
 		local ok, err = pcall(function()
-			pm:buildTypedData(
-				"0xbad",
-				{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-				"0x049d"
-			):expect()
+			pm:buildTypedData("0xbad", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+				:expect()
 		end)
 		expect(ok):toBe(false)
 	end)
@@ -1151,19 +1114,14 @@ describe("PaymasterRpc - deployment data details", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass",
-					calldata = { "0xpk" },
-					salt = "0xsalt",
-					sigdata = { "0xsig1", "0xsig2" },
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass",
+				calldata = { "0xpk" },
+				salt = "0xsalt",
+				sigdata = { "0xsig1", "0xsig2" },
+			},
+		}):expect()
 
 		local params = requestLog[#requestLog].params
 		local dd = params[1].deploy_and_invoke.deployment_data
@@ -1175,18 +1133,13 @@ describe("PaymasterRpc - deployment data details", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass",
-					calldata = {},
-					salt = "0x0",
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass",
+				calldata = {},
+				salt = "0x0",
+			},
+		}):expect()
 
 		local params = requestLog[#requestLog].params
 		local dd = params[1].deploy_and_invoke.deployment_data
@@ -1197,18 +1150,13 @@ describe("PaymasterRpc - deployment data details", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass",
-					calldata = {},
-					salt = "0x0",
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass",
+				calldata = {},
+				salt = "0x0",
+			},
+		}):expect()
 
 		local params = requestLog[#requestLog].params
 		local dd = params[1].deploy_and_invoke.deployment_data
@@ -1219,19 +1167,14 @@ describe("PaymasterRpc - deployment data details", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
-		pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d",
-			{
-				deploymentData = {
-					classHash = "0xclass",
-					calldata = {},
-					salt = "0x0",
-					version = 2,
-				},
-			}
-		):expect()
+		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d", {
+			deploymentData = {
+				classHash = "0xclass",
+				calldata = {},
+				salt = "0x0",
+				version = 2,
+			},
+		}):expect()
 
 		local params = requestLog[#requestLog].params
 		local dd = params[1].deploy_and_invoke.deployment_data
@@ -1279,11 +1222,9 @@ describe("PaymasterRpc - response normalization", function()
 			}
 		end
 		local pm = createTestPaymaster()
-		local result = pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		local result =
+			pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+				:expect()
 
 		expect(result.typedData.primaryType):toBe("OutsideExecution")
 		expect(result.feeEstimate.gasTokenPrice):toBe("0x1")
@@ -1297,11 +1238,9 @@ describe("PaymasterRpc - response normalization", function()
 			}
 		end
 		local pm = createTestPaymaster()
-		local result = pm:buildTypedData(
-			"0xuser",
-			{ { contractAddress = "0xc", entrypoint = "fn", calldata = {} } },
-			"0x049d"
-		):expect()
+		local result =
+			pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
+				:expect()
 
 		expect(result.typedData):toBeTruthy()
 		expect(result.feeEstimate == nil):toBe(true)
@@ -1337,5 +1276,74 @@ describe("PaymasterRpc - response normalization", function()
 		local pm = createTestPaymaster()
 		local result = pm:trackingIdToLatestHash("t1"):expect()
 		expect(result.transactionHash):toBe("0xcamel456")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- PaymasterRpc - rate limiter timeout
+--------------------------------------------------------------------------------
+
+describe("PaymasterRpc - rate limiter timeout", function()
+	it("throws when rate limit tokens are exhausted and timeout expires", function()
+		resetHandlers()
+
+		-- Create a clock that advances past timeout on sleep
+		local clockTime = 0
+		local pm = createTestPaymaster({
+			maxRequestsPerMinute = 1, -- Only 1 token per minute
+			rateLimitTimeout = 0.1, -- Very short timeout
+			_clock = function()
+				return clockTime
+			end,
+			_sleep = function(_seconds: number)
+				-- Advance clock past timeout to trigger the error
+				clockTime += 0.2
+			end,
+		})
+
+		-- First request consumes the only token
+		pm:isAvailable():expect()
+
+		-- Second request should timeout waiting for a rate limit token
+		expect(function()
+			pm:fetch("paymaster_isAvailable", {}):expect()
+		end):toThrow("Rate limit exceeded")
+	end)
+
+	it("succeeds when tokens refill before timeout", function()
+		resetHandlers()
+
+		local clockTime = 0
+		local pm = createTestPaymaster({
+			maxRequestsPerMinute = 60, -- 1 token per second refill rate
+			rateLimitTimeout = 5,
+			_clock = function()
+				return clockTime
+			end,
+			_sleep = function(_seconds: number)
+				-- Advance clock enough for token refill
+				clockTime += 2
+			end,
+		})
+
+		-- Exhaust all tokens
+		for _ = 1, 60 do
+			pm:isAvailable():expect()
+		end
+
+		-- Next request should succeed after sleep refills tokens
+		local result = pm:isAvailable():expect()
+		expect(result):toBe(true)
+	end)
+
+	it("succeeds when tokens are available", function()
+		resetHandlers()
+		local pm = createTestPaymaster({
+			maxRequestsPerMinute = 100,
+		})
+
+		-- Should not throw with plenty of tokens
+		local result = pm:isAvailable():expect()
+		expect(result):toBe(true)
 	end)
 end)

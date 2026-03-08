@@ -639,15 +639,11 @@ end)
 
 describe("AccountFactory - class hash versioning", function()
 	it("OZ class hash matches expected v0.8.1 value", function()
-		expect(AccountType.OZ.classHash):toBe(
-			"0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f"
-		)
+		expect(AccountType.OZ.classHash):toBe("0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f")
 	end)
 
 	it("Argent class hash matches expected v0.4.0 value", function()
-		expect(AccountType.Argent.classHash):toBe(
-			"0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
-		)
+		expect(AccountType.Argent.classHash):toBe("0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f")
 	end)
 
 	it("class hashes are configurable via custom account type", function()

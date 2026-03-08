@@ -261,4 +261,3 @@ describe("SHA256 - hmac (edge cases)", function()
 		expect(BufferUtils.bufferToHex(mac1) == BufferUtils.bufferToHex(mac2)):toBe(false)
 	end)
 end)
-

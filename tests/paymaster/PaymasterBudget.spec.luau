@@ -1295,3 +1295,90 @@ describe("PaymasterBudget — integration: with PaymasterPolicy", function()
 		expect(stats.balance):toBe(45)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- PaymasterBudget - NaN input values
+--------------------------------------------------------------------------------
+
+describe("PaymasterBudget - NaN input values", function()
+	it("rejects NaN in grantTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+
+		expect(function()
+			budget:grantTokens(PLAYER_1, 0 / 0)
+		end):toThrow("amount must be a valid number")
+	end)
+
+	it("rejects NaN in revokeTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+		budget:grantTokens(PLAYER_1, 100)
+
+		expect(function()
+			budget:revokeTokens(PLAYER_1, 0 / 0)
+		end):toThrow("amount must be a valid number")
+	end)
+
+	it("rejects string input in grantTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+
+		expect(function()
+			budget:grantTokens(PLAYER_1, "100" :: any)
+		end):toThrow("amount must be a valid number")
+	end)
+
+	it("rejects string input in revokeTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+		budget:grantTokens(PLAYER_1, 100)
+
+		expect(function()
+			budget:revokeTokens(PLAYER_1, "50" :: any)
+		end):toThrow("amount must be a valid number")
+	end)
+
+	it("rejects negative amount in grantTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+
+		expect(function()
+			budget:grantTokens(PLAYER_1, -10)
+		end):toThrow("amount must be non-negative")
+	end)
+
+	it("rejects negative amount in revokeTokens", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+		budget:grantTokens(PLAYER_1, 100)
+
+		expect(function()
+			budget:revokeTokens(PLAYER_1, -10)
+		end):toThrow("amount must be non-negative")
+	end)
+
+	it("accepts zero amount in grantTokens (no-op)", function()
+		local budget = PaymasterBudget.new({
+			costPerTransaction = 5,
+			dataStore = createMockDataStore(),
+		})
+		budget:grantTokens(PLAYER_1, 50)
+
+		-- Zero grant should not change balance
+		budget:grantTokens(PLAYER_1, 0)
+		expect(budget:getBalance(PLAYER_1)):toBe(50)
+	end)
+end)

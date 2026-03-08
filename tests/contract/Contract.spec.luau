@@ -1240,3 +1240,235 @@ describe("Contract - edge cases", function()
 		expect(result):toBe("0x42")
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- Contract:call - blockId parameter
+--------------------------------------------------------------------------------
+
+describe("Contract:call - blockId parameter", function()
+	it("passes blockId through to provider:call()", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_call"] = function(params)
+			-- params[2] is the block_id
+			if params[2] and params[2].block_number == 42 then
+				return { "0xblock42result" }
+			end
+			return { "0xlatestresult" }
+		end
+		local provider = rpc.createTestProvider()
+		local contract = Contract.new({
+			abi = MINIMAL_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local result = contract:call("get_value", nil, "0x2a"):expect()
+		expect(result):toBeTruthy()
+	end)
+
+	it("defaults to latest when blockId is nil", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0xdefault" }
+		end
+		local provider = rpc.createTestProvider()
+		local contract = Contract.new({
+			abi = MINIMAL_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local result = contract:call("get_value", nil, nil):expect()
+		expect(result):toBe("0xdefault")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Contract:queryEvents - continuation_token passthrough
+--------------------------------------------------------------------------------
+
+describe("Contract:queryEvents - continuation_token", function()
+	it("passes continuation_token through to provider:getEvents()", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_getEvents"] = function(params)
+			-- params[1] = { filter = { ... } } per RPC spec
+			local f = params[1].filter
+			return {
+				events = {},
+				continuation_token = if f.continuation_token then nil else "token123",
+			}
+		end
+		local provider = rpc.createTestProvider()
+		local contract = Contract.new({
+			abi = ERC20_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		-- First call without continuation_token
+		local result1 = contract:queryEvents():expect()
+		expect(result1.continuation_token):toBe("token123")
+
+		-- Second call with continuation_token
+		rpc.clearRequestLog()
+		contract:queryEvents({ continuation_token = "token123" }):expect()
+
+		local lastReq = requestLog[#requestLog]
+		expect(lastReq.method):toBe("starknet_getEvents")
+		local filter = lastReq.params[1].filter
+		expect(filter.continuation_token):toBe("token123")
+	end)
+
+	it("includes address filter and chunk_size", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_getEvents"] = function(_params)
+			return { events = {} }
+		end
+		local provider = rpc.createTestProvider()
+		local contract = Contract.new({
+			abi = ERC20_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		contract:queryEvents({ chunk_size = 50, continuation_token = "ct1" }):expect()
+
+		local lastReq = requestLog[#requestLog]
+		local filter = lastReq.params[1].filter
+		expect(filter.address):toBe(NORMALIZED_ADDR)
+		expect(filter.chunk_size):toBe(50)
+		expect(filter.continuation_token):toBe("ct1")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Contract - interface ABI parsing
+--------------------------------------------------------------------------------
+
+describe("Contract - interface ABI parsing", function()
+	it("extracts functions from interface entries", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local interfaceAbi: Contract.Abi = {
+			{
+				type = "interface",
+				name = "IERC20",
+				items = {
+					{
+						type = "function",
+						name = "balance_of",
+						inputs = {
+							{ name = "account", type = "core::starknet::contract_address::ContractAddress" },
+						},
+						outputs = {
+							{ name = "balance", type = "core::integer::u256" },
+						},
+						state_mutability = "view",
+					},
+					{
+						type = "function",
+						name = "transfer",
+						inputs = {
+							{ name = "recipient", type = "core::starknet::contract_address::ContractAddress" },
+							{ name = "amount", type = "core::integer::u256" },
+						},
+						outputs = {
+							{ name = "success", type = "core::bool" },
+						},
+						state_mutability = "external",
+					},
+				},
+			} :: any,
+		}
+
+		local contract = Contract.new({
+			abi = interfaceAbi,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		expect(contract:hasFunction("balance_of")):toBe(true)
+		expect(contract:hasFunction("transfer")):toBe(true)
+	end)
+
+	it("mixes top-level functions and interface functions", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local mixedAbi: Contract.Abi = {
+			{
+				type = "function",
+				name = "top_level_fn",
+				inputs = {},
+				outputs = { { name = "value", type = "core::felt252" } },
+				state_mutability = "view",
+			},
+			{
+				type = "interface",
+				name = "IMyContract",
+				items = {
+					{
+						type = "function",
+						name = "interface_fn",
+						inputs = {},
+						outputs = { { name = "result", type = "core::felt252" } },
+						state_mutability = "view",
+					},
+				},
+			} :: any,
+		}
+
+		local contract = Contract.new({
+			abi = mixedAbi,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		expect(contract:hasFunction("top_level_fn")):toBe(true)
+		expect(contract:hasFunction("interface_fn")):toBe(true)
+		local fns = contract:getFunctions()
+		expect(#fns):toBe(2)
+	end)
+
+	it("ignores non-function entries in interface items", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+
+		local abi: Contract.Abi = {
+			{
+				type = "interface",
+				name = "IMyContract",
+				items = {
+					{
+						type = "function",
+						name = "my_func",
+						inputs = {},
+						outputs = {},
+						state_mutability = "view",
+					},
+					{
+						type = "event",
+						name = "MyEvent",
+						kind = "struct",
+						members = {},
+					},
+				},
+			} :: any,
+		}
+
+		local contract = Contract.new({
+			abi = abi,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		expect(contract:hasFunction("my_func")):toBe(true)
+		-- Event should not appear as a function
+		expect(contract:hasFunction("MyEvent")):toBe(false)
+	end)
+end)

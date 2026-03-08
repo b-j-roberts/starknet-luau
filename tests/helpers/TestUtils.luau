@@ -211,8 +211,8 @@ function TestUtils.createMockRpcLayer(): MockRpcLayer
 			end
 		end
 
-		local provider = RpcProvider.new(config)
-		;(provider :: any)._PromiseModule = MockPromise
+		local provider = RpcProvider.new(config);
+		(provider :: any)._PromiseModule = MockPromise
 		return provider
 	end
 

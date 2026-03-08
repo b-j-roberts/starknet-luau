@@ -535,18 +535,22 @@ describe("TransactionBuilder - deployAccount dryRun", function()
 		}
 
 		-- dryRun
-		local dryResult = builder:deployAccount(account, params, {
-			dryRun = true,
-			nonce = opts.nonce,
-			resourceBounds = opts.resourceBounds,
-		}):expect()
+		local dryResult = builder
+			:deployAccount(account, params, {
+				dryRun = true,
+				nonce = opts.nonce,
+				resourceBounds = opts.resourceBounds,
+			})
+			:expect()
 
 		-- Actual execution with same options
 		rpc.clearRequestLog()
-		local execResult = builder:deployAccount(account, params, {
-			nonce = opts.nonce,
-			resourceBounds = opts.resourceBounds,
-		}):expect()
+		local execResult = builder
+			:deployAccount(account, params, {
+				nonce = opts.nonce,
+				resourceBounds = opts.resourceBounds,
+			})
+			:expect()
 
 		-- The submitted transaction should match the dry run
 		for _, req in requestLog do
@@ -606,11 +610,13 @@ describe("TransactionBuilder - deployAccount hash determinism", function()
 			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 		}
 
-		local result = builder:deployAccount(account, params, {
-			nonce = nonce,
-			dryRun = true,
-			resourceBounds = resourceBounds,
-		}):expect()
+		local result = builder
+			:deployAccount(account, params, {
+				nonce = nonce,
+				dryRun = true,
+				resourceBounds = resourceBounds,
+			})
+			:expect()
 
 		-- Compute expected hash manually
 		local expectedHash = TransactionHash.calculateDeployAccountTransactionHash({
@@ -1264,11 +1270,13 @@ describe("Account.deployAccount - maxFee option", function()
 			l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 		}
 
-		account:deployAccount({
-			maxFee = "0x1",
-			resourceBounds = customBounds,
-			waitForConfirmation = false,
-		}):expect()
+		account
+			:deployAccount({
+				maxFee = "0x1",
+				resourceBounds = customBounds,
+				waitForConfirmation = false,
+			})
+			:expect()
 
 		for _, req in requestLog do
 			if req.method == "starknet_addDeployAccountTransaction" then
@@ -1447,10 +1455,12 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 		local account = createTestAccount()
 		local params = createTestDeployParams()
 
-		builder:deployAccount(account, params, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-		}):expect()
+		builder
+			:deployAccount(account, params, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+			})
+			:expect()
 
 		local foundTx = nil
 		for _, req in requestLog do
@@ -1472,10 +1482,12 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 		local account = createTestAccount()
 		local params = createTestDeployParams()
 
-		builder:deployAccount(account, params, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-		}):expect()
+		builder
+			:deployAccount(account, params, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+			})
+			:expect()
 
 		local foundTx = nil
 		for _, req in requestLog do
@@ -1518,20 +1530,24 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 		local params = createTestDeployParams()
 
 		-- dryRun with non-zero DA modes
-		local result = builder:deployAccount(account, params, {
-			nonceDataAvailabilityMode = 1,
-			feeDataAvailabilityMode = 1,
-			dryRun = true,
-		}):expect()
+		local result = builder
+			:deployAccount(account, params, {
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+				dryRun = true,
+			})
+			:expect()
 
 		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
 		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
 
 		-- dryRun with default DA modes (same nonce to compare)
-		local defaultResult = builder:deployAccount(account, params, {
-			nonce = result.transaction.nonce,
-			dryRun = true,
-		}):expect()
+		local defaultResult = builder
+			:deployAccount(account, params, {
+				nonce = result.transaction.nonce,
+				dryRun = true,
+			})
+			:expect()
 
 		-- Hashes must differ since DA modes differ
 		expect(result.transactionHash ~= defaultResult.transactionHash):toBeTruthy()

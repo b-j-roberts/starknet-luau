@@ -11,10 +11,7 @@ local function builtinTypeMap(): AbiCodec.TypeMap
 end
 
 --- Build a typeMap with a custom struct
-local function typeMapWithStruct(
-	structName: string,
-	members: { { name: string, type: string } }
-): AbiCodec.TypeMap
+local function typeMapWithStruct(structName: string, members: { { name: string, type: string } }): AbiCodec.TypeMap
 	local abi: { any } = {
 		{ type = "struct", name = structName, members = members },
 	}
@@ -22,10 +19,7 @@ local function typeMapWithStruct(
 end
 
 --- Build a typeMap with a custom enum
-local function typeMapWithEnum(
-	enumName: string,
-	variants: { { name: string, type: string } }
-): AbiCodec.TypeMap
+local function typeMapWithEnum(enumName: string, variants: { { name: string, type: string } }): AbiCodec.TypeMap
 	local abi: { any } = {
 		{ type = "enum", name = enumName, variants = variants },
 	}
@@ -440,11 +434,7 @@ describe("AbiCodec.encode - enum", function()
 			},
 		}
 		local tm = AbiCodec.buildTypeMap(abi)
-		local r = AbiCodec.encode(
-			{ variant = "Point", value = { x = "0x1", y = "0x2" } },
-			"mymod::Shape",
-			tm
-		)
+		local r = AbiCodec.encode({ variant = "Point", value = { x = "0x1", y = "0x2" } }, "mymod::Shape", tm)
 		expect(#r):toBe(3) -- index + 2 struct felts
 		expect(r[1]):toBe("0x1")
 		expect(r[2]):toBe("0x1")
@@ -503,11 +493,7 @@ describe("AbiCodec.encode - Option", function()
 			},
 		}
 		local tm = AbiCodec.buildTypeMap(abi)
-		local r = AbiCodec.encode(
-			{ Some = { a = "0x1", b = "0x2" } },
-			"core::option::Option::<mymod::Pair>",
-			tm
-		)
+		local r = AbiCodec.encode({ Some = { a = "0x1", b = "0x2" } }, "core::option::Option::<mymod::Pair>", tm)
 		expect(#r):toBe(3) -- index + 2 struct felts
 		expect(r[1]):toBe("0x0")
 		expect(r[2]):toBe("0x1")
@@ -528,11 +514,7 @@ end)
 describe("AbiCodec.encode - Result", function()
 	it("encodes Ok(felt)", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ Ok = "0x42" },
-			"core::result::Result::<core::felt252, core::felt252>",
-			tm
-		)
+		local r = AbiCodec.encode({ Ok = "0x42" }, "core::result::Result::<core::felt252, core::felt252>", tm)
 		expect(#r):toBe(2)
 		expect(r[1]):toBe("0x0") -- Ok = index 0
 		expect(r[2]):toBe("0x42")
@@ -540,11 +522,7 @@ describe("AbiCodec.encode - Result", function()
 
 	it("encodes Err(felt)", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ Err = "0xff" },
-			"core::result::Result::<core::felt252, core::felt252>",
-			tm
-		)
+		local r = AbiCodec.encode({ Err = "0xff" }, "core::result::Result::<core::felt252, core::felt252>", tm)
 		expect(#r):toBe(2)
 		expect(r[1]):toBe("0x1") -- Err = index 1
 		expect(r[2]):toBe("0xff")
@@ -562,11 +540,8 @@ describe("AbiCodec.encode - Result", function()
 			},
 		}
 		local tm = AbiCodec.buildTypeMap(abi)
-		local r = AbiCodec.encode(
-			{ Ok = { x = "0x1", y = "0x2" } },
-			"core::result::Result::<mymod::Data, core::felt252>",
-			tm
-		)
+		local r =
+			AbiCodec.encode({ Ok = { x = "0x1", y = "0x2" } }, "core::result::Result::<mymod::Data, core::felt252>", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x0")
 		expect(r[2]):toBe("0x1")
@@ -575,11 +550,7 @@ describe("AbiCodec.encode - Result", function()
 
 	it("encodes Err(u256)", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ Err = "0x100" },
-			"core::result::Result::<core::felt252, core::integer::u256>",
-			tm
-		)
+		local r = AbiCodec.encode({ Err = "0x100" }, "core::result::Result::<core::felt252, core::integer::u256>", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x1") -- Err
 		expect(r[2]):toBe("0x100") -- low
@@ -594,11 +565,7 @@ end)
 describe("AbiCodec.encode - Array", function()
 	it("encodes Array<felt252>", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ "0x1", "0x2", "0x3" },
-			"core::array::Array::<core::felt252>",
-			tm
-		)
+		local r = AbiCodec.encode({ "0x1", "0x2", "0x3" }, "core::array::Array::<core::felt252>", tm)
 		expect(#r):toBe(4) -- length + 3 elements
 		expect(r[1]):toBe("0x3")
 		expect(r[2]):toBe("0x1")
@@ -608,11 +575,7 @@ describe("AbiCodec.encode - Array", function()
 
 	it("encodes Array<u256>", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ "0xa", "0xb" },
-			"core::array::Array::<core::integer::u256>",
-			tm
-		)
+		local r = AbiCodec.encode({ "0xa", "0xb" }, "core::array::Array::<core::integer::u256>", tm)
 		expect(#r):toBe(5) -- length + 2*(low,high)
 		expect(r[1]):toBe("0x2")
 		expect(r[2]):toBe("0xa") -- first u256 low
@@ -648,11 +611,7 @@ describe("AbiCodec.encode - Array", function()
 
 	it("encodes Array<bool>", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ true, false, true },
-			"core::array::Array::<core::bool>",
-			tm
-		)
+		local r = AbiCodec.encode({ true, false, true }, "core::array::Array::<core::bool>", tm)
 		expect(#r):toBe(4)
 		expect(r[1]):toBe("0x3")
 		expect(r[2]):toBe("0x1")
@@ -668,11 +627,7 @@ end)
 describe("AbiCodec.encode - Span", function()
 	it("encodes Span<felt252> same as Array", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ "0xa", "0xb" },
-			"core::array::Span::<core::felt252>",
-			tm
-		)
+		local r = AbiCodec.encode({ "0xa", "0xb" }, "core::array::Span::<core::felt252>", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x2")
 		expect(r[2]):toBe("0xa")
@@ -684,11 +639,7 @@ describe("AbiCodec.encode - Span", function()
 			{ name = "a", type = "core::felt252" },
 			{ name = "b", type = "core::felt252" },
 		})
-		local r = AbiCodec.encode(
-			{ { a = "0x1", b = "0x2" } },
-			"core::array::Span::<mymod::Pair>",
-			tm
-		)
+		local r = AbiCodec.encode({ { a = "0x1", b = "0x2" } }, "core::array::Span::<mymod::Pair>", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x1") -- length
 		expect(r[2]):toBe("0x1")
@@ -711,11 +662,7 @@ describe("AbiCodec.encode - tuple", function()
 
 	it("encodes (felt, u256, bool)", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{ "0xa", "0xff", true },
-			"(core::felt252, core::integer::u256, core::bool)",
-			tm
-		)
+		local r = AbiCodec.encode({ "0xa", "0xff", true }, "(core::felt252, core::integer::u256, core::bool)", tm)
 		expect(#r):toBe(4) -- 1 + 2 + 1
 		expect(r[1]):toBe("0xa")
 		expect(r[2]):toBe("0xff")
@@ -728,11 +675,7 @@ describe("AbiCodec.encode - tuple", function()
 			{ name = "x", type = "core::felt252" },
 			{ name = "y", type = "core::felt252" },
 		})
-		local r = AbiCodec.encode(
-			{ { x = "0x1", y = "0x2" }, "0x3" },
-			"(mymod::Point, core::felt252)",
-			tm
-		)
+		local r = AbiCodec.encode({ { x = "0x1", y = "0x2" }, "0x3" }, "(mymod::Point, core::felt252)", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x1")
 		expect(r[2]):toBe("0x2")
@@ -742,11 +685,7 @@ describe("AbiCodec.encode - tuple", function()
 	it("encodes nested tuple", function()
 		local tm = builtinTypeMap()
 		-- Nested: (felt, (felt, felt))
-		local r = AbiCodec.encode(
-			{ "0xa", { "0xb", "0xc" } },
-			"(core::felt252, (core::felt252, core::felt252))",
-			tm
-		)
+		local r = AbiCodec.encode({ "0xa", { "0xb", "0xc" } }, "(core::felt252, (core::felt252, core::felt252))", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0xa")
 		expect(r[2]):toBe("0xb")
@@ -854,12 +793,8 @@ describe("AbiCodec.decode - primitives", function()
 
 	it("decodes ContractAddress as felt", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0xdeadbeef" },
-			1,
-			"core::starknet::contract_address::ContractAddress",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0xdeadbeef" }, 1, "core::starknet::contract_address::ContractAddress", tm)
 		expect(val):toBe("0xdeadbeef")
 		expect(consumed):toBe(1)
 	end)
@@ -910,12 +845,7 @@ describe("AbiCodec.decode - struct", function()
 			{ name = "amount", type = "core::integer::u256" },
 			{ name = "flag", type = "core::bool" },
 		})
-		local val, consumed = AbiCodec.decode(
-			{ "0xabc", "0x3e8", "0x0", "0x1" },
-			1,
-			"mymod::Mixed",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0xabc", "0x3e8", "0x0", "0x1" }, 1, "mymod::Mixed", tm)
 		expect((val :: any).addr):toBe("0xabc")
 		expect((val :: any).amount.low):toBe("0x3e8")
 		expect((val :: any).amount.high):toBe("0x0")
@@ -952,12 +882,7 @@ describe("AbiCodec.decode - enum", function()
 
 	it("decodes Option Some", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x0", "0x42" },
-			1,
-			"core::option::Option::<core::felt252>",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0x0", "0x42" }, 1, "core::option::Option::<core::felt252>", tm)
 		expect((val :: any).variant):toBe("Some")
 		expect((val :: any).value):toBe("0x42")
 		expect(consumed):toBe(2)
@@ -965,24 +890,15 @@ describe("AbiCodec.decode - enum", function()
 
 	it("decodes Option None", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x1" },
-			1,
-			"core::option::Option::<core::felt252>",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0x1" }, 1, "core::option::Option::<core::felt252>", tm)
 		expect((val :: any).variant):toBe("None")
 		expect(consumed):toBe(1)
 	end)
 
 	it("decodes Result Ok", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x0", "0x42" },
-			1,
-			"core::result::Result::<core::felt252, core::felt252>",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0x0", "0x42" }, 1, "core::result::Result::<core::felt252, core::felt252>", tm)
 		expect((val :: any).variant):toBe("Ok")
 		expect((val :: any).value):toBe("0x42")
 		expect(consumed):toBe(2)
@@ -990,12 +906,8 @@ describe("AbiCodec.decode - enum", function()
 
 	it("decodes Result Err", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x1", "0xff" },
-			1,
-			"core::result::Result::<core::felt252, core::felt252>",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0x1", "0xff" }, 1, "core::result::Result::<core::felt252, core::felt252>", tm)
 		expect((val :: any).variant):toBe("Err")
 		expect((val :: any).value):toBe("0xff")
 		expect(consumed):toBe(2)
@@ -1009,12 +921,8 @@ end)
 describe("AbiCodec.decode - Array", function()
 	it("decodes Array<felt252>", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x3", "0xa", "0xb", "0xc" },
-			1,
-			"core::array::Array::<core::felt252>",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0x3", "0xa", "0xb", "0xc" }, 1, "core::array::Array::<core::felt252>", tm)
 		local arr = val :: { any }
 		expect(#arr):toBe(3)
 		expect(arr[1]):toBe("0xa")
@@ -1028,12 +936,8 @@ describe("AbiCodec.decode - Array", function()
 			{ name = "x", type = "core::felt252" },
 			{ name = "y", type = "core::felt252" },
 		})
-		local val, consumed = AbiCodec.decode(
-			{ "0x2", "0x1", "0x2", "0x3", "0x4" },
-			1,
-			"core::array::Array::<mymod::Point>",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0x2", "0x1", "0x2", "0x3", "0x4" }, 1, "core::array::Array::<mymod::Point>", tm)
 		local arr = val :: { any }
 		expect(#arr):toBe(2)
 		expect(arr[1].x):toBe("0x1")
@@ -1045,12 +949,7 @@ describe("AbiCodec.decode - Array", function()
 
 	it("decodes empty Array", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x0" },
-			1,
-			"core::array::Array::<core::felt252>",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0x0" }, 1, "core::array::Array::<core::felt252>", tm)
 		expect(#(val :: { any })):toBe(0)
 		expect(consumed):toBe(1)
 	end)
@@ -1063,12 +962,7 @@ end)
 describe("AbiCodec.decode - tuple", function()
 	it("decodes simple tuple", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0x1", "0x2" },
-			1,
-			"(core::felt252, core::felt252)",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0x1", "0x2" }, 1, "(core::felt252, core::felt252)", tm)
 		local arr = val :: { any }
 		expect(#arr):toBe(2)
 		expect(arr[1]):toBe("0x1")
@@ -1078,12 +972,8 @@ describe("AbiCodec.decode - tuple", function()
 
 	it("decodes mixed-type tuple", function()
 		local tm = builtinTypeMap()
-		local val, consumed = AbiCodec.decode(
-			{ "0xa", "0xff", "0x0", "0x1" },
-			1,
-			"(core::felt252, core::integer::u256, core::bool)",
-			tm
-		)
+		local val, consumed =
+			AbiCodec.decode({ "0xa", "0xff", "0x0", "0x1" }, 1, "(core::felt252, core::integer::u256, core::bool)", tm)
 		local arr = val :: { any }
 		expect(#arr):toBe(3)
 		expect(arr[1]):toBe("0xa")
@@ -1102,12 +992,7 @@ describe("AbiCodec.decode - ByteArray", function()
 	it("decodes short string", function()
 		local tm = builtinTypeMap()
 		-- "Hello" = 0 chunks, pending=0x48656c6c6f, len=5
-		local val, consumed = AbiCodec.decode(
-			{ "0x0", "0x48656c6c6f", "0x5" },
-			1,
-			"core::byte_array::ByteArray",
-			tm
-		)
+		local val, consumed = AbiCodec.decode({ "0x0", "0x48656c6c6f", "0x5" }, 1, "core::byte_array::ByteArray", tm)
 		expect(val):toBe("Hello")
 		expect(consumed):toBe(3)
 	end)
@@ -1245,14 +1130,10 @@ describe("AbiCodec - nested types", function()
 			},
 		}
 		local tm = AbiCodec.buildTypeMap(abi)
-		local r = AbiCodec.encode(
-			{
-				{ variant = "Active", value = nil },
-				{ variant = "Paused", value = nil },
-			},
-			"core::array::Array::<mymod::Status>",
-			tm
-		)
+		local r = AbiCodec.encode({
+			{ variant = "Active", value = nil },
+			{ variant = "Paused", value = nil },
+		}, "core::array::Array::<mymod::Status>", tm)
 		expect(#r):toBe(3) -- len + 2 variant indices
 		expect(r[1]):toBe("0x2")
 		expect(r[2]):toBe("0x0") -- Active
@@ -1271,11 +1152,7 @@ describe("AbiCodec - nested types", function()
 			},
 		}
 		local tm = AbiCodec.buildTypeMap(abi)
-		local r = AbiCodec.encode(
-			{ Some = { a = "0x1", b = "0x2" } },
-			"core::option::Option::<mymod::Pair>",
-			tm
-		)
+		local r = AbiCodec.encode({ Some = { a = "0x1", b = "0x2" } }, "core::option::Option::<mymod::Pair>", tm)
 		expect(#r):toBe(3)
 		expect(r[1]):toBe("0x0") -- Some
 		expect(r[2]):toBe("0x1")
@@ -1284,14 +1161,10 @@ describe("AbiCodec - nested types", function()
 
 	it("encodes array of tuples", function()
 		local tm = builtinTypeMap()
-		local r = AbiCodec.encode(
-			{
-				{ "0x1", "0x2" },
-				{ "0x3", "0x4" },
-			},
-			"core::array::Array::<(core::felt252, core::felt252)>",
-			tm
-		)
+		local r = AbiCodec.encode({
+			{ "0x1", "0x2" },
+			{ "0x3", "0x4" },
+		}, "core::array::Array::<(core::felt252, core::felt252)>", tm)
 		expect(#r):toBe(5) -- len + 2*2
 		expect(r[1]):toBe("0x2")
 		expect(r[2]):toBe("0x1")
@@ -1835,5 +1708,213 @@ describe("AbiCodec.decodeEvent - bounds checking", function()
 			count += 1
 		end
 		expect(count):toBe(0)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AbiCodec encode error paths
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.encode - error paths", function()
+	it("errors on invalid Result (missing Ok and Err keys)", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.encode({ badkey = "value" }, "core::result::Result::<core::felt252, core::felt252>", tm)
+		end):toThrow("Result value must have Ok or Err key")
+	end)
+
+	it("errors on unknown enum variant name", function()
+		local tm = typeMapWithEnum("MyEnum", {
+			{ name = "VariantA", type = "core::felt252" },
+			{ name = "VariantB", type = "core::felt252" },
+		})
+		expect(function()
+			AbiCodec.encode({ variant = "VariantC", value = "0x1" }, "MyEnum", tm)
+		end):toThrow("unknown enum variant")
+	end)
+
+	it("errors on non-table enum value", function()
+		local tm = typeMapWithEnum("MyEnum", {
+			{ name = "VariantA", type = "core::felt252" },
+		})
+		expect(function()
+			AbiCodec.encode("not_a_table", "MyEnum", tm)
+		end):toThrow("enum value must be a table")
+	end)
+
+	it("errors on number enum value", function()
+		local tm = typeMapWithEnum("MyEnum", {
+			{ name = "VariantA", type = "core::felt252" },
+		})
+		expect(function()
+			AbiCodec.encode(42, "MyEnum", tm)
+		end):toThrow("enum value must be a table")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AbiCodec decode error paths
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.decode - error paths", function()
+	it("errors on invalid enum variant index", function()
+		local tm = typeMapWithEnum("MyEnum", {
+			{ name = "A", type = "core::felt252" },
+			{ name = "B", type = "core::felt252" },
+		})
+		-- Variant index 5 is out of range (only 0 and 1 are valid)
+		expect(function()
+			AbiCodec.decode({ "0x5", "0x1" }, 1, "MyEnum", tm)
+		end):toThrow("invalid enum variant index")
+	end)
+
+	it("errors on decode out of bounds (felt)", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::felt252", tm)
+		end):toThrow("decode out of bounds")
+	end)
+
+	it("errors on decode out of bounds (u256)", function()
+		local tm = builtinTypeMap()
+		-- u256 needs 2 felts, only 1 provided
+		expect(function()
+			AbiCodec.decode({ "0x1" }, 1, "core::integer::u256", tm)
+		end):toThrow("decode out of bounds")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AbiCodec.decodeEvent - direct tests
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.decodeEvent - direct", function()
+	it("decodes event with key and data members", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0xabc",
+			keyMembers = {
+				{ name = "from", type = "core::felt252" },
+				{ name = "to", type = "core::felt252" },
+			},
+			dataMembers = {
+				{ name = "amount", type = "core::felt252" },
+			},
+		}
+		-- keys[1] = selector, keys[2] = from, keys[3] = to
+		local fields = AbiCodec.decodeEvent({ "0xabc", "0xsender", "0xreceiver" }, { "0x100" }, eventDef, tm)
+		expect(fields.from):toBe("0xsender")
+		expect(fields.to):toBe("0xreceiver")
+		expect(fields.amount):toBe("0x100")
+	end)
+
+	it("decodes event with only key members", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Approval",
+			selector = "0xdef",
+			keyMembers = {
+				{ name = "owner", type = "core::felt252" },
+			},
+			dataMembers = {},
+		}
+		local fields = AbiCodec.decodeEvent({ "0xdef", "0xowner1" }, {}, eventDef, tm)
+		expect(fields.owner):toBe("0xowner1")
+	end)
+
+	it("decodes event with only data members", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "ValueChanged",
+			selector = "0x123",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "oldValue", type = "core::felt252" },
+				{ name = "newValue", type = "core::felt252" },
+			},
+		}
+		local fields = AbiCodec.decodeEvent({ "0x123" }, { "0xold", "0xnew" }, eventDef, tm)
+		expect(fields.oldValue):toBe("0xold")
+		expect(fields.newValue):toBe("0xnew")
+	end)
+
+	it("errors when key members are missing", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0xabc",
+			keyMembers = {
+				{ name = "from", type = "core::felt252" },
+				{ name = "to", type = "core::felt252" },
+			},
+			dataMembers = {},
+		}
+		-- Only selector, no key data
+		expect(function()
+			AbiCodec.decodeEvent({ "0xabc" }, {}, eventDef, tm)
+		end):toThrow("key member")
+	end)
+
+	it("errors when data members are missing", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0xabc",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "amount", type = "core::felt252" },
+			},
+		}
+		expect(function()
+			AbiCodec.decodeEvent({ "0xabc" }, {}, eventDef, tm)
+		end):toThrow("data member")
+	end)
+
+	it("decodes event with u256 data member", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0xabc",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "amount", type = "core::integer::u256" },
+			},
+		}
+		local fields = AbiCodec.decodeEvent({ "0xabc" }, { "0xff", "0x0" }, eventDef, tm)
+		expect((fields.amount :: any).low):toBe("0xff")
+		expect((fields.amount :: any).high):toBe("0x0")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AbiCodec.resolveType - fallback
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.resolveType - fallback", function()
+	it("falls back to felt for unknown type names", function()
+		local tm = builtinTypeMap()
+		local def = AbiCodec.resolveType("some::unknown::CustomType", tm)
+		expect(def.kind):toBe("felt")
+	end)
+
+	it("caches the fallback in typeMap", function()
+		local tm = builtinTypeMap()
+		AbiCodec.resolveType("another::unknown::Type", tm)
+		local cached = tm["another::unknown::Type"]
+		expect(cached):toBeTruthy()
+		expect(cached.kind):toBe("felt")
+	end)
+
+	it("resolves known types correctly", function()
+		local tm = builtinTypeMap()
+		local def = AbiCodec.resolveType("core::felt252", tm)
+		expect(def.kind):toBe("felt")
+	end)
+
+	it("resolves integer patterns as felt", function()
+		local tm = builtinTypeMap()
+		local def = AbiCodec.resolveType("core::integer::u32", tm)
+		expect(def.kind):toBe("felt")
 	end)
 end)
