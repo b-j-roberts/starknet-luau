@@ -216,7 +216,7 @@ local function _estimateInternal(
 	resolveNonce: () -> string,
 	buildUnsignedTx: (nonce: string) -> any
 ): any
-	local Promise = provider:_getPromise()
+	local Promise = provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local nonceOk, nonce = pcall(resolveNonce)
 		if not nonceOk then
@@ -254,7 +254,7 @@ local function _executePipeline(
 	},
 	opts: BaseTransactionOptions
 ): any
-	local Promise = provider:_getPromise()
+	local Promise = provider:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Resolve nonce

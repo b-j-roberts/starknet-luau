@@ -15,7 +15,7 @@ local noopClock = TestUtils.makeClock(0)
 local function createMockProvider(overrides: { [string]: any }?)
 	local o = overrides or {}
 	return {
-		_getPromise = function()
+		getPromise = function()
 			return MockPromise
 		end,
 		waitForTransaction = o.waitForTransaction,
@@ -24,9 +24,12 @@ end
 
 local function createMockAccount(overrides: { [string]: any }?)
 	local o = overrides or {}
+	local mockProvider = o._provider or createMockProvider(o)
 	local account: { [string]: any } = {
 		address = o.address or "0x123abc",
-		_provider = o._provider or createMockProvider(o),
+		getProvider = function()
+			return mockProvider
+		end,
 	}
 	if o.executePaymaster then
 		account.executePaymaster = o.executePaymaster

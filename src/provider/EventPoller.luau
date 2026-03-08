@@ -65,7 +65,7 @@ function EventPollerClass:start()
 	local filter: RpcTypes.EventFilter = self._filter
 	if not filter.from_block then
 		local ok, blockNum = pcall(function()
-			return self._provider:_requestWithRetry("starknet_blockNumber", {})
+			return self._provider:fetchSync("starknet_blockNumber", {})
 		end)
 		if ok and blockNum then
 			local num = if type(blockNum) == "number" then blockNum else (tonumber(blockNum) or 0)
@@ -104,7 +104,7 @@ function EventPollerClass:start()
 					pageFilter.continuation_token = continuationToken
 				end
 
-				local chunk = self._provider:_requestWithRetry("starknet_getEvents", {
+				local chunk = self._provider:fetchSync("starknet_getEvents", {
 					{ filter = pageFilter },
 				})
 

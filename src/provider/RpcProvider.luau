@@ -72,6 +72,8 @@ export type RpcProvider = {
 	getMetrics: (self: RpcProvider) -> RpcTypes.ProviderMetrics,
 	flushCache: (self: RpcProvider) -> (),
 	getNonceManager: (self: RpcProvider) -> any,
+	getPromise: (self: RpcProvider) -> any,
+	fetchSync: (self: RpcProvider, method: string, params: any) -> any,
 }
 
 --------------------------------------------------------------------------------
@@ -176,13 +178,13 @@ end
 -- that EventPoller and other consumers depend on.
 --------------------------------------------------------------------------------
 
---- Internal: Get the Promise constructor
+--- Get the Promise constructor.
 --- Syncs externally-injected _PromiseModule (test pattern) to the internal client.
-function RpcProviderClass:_getPromise(): any
+function RpcProviderClass:getPromise(): any
 	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
 		self._client._PromiseModule = self._PromiseModule
 	end
-	return self._client:_getPromise()
+	return self._client:getPromise()
 end
 
 --- Internal: JSON encode (used by fetch cache key computation and _dispatchBatch)
@@ -205,12 +207,19 @@ function RpcProviderClass:_requestWithRetry(method: string, params: any): any
 	return self._client:_requestWithRetry(method, params)
 end
 
+--- Synchronous RPC call with retry. Returns the raw result (not a Promise).
+--- Suitable for use inside Promise executors where blocking is acceptable
+--- (e.g., EventPoller polling loops, waitForTransaction, getAllEvents).
+function RpcProviderClass:fetchSync(method: string, params: any): any
+	return self._client:_requestWithRetry(method, params)
+end
+
 --- Raw RPC call for custom/unsupported methods.
 --- Returns a Promise that resolves to the raw JSON-RPC result.
 --- When cache is enabled, checks cache first and stores successful results.
 --- When queue is enabled, requests are enqueued and drained on the next defer cycle.
 function RpcProviderClass:fetch(method: string, params: any, options: RpcTypes.FetchOptions?): any
-	local Promise = self:_getPromise()
+	local Promise = self:getPromise()
 	local cache = self._cache
 	local bypassCache = options and options.bypassCache
 
@@ -239,7 +248,7 @@ end
 
 --- Internal: perform the actual network fetch (queue or direct path).
 function RpcProviderClass:_fetchNetwork(method: string, params: any): any
-	local Promise = self:_getPromise()
+	local Promise = self:getPromise()
 
 	-- Queue path: enqueue + schedule drain
 	if self._queue then
@@ -336,7 +345,7 @@ end
 function RpcProviderClass:_dispatchSingle(item: any)
 	local queue = self._queue
 	local ok, result = pcall(function()
-		return self:_requestWithRetry(item.method, item.params)
+		return self:fetchSync(item.method, item.params)
 	end)
 	if ok then
 		if queue then
@@ -784,7 +793,7 @@ end
 --- Get all events matching a filter, automatically paginating through continuation tokens.
 --- Returns a Promise resolving to a flat array of all matching EmittedEvents.
 function RpcProviderClass:getAllEvents(filter: RpcTypes.EventFilter): any
-	local Promise = self:_getPromise()
+	local Promise = self:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local allEvents: { RpcTypes.EmittedEvent } = {}
 		local continuationToken: string? = filter.continuation_token
@@ -801,7 +810,7 @@ function RpcProviderClass:getAllEvents(filter: RpcTypes.EventFilter): any
 			}
 
 			local ok, chunk = pcall(function()
-				return self:_requestWithRetry("starknet_getEvents", {
+				return self:fetchSync("starknet_getEvents", {
 					{
 						filter = {
 							from_block = pageFilter.from_block,
@@ -838,7 +847,7 @@ end
 --- Poll until a transaction is confirmed (ACCEPTED_ON_L2 or ACCEPTED_ON_L1).
 --- Rejects if the transaction is REJECTED or max attempts exceeded.
 function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.WaitOptions?): any
-	local Promise = self:_getPromise()
+	local Promise = self:getPromise()
 	local retryInterval = if options and options.retryInterval then options.retryInterval else 5
 	local maxAttempts = if options and options.maxAttempts then options.maxAttempts else 30
 
@@ -846,7 +855,7 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 		for attempt = 1, maxAttempts do
 			local statusOk, statusResult = pcall(function()
 				-- Use _requestWithRetry directly to get synchronous result within this Promise executor
-				return self:_requestWithRetry("starknet_getTransactionStatus", { txHash })
+				return self:fetchSync("starknet_getTransactionStatus", { txHash })
 			end)
 
 			if statusOk and statusResult then
@@ -856,7 +865,7 @@ function RpcProviderClass:waitForTransaction(txHash: string, options: RpcTypes.W
 				if finality == "ACCEPTED_ON_L2" or finality == "ACCEPTED_ON_L1" then
 					-- Transaction is confirmed, fetch the full receipt
 					local receiptOk, receipt = pcall(function()
-						return self:_requestWithRetry("starknet_getTransactionReceipt", { txHash })
+						return self:fetchSync("starknet_getTransactionReceipt", { txHash })
 					end)
 					if receiptOk then
 						if execution == "REVERTED" then

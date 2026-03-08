@@ -123,6 +123,8 @@ export type PaymasterRpc = {
 	trackingIdToLatestHash: (self: PaymasterRpc, trackingId: string) -> RpcTypes.Promise<TrackingResult>,
 	getNodeUrl: (self: PaymasterRpc) -> string,
 	fetch: (self: PaymasterRpc, method: string, params: any) -> RpcTypes.Promise<any>,
+	getPromise: (self: PaymasterRpc) -> any,
+	resolveImmediate: (self: PaymasterRpc, value: any) -> RpcTypes.Promise<any>,
 }
 
 --------------------------------------------------------------------------------
@@ -281,16 +283,30 @@ function PaymasterRpcClass:getNodeUrl(): string
 	return self._client:getNodeUrl()
 end
 
+--- Get the Promise constructor.
+--- Syncs externally-injected _PromiseModule (test pattern) to the internal client.
+function PaymasterRpcClass:getPromise(): any
+	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
+		self._client._PromiseModule = self._PromiseModule
+	end
+	return self._client:getPromise()
+end
+
+--- Wrap a value in a resolved Promise. Useful for returning cached data
+--- in the same async shape as a network call.
+function PaymasterRpcClass:resolveImmediate(value: any): any
+	local Promise = self:getPromise()
+	return Promise.resolve(value)
+end
+
 --------------------------------------------------------------------------------
 -- Public: fetch (raw RPC call, Promise-based)
 --------------------------------------------------------------------------------
 
 --- Raw paymaster RPC call. Returns a Promise that resolves to the JSON-RPC result.
 function PaymasterRpcClass:fetch(method: string, params: any): any
-	-- Sync _PromiseModule to client in case it was injected externally (tests)
-	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
-		self._client._PromiseModule = self._PromiseModule
-	end
+	-- Ensure _PromiseModule sync before network call (getPromise handles this)
+	self:getPromise()
 	return self._client:fetch(method, params)
 end
 
@@ -301,11 +317,7 @@ end
 --- Check if the paymaster service is operational.
 --- @return Promise<boolean> -- true if available, false otherwise
 function PaymasterRpcClass:isAvailable(): any
-	-- Sync _PromiseModule to client in case it was injected externally (tests)
-	if self._PromiseModule and self._PromiseModule ~= self._client._PromiseModule then
-		self._client._PromiseModule = self._PromiseModule
-	end
-	local Promise = self._client:_getPromise()
+	local Promise = self:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), _reject: (any) -> ())
 		local ok, result = pcall(function()

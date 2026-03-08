@@ -124,7 +124,7 @@ function JsonRpcClientClass:getNodeUrl(): string
 end
 
 --- Get the Promise constructor
-function JsonRpcClientClass:_getPromise(): any
+function JsonRpcClientClass:getPromise(): any
 	if self._PromiseModule then
 		return self._PromiseModule
 	end
@@ -296,7 +296,7 @@ end
 --- Raw RPC call returning a Promise.
 --- This is the simple direct-path fetch (no queue, no cache).
 function JsonRpcClientClass:fetch(method: string, params: any): any
-	local Promise = self:_getPromise()
+	local Promise = self:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local ok, result = pcall(function()

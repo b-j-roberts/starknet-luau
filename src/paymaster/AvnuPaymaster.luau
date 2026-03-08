@@ -255,12 +255,7 @@ function AvnuPaymasterClass:getSupportedTokens(): any
 
 	-- Return cached result if still fresh
 	if self._cachedTokens and (now - self._cacheTimestamp) < self._tokenCacheTtl then
-		-- Need to wrap in a Promise — get the Promise module from inner
-		local innerAny = self._inner :: any
-		if innerAny._PromiseModule then
-			return innerAny._PromiseModule.resolve(self._cachedTokens)
-		end
-		-- In test mode (no PromiseModule), fall through to network call
+		return self._inner:resolveImmediate(self._cachedTokens)
 	end
 
 	-- Fetch from network and cache

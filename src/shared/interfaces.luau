@@ -42,7 +42,9 @@ export type ProviderInterface = {
 	waitForTransaction: (self: ProviderInterface, txHash: string, options: any?) -> any, -- Promise<TransactionReceipt>
 	getEvents: (self: ProviderInterface, filter: any) -> any, -- Promise<EventsChunk>
 	getAllEvents: (self: ProviderInterface, filter: any) -> any, -- Promise<{EmittedEvent}>
-	_getPromise: (self: ProviderInterface) -> any, -- Promise constructor
+	getPromise: (self: ProviderInterface) -> any, -- Promise constructor
+	getNonceManager: (self: ProviderInterface) -> any?, -- NonceManager or nil
+	fetchSync: (self: ProviderInterface, method: string, params: any) -> any, -- Synchronous RPC call
 }
 
 --------------------------------------------------------------------------------
@@ -60,7 +62,7 @@ export type AccountInterface = {
 	hashMessage: (self: AccountInterface, typedData: any) -> string,
 	signMessage: (self: AccountInterface, typedData: any) -> { string },
 	executePaymaster: (self: AccountInterface, calls: { any }, paymasterDetails: any) -> any, -- Promise
-	_provider: ProviderInterface,
+	getProvider: (self: AccountInterface) -> ProviderInterface,
 }
 
 --------------------------------------------------------------------------------

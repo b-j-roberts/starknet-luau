@@ -274,7 +274,7 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 	recordCallMetrics(metrics, calls)
 
 	-- Get Promise from the account's provider
-	local Promise = account._provider:_getPromise()
+	local Promise = account:getProvider():getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Policy check (synchronous)
@@ -378,11 +378,12 @@ function ExecutorProto:execute(playerId: number, calls: { any }, options: Execut
 				})
 
 				-- Handle confirmation tracking
-				local hasWaitFn = account._provider and type(account._provider.waitForTransaction) == "function"
+				local provider = account:getProvider()
+				local hasWaitFn = provider and type(provider.waitForTransaction) == "function"
 
 				if waitForConfirmation and hasWaitFn then
 					local confirmOk, confirmErr = pcall(function()
-						return account._provider:waitForTransaction(result.transactionHash):expect()
+						return provider:waitForTransaction(result.transactionHash):expect()
 					end)
 					if confirmOk then
 						-- Transaction confirmed on-chain

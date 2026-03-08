@@ -314,15 +314,7 @@ function AccountFactory:batchDeploy(
 	maxConcurrency = math.floor(maxConcurrency)
 
 	-- Get Promise module from provider
-	local Promise = self._provider._PromiseModule
-	if not Promise then
-		error(
-			StarknetError.transaction(
-				"batchDeploy: provider does not have a Promise module available",
-				ErrorCodes.BATCH_DEPLOY_ERROR.code
-			)
-		)
-	end
+	local Promise = self._provider:getPromise()
 
 	local total = #accounts
 	local progressCallback = opts.onDeployProgress

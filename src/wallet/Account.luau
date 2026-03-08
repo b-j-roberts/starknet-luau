@@ -261,7 +261,7 @@ function Account.getDeploymentFeeEstimate(config: {
 		contractAddress = config.contractAddress,
 	}
 
-	local Promise = config.provider:_getPromise()
+	local Promise = config.provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Use dummy account (estimateDeployAccountFee doesn't need a real signer)
 		local dummyAccount = {
@@ -334,7 +334,7 @@ function Account.checkDeploymentBalance(config: {
 		)
 	end
 
-	local Promise = config.provider:_getPromise()
+	local Promise = config.provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Fetch balance via ERC20
 		local erc20 = ERC20.new(tokenAddress, config.provider)
@@ -434,7 +434,7 @@ function Account.getDeploymentFundingInfo(config: {
 		salt = salt,
 	})
 
-	local Promise = config.provider:_getPromise()
+	local Promise = config.provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local feeOk, feeResult = pcall(function()
 			return Account.getDeploymentFeeEstimate({
@@ -575,7 +575,7 @@ end
 --- Check if this account is already deployed (idempotency guard).
 --- Returns a Promise resolving to the early-return result table, or nil if not deployed.
 function Account:_checkAlreadyDeployed(): any
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), _reject: (any) -> ())
 		local nonceOk, _ = pcall(function()
 			return self._provider:getNonce(self.address):expect()
@@ -597,14 +597,14 @@ end
 --- If NonceManager is unavailable or an explicit nonce is provided, calls fn(opts) directly.
 --- Otherwise: reserve → fn(optsWithNonce) → confirm on success / reject on failure.
 function Account:_withNonceManager(options: any?, fn: (opts: any) -> any): any
-	local nm = self._provider._nonceManager
+	local nm = self._provider:getNonceManager()
 	local hasExplicitNonce = options and (options :: any).nonce
 
 	if not nm or hasExplicitNonce then
 		return fn(options)
 	end
 
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local reserveOk, reservedNonce = pcall(function()
 			return nm:reserve(self.address):expect()
@@ -660,7 +660,7 @@ end
 --- If the account is already deployed, returns early with alreadyDeployed = true.
 function Account:deployAccount(options: TransactionBuilder.DeployAccountOptions?): any
 	local opts = options or {} :: TransactionBuilder.DeployAccountOptions
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Idempotency check
@@ -736,6 +736,11 @@ function Account:waitForReceipt(txHash: string, options: TransactionBuilder.Wait
 	return self._builder:waitForReceipt(txHash, options)
 end
 
+--- Get the provider instance.
+function Account:getProvider(): any
+	return self._provider
+end
+
 --- Get the public key hex of the signer.
 function Account:getPublicKeyHex(): string
 	return self.signer:getPublicKeyHex()
@@ -785,7 +790,7 @@ function Account:deployWithPaymaster(
 
 	local deploymentData = self:getDeploymentData()
 
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Idempotency check
 		local alreadyDeployed = self:_checkAlreadyDeployed():expect()
@@ -899,7 +904,7 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: Interfaces.P
 		options.deploymentData = paymasterDetails.deploymentData
 	end
 
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		-- Step 1: Build typed data via paymaster
 		local buildOk, buildResult = pcall(function()

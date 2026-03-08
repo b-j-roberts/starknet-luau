@@ -85,7 +85,7 @@ end
 --- On first call per address, fetches the on-chain nonce.
 --- Subsequent calls return locally tracked nonces.
 function NonceManager:reserve(address: string): any
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local state = self._states[address]
@@ -187,7 +187,7 @@ end
 --- Returns a Promise resolving to the fresh on-chain nonce hex string.
 --- Clears all local tracking for the address.
 function NonceManager:resync(address: string): any
-	local Promise = self._provider:_getPromise()
+	local Promise = self._provider:getPromise()
 
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
 		local ok, result = pcall(function()
