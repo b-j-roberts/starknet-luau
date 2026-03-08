@@ -119,13 +119,10 @@ local function isTransientError(err: any): boolean
 	return ErrorCodes.isTransient(err.code or 0)
 end
 
---- Safely call a callback, catching and warning on errors.
+--- Call a callback if it exists, propagating any errors to the caller.
 local function safeCall(callback: ((...any) -> ())?, ...: any)
 	if callback then
-		local ok, err = pcall(callback, ...)
-		if not ok then
-			warn("SponsoredExecutor callback error: " .. tostring(err))
-		end
+		callback(...)
 	end
 end
 

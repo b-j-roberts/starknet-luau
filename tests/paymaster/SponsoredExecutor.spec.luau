@@ -801,7 +801,7 @@ describe("SponsoredExecutor — Callbacks", function()
 		expect(failedInfo.tokensRefunded):toBe(7)
 	end)
 
-	it("callback error does not crash executor", function()
+	it("callback error propagates to caller", function()
 		local executor = SponsoredExecutor.new(minimalConfig({
 			callbacks = {
 				onTransactionSubmitted = function(_info: any)
@@ -809,12 +809,12 @@ describe("SponsoredExecutor — Callbacks", function()
 				end,
 			},
 		}))
-		-- Should not throw despite callback error
-		local ok, result = pcall(function()
+		-- Callback errors should propagate instead of being swallowed
+		local ok, err = pcall(function()
 			return executor:execute(123, sampleCalls()):expect()
 		end)
-		expect(ok):toBe(true)
-		expect(result.transactionHash):toBe("0xdeadbeef")
+		expect(ok):toBe(false)
+		expect(tostring(err)):toContain("callback crashed!")
 	end)
 
 	it("no callbacks → no crash", function()
