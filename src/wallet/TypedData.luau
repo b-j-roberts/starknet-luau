@@ -140,6 +140,7 @@ local encodeByteArray = ByteArray.encode
 --- Build a Merkle tree root from leaf hashes.
 --- Pairs are sorted (ascending BigInt comparison) before hashing.
 --- Odd-length: last unpaired leaf is hashed with 0x0.
+--- Uses in-place pairing to avoid O(n log n) temporary array allocations.
 local function merkleRoot(leaves: { string }, hashPair: (string, string) -> string): string
 	if #leaves == 0 then
 		return "0x0"
@@ -148,31 +149,40 @@ local function merkleRoot(leaves: { string }, hashPair: (string, string) -> stri
 		return leaves[1]
 	end
 
-	local newLeaves: { string } = {}
-	for i = 1, #leaves, 2 do
-		if i + 1 > #leaves then
-			-- Odd: pair with 0x0
-			local a = BigInt.fromHex(leaves[i])
-			local b = BigInt.fromHex("0x0")
-			-- Sort ascending
-			if BigInt.cmp(a, b) >= 0 then
-				table.insert(newLeaves, hashPair(BigInt.toHex(b), BigInt.toHex(a)))
+	-- Work on a shallow copy to avoid mutating the caller's array
+	local layer = table.clone(leaves)
+	local ZERO = BigInt.fromHex("0x0")
+	local ZERO_HEX = "0x0"
+
+	while #layer > 1 do
+		local count = #layer
+		local writeIdx = 0
+		for i = 1, count, 2 do
+			writeIdx += 1
+			local aHex = layer[i]
+			local bHex: string
+			if i + 1 > count then
+				bHex = ZERO_HEX
 			else
-				table.insert(newLeaves, hashPair(BigInt.toHex(a), BigInt.toHex(b)))
+				bHex = layer[i + 1]
 			end
-		else
-			local a = BigInt.fromHex(leaves[i])
-			local b = BigInt.fromHex(leaves[i + 1])
-			-- Sort ascending
+
+			local a = BigInt.fromHex(aHex)
+			local b = if bHex == ZERO_HEX then ZERO else BigInt.fromHex(bHex)
+			-- Sort ascending before hashing
 			if BigInt.cmp(a, b) >= 0 then
-				table.insert(newLeaves, hashPair(BigInt.toHex(b), BigInt.toHex(a)))
+				layer[writeIdx] = hashPair(BigInt.toHex(b), BigInt.toHex(a))
 			else
-				table.insert(newLeaves, hashPair(BigInt.toHex(a), BigInt.toHex(b)))
+				layer[writeIdx] = hashPair(BigInt.toHex(a), BigInt.toHex(b))
 			end
+		end
+		-- Trim the array to the new length
+		for i = writeIdx + 1, count do
+			layer[i] = nil :: any
 		end
 	end
 
-	return merkleRoot(newLeaves, hashPair)
+	return layer[1]
 end
 
 --------------------------------------------------------------------------------
@@ -218,16 +228,6 @@ end
 -- Type encoding
 --------------------------------------------------------------------------------
 
---- Check if a table contains a value.
-local function tableContains(t: { string }, val: string): boolean
-	for _, v in t do
-		if v == val then
-			return true
-		end
-	end
-	return false
-end
-
 --- Recursively get all type dependencies.
 function TypedData.getDependencies(
 	types: { [string]: any },
@@ -236,8 +236,15 @@ function TypedData.getDependencies(
 	contains: string?,
 	revision: string?
 ): { string }
-	local deps: { string } = dependencies or {}
 	local rev = revision or REVISION_LEGACY
+
+	-- Build O(1) hash-set from existing dependencies
+	local depsSet: { [string]: boolean } = {}
+	if dependencies then
+		for _, d in dependencies do
+			depsSet[d] = true
+		end
+	end
 
 	-- Determine the actual dependency types to process
 	local dependencyTypes: { string } = { typeName }
@@ -265,15 +272,20 @@ function TypedData.getDependencies(
 
 	-- Filter and recurse
 	local result: { string } = {}
+	local resultSet: { [string]: boolean } = {}
 	for _, depType in dependencyTypes do
-		if not tableContains(deps, depType) and not tableContains(result, depType) and types[depType] then
+		if not depsSet[depType] and not resultSet[depType] and types[depType] then
 			table.insert(result, depType)
+			resultSet[depType] = true
 
 			-- Recurse on all fields of this type
 			local fields = types[depType] :: { any }
+			-- Merge result into subDeps set for recursion
 			local subDeps: { string } = {}
+			local subDepsSet: { [string]: boolean } = {}
 			for _, v in result do
 				table.insert(subDeps, v)
+				subDepsSet[v] = true
 			end
 
 			for _, field in fields do
@@ -281,9 +293,11 @@ function TypedData.getDependencies(
 				local fieldContains = (field :: any).contains :: string?
 				local sub = TypedData.getDependencies(types, fieldType, subDeps, fieldContains, rev)
 				for _, s in sub do
-					if not tableContains(result, s) and not tableContains(subDeps, s) then
+					if not resultSet[s] and not subDepsSet[s] then
 						table.insert(result, s)
+						resultSet[s] = true
 						table.insert(subDeps, s)
+						subDepsSet[s] = true
 					end
 				end
 			end
