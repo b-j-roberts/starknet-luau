@@ -105,6 +105,7 @@ export type AvnuPaymaster = {
 		userAddress: string,
 		typedData: any,
 		signature: { string },
+		gasTokenAddress: string?,
 		options: PaymasterRpc.BuildTypedDataOptions?
 	) -> RpcTypes.Promise<PaymasterRpc.ExecuteResult>,
 	trackingIdToLatestHash: (
@@ -296,9 +297,10 @@ function AvnuPaymasterClass:executeTransaction(
 	userAddress: string,
 	typedData: any,
 	signature: { string },
+	gasTokenAddress: string?,
 	options: PaymasterRpc.BuildTypedDataOptions?
 ): any
-	return self._inner:executeTransaction(userAddress, typedData, signature, options)
+	return self._inner:executeTransaction(userAddress, typedData, signature, gasTokenAddress, options)
 end
 
 --- Map a tracking ID to the latest transaction hash.

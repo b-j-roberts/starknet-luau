@@ -427,7 +427,7 @@ Fix incorrect implementations and correctness issues.
 **Description**: `executeTransaction()` hardcodes `fee_mode.mode = "sponsored"` regardless of input, unlike `buildTypedData()` which correctly determines mode based on `gasTokenAddress`.
 
 **Requirements**:
-- [ ] Either accept `gasTokenAddress` parameter in `executeTransaction()` or pass through `feeMode` from the preceding `buildTypedData` result (ref: 08-paymaster.md §PaymasterRpc [fix])
+- [x] Either accept `gasTokenAddress` parameter in `executeTransaction()` or pass through `feeMode` from the preceding `buildTypedData` result (ref: 08-paymaster.md §PaymasterRpc [fix])
 
 ---
 

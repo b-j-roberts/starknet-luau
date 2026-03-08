@@ -586,6 +586,7 @@ describe("PaymasterRpc - executeTransaction", function()
 			"0xuser",
 			{ types = {}, primaryType = "OE", domain = {}, message = {} },
 			{ "0xr", "0xs" },
+			nil,
 			{
 				deploymentData = {
 					classHash = "0xclass99",
@@ -604,7 +605,7 @@ describe("PaymasterRpc - executeTransaction", function()
 		expect(dd.salt):toBe("0xsalt99")
 	end)
 
-	it("sets sponsored fee mode in parameters", function()
+	it("sets sponsored fee mode when gasTokenAddress is nil", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
@@ -616,6 +617,61 @@ describe("PaymasterRpc - executeTransaction", function()
 
 		local params = requestLog[#requestLog].params
 		expect(params[2].fee_mode.mode):toBe("sponsored")
+	end)
+
+	it("sets sponsored fee mode when gasTokenAddress is 0x0", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local pm = createTestPaymaster()
+		pm:executeTransaction(
+			"0xuser",
+			{ types = {}, primaryType = "OE", domain = {}, message = {} },
+			{ "0xr", "0xs" },
+			"0x0"
+		):expect()
+
+		local params = requestLog[#requestLog].params
+		expect(params[2].fee_mode.mode):toBe("sponsored")
+	end)
+
+	it("sets default fee mode with gas token when gasTokenAddress is provided", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local pm = createTestPaymaster()
+		pm:executeTransaction(
+			"0xuser",
+			{ types = {}, primaryType = "OE", domain = {}, message = {} },
+			{ "0xr", "0xs" },
+			"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+		):expect()
+
+		local params = requestLog[#requestLog].params
+		expect(params[2].fee_mode.mode):toBe("default")
+		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+	end)
+
+	it("passes gasTokenAddress with deployment data options", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local pm = createTestPaymaster()
+		pm:executeTransaction(
+			"0xuser",
+			{ types = {}, primaryType = "OE", domain = {}, message = {} },
+			{ "0xr", "0xs" },
+			"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			{
+				deploymentData = {
+					classHash = "0xclass",
+					calldata = { "0xpk" },
+					salt = "0xsalt",
+				},
+			}
+		):expect()
+
+		local params = requestLog[#requestLog].params
+		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
+		expect(params[2].fee_mode.mode):toBe("default")
+		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 end)
 
@@ -1190,6 +1246,7 @@ describe("PaymasterRpc - deployment data details", function()
 			"0xuser",
 			{ types = {}, primaryType = "OE", domain = {}, message = {} },
 			{ "0xr", "0xs" },
+			nil,
 			{
 				deploymentData = {
 					classHash = "0xc",

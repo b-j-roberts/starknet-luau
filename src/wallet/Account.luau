@@ -835,7 +835,9 @@ function Account:deployWithPaymaster(
 		-- Step 5: Execute via paymaster
 		local execOk, execResult = pcall(function()
 			return validated.paymaster
-				:executeTransaction(self.address, typedData, signature, { deploymentData = deploymentData })
+				:executeTransaction(self.address, typedData, signature, validated.gasTokenAddress, {
+					deploymentData = deploymentData,
+				})
 				:expect()
 		end)
 		if not execOk then
@@ -937,7 +939,9 @@ function Account:executePaymaster(calls: { any }, paymasterDetails: Interfaces.P
 
 		-- Step 4: Execute via paymaster
 		local execOk, execResult = pcall(function()
-			return validated.paymaster:executeTransaction(self.address, typedData, signature, options):expect()
+			return validated.paymaster
+				:executeTransaction(self.address, typedData, signature, validated.gasTokenAddress, options)
+				:expect()
 		end)
 		if not execOk then
 			reject(execResult)

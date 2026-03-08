@@ -85,6 +85,7 @@ export type PaymasterInterface = {
 		userAddress: string,
 		typedData: any,
 		signature: { string },
+		gasTokenAddress: string?,
 		options: any?
 	) -> any, -- Promise<ExecuteResult>
 	trackingIdToLatestHash: (self: PaymasterInterface, trackingId: string) -> any, -- Promise<TrackingResult>

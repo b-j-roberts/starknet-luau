@@ -533,6 +533,7 @@ describe("AvnuPaymaster - delegated methods", function()
 			"0xuser",
 			{ types = {}, primaryType = "OE", domain = {}, message = {} },
 			{ "0xr", "0xs" },
+			nil,
 			{
 				deploymentData = {
 					classHash = "0xc",
@@ -544,6 +545,22 @@ describe("AvnuPaymaster - delegated methods", function()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
 		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
+	end)
+
+	it("executeTransaction passes gasTokenAddress through for default fee mode", function()
+		resetPaymasterHandlers()
+		rpc.clearRequestLog()
+		local pm = createTestAvnuPaymaster()
+		pm:executeTransaction(
+			"0xuser",
+			{ types = {}, primaryType = "OE", domain = {}, message = {} },
+			{ "0xr", "0xs" },
+			"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+		):expect()
+
+		local params = rpc.requestLog[#rpc.requestLog].params
+		expect(params[2].fee_mode.mode):toBe("default")
+		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 end)
 

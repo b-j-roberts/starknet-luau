@@ -118,6 +118,7 @@ export type PaymasterRpc = {
 		userAddress: string,
 		typedData: any,
 		signature: { string },
+		gasTokenAddress: string?,
 		options: BuildTypedDataOptions?
 	) -> RpcTypes.Promise<ExecuteResult>,
 	trackingIdToLatestHash: (self: PaymasterRpc, trackingId: string) -> RpcTypes.Promise<TrackingResult>,
@@ -402,12 +403,14 @@ end
 --- @param userAddress -- the user's account address
 --- @param typedData -- the SNIP-12 typed data (from buildTypedData)
 --- @param signature -- the user's signature over the typed data [r, s]
+--- @param gasTokenAddress -- which token to pay fees in (nil or "0x0" for sponsored)
 --- @param options -- optional: deploymentData for deploy-via-paymaster
 --- @return Promise<ExecuteResult>
 function PaymasterRpcClass:executeTransaction(
 	userAddress: string,
 	typedData: any,
 	signature: { string },
+	gasTokenAddress: string?,
 	options: BuildTypedDataOptions?
 ): any
 	local invokeBody: any = {
@@ -418,7 +421,7 @@ function PaymasterRpcClass:executeTransaction(
 
 	local rpcParams = {
 		wrapWithDeployment(invokeBody, options),
-		buildParameters(), -- always sponsored for execution
+		buildParameters(gasTokenAddress),
 	}
 
 	return self:fetch("paymaster_executeTransaction", rpcParams):andThen(function(result: any)

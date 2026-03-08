@@ -1135,11 +1135,12 @@ local function createMockPaymaster(overrides: { [string]: any }?): any
 		})
 	end
 
-	function paymaster:executeTransaction(userAddress: string, typedData: any, signature: { string }, options: any?): any
+	function paymaster:executeTransaction(userAddress: string, typedData: any, signature: { string }, gasTokenAddress: string?, options: any?): any
 		table.insert(executeCalls, {
 			userAddress = userAddress,
 			typedData = typedData,
 			signature = signature,
+			gasTokenAddress = gasTokenAddress,
 			options = options or {},
 		})
 
