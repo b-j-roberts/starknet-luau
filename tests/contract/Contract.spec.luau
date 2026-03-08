@@ -8,6 +8,7 @@ local TestUtils = require("../helpers/TestUtils")
 --------------------------------------------------------------------------------
 
 local CONTRACT_ADDR = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+local NORMALIZED_ADDR = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
 -- Sample ERC-20 ABI (simplified Cairo ABI format)
 local ERC20_ABI: Contract.Abi = {
@@ -184,7 +185,7 @@ describe("Contract.new - constructor validation", function()
 			provider = provider,
 		})
 		expect(contract):toBeTruthy()
-		expect(contract.address):toBe(CONTRACT_ADDR)
+		expect(contract.address):toBe(NORMALIZED_ADDR)
 	end)
 
 	it("creates a contract with optional account", function()
@@ -421,7 +422,7 @@ describe("Contract:call - view functions", function()
 			if entry.method == "starknet_call" then
 				found = true
 				local req = entry.params[1]
-				expect(req.contract_address):toBe(CONTRACT_ADDR)
+				expect(req.contract_address):toBe(NORMALIZED_ADDR)
 			end
 		end
 		expect(found):toBe(true)
@@ -537,7 +538,7 @@ describe("Contract:populate - build Call objects", function()
 		})
 
 		local call = contract:populate("name")
-		expect(call.contractAddress):toBe(CONTRACT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_ADDR)
 		expect(call.entrypoint):toBe("name")
 		expect(#call.calldata):toBe(0)
 	end)
@@ -552,7 +553,7 @@ describe("Contract:populate - build Call objects", function()
 		})
 
 		local call = contract:populate("balance_of", { "0xdeadbeef" })
-		expect(call.contractAddress):toBe(CONTRACT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_ADDR)
 		expect(call.entrypoint):toBe("balance_of")
 		expect(#call.calldata):toBe(1)
 		expect(call.calldata[1]):toBe("0xdeadbeef")
@@ -569,7 +570,7 @@ describe("Contract:populate - build Call objects", function()
 
 		-- transfer(recipient, amount_u256)
 		local call = contract:populate("transfer", { "0xabcdef1234567890", "0x3e8" })
-		expect(call.contractAddress):toBe(CONTRACT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_ADDR)
 		expect(call.entrypoint):toBe("transfer")
 		-- recipient (1 felt) + u256 (2 felts) = 3 felts
 		expect(#call.calldata):toBe(3)
@@ -620,8 +621,8 @@ describe("Contract:populate - build Call objects", function()
 		local call2 = contract:populate("approve", { "0xbbb222", "0x7d0" })
 
 		-- Both should be valid Call objects
-		expect(call1.contractAddress):toBe(CONTRACT_ADDR)
-		expect(call2.contractAddress):toBe(CONTRACT_ADDR)
+		expect(call1.contractAddress):toBe(NORMALIZED_ADDR)
+		expect(call2.contractAddress):toBe(NORMALIZED_ADDR)
 		expect(call1.entrypoint):toBe("transfer")
 		expect(call2.entrypoint):toBe("approve")
 	end)

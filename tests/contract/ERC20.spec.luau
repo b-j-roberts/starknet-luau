@@ -8,6 +8,7 @@ local TestUtils = require("../helpers/TestUtils")
 --------------------------------------------------------------------------------
 
 local TOKEN_ADDR = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+local NORMALIZED_TOKEN_ADDR = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 local OWNER_ADDR = "0x1234567890abcdef1234567890abcdef12345678"
 local SPENDER_ADDR = "0xabcdef1234567890abcdef1234567890abcdef12"
 local RECIPIENT_ADDR = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
@@ -40,7 +41,7 @@ describe("ERC20.new - constructor", function()
 
 		local token = ERC20.new(TOKEN_ADDR, provider)
 		expect(token):toBeTruthy()
-		expect(token.address):toBe(TOKEN_ADDR)
+		expect(token.address):toBe(NORMALIZED_TOKEN_ADDR)
 	end)
 
 	it("creates an ERC20 instance with optional account", function()
@@ -50,7 +51,7 @@ describe("ERC20.new - constructor", function()
 
 		local token = ERC20.new(TOKEN_ADDR, provider, account)
 		expect(token):toBeTruthy()
-		expect(token.address):toBe(TOKEN_ADDR)
+		expect(token.address):toBe(NORMALIZED_TOKEN_ADDR)
 	end)
 
 	it("errors when address is missing", function()
@@ -228,7 +229,7 @@ describe("ERC20 - read methods (view)", function()
 			if entry.method == "starknet_call" then
 				found = true
 				local req = entry.params[1]
-				expect(req.contract_address):toBe(TOKEN_ADDR)
+				expect(req.contract_address):toBe(NORMALIZED_TOKEN_ADDR)
 				expect(#req.calldata):toBe(1)
 				expect(req.calldata[1]):toBe(OWNER_ADDR)
 			end
@@ -363,7 +364,7 @@ describe("ERC20 - populate for multicall", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local call = token:populate("transfer", { RECIPIENT_ADDR, "0x3e8" })
-		expect(call.contractAddress):toBe(TOKEN_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
 		expect(call.entrypoint):toBe("transfer")
 		-- recipient (1 felt) + u256 (2 felts) = 3
 		expect(#call.calldata):toBe(3)
@@ -375,7 +376,7 @@ describe("ERC20 - populate for multicall", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local call = token:populate("approve", { SPENDER_ADDR, "0x5f5e100" })
-		expect(call.contractAddress):toBe(TOKEN_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
 		expect(call.entrypoint):toBe("approve")
 		-- spender (1 felt) + u256 (2 felts) = 3
 		expect(#call.calldata):toBe(3)
@@ -387,7 +388,7 @@ describe("ERC20 - populate for multicall", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local call = token:populate("transfer_from", { OWNER_ADDR, RECIPIENT_ADDR, "0x3e8" })
-		expect(call.contractAddress):toBe(TOKEN_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
 		expect(call.entrypoint):toBe("transfer_from")
 		-- sender (1) + recipient (1) + u256 (2) = 4
 		expect(#call.calldata):toBe(4)
@@ -401,8 +402,8 @@ describe("ERC20 - populate for multicall", function()
 		local call1 = token:populate("approve", { SPENDER_ADDR, "0x5f5e100" })
 		local call2 = token:populate("transfer", { RECIPIENT_ADDR, "0x3e8" })
 
-		expect(call1.contractAddress):toBe(TOKEN_ADDR)
-		expect(call2.contractAddress):toBe(TOKEN_ADDR)
+		expect(call1.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
+		expect(call2.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
 		expect(call1.entrypoint):toBe("approve")
 		expect(call2.entrypoint):toBe("transfer")
 	end)

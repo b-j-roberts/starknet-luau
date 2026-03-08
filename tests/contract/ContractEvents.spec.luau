@@ -9,6 +9,7 @@ local TestUtils = require("../helpers/TestUtils")
 --------------------------------------------------------------------------------
 
 local CONTRACT_ADDR = TestUtils.TEST_ADDRESS
+local NORMALIZED_ADDR = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
 -- Compute selectors for test events
 local TRANSFER_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
@@ -575,7 +576,7 @@ describe("Contract:queryEvents", function()
 			if entry.method == "starknet_getEvents" then
 				found = true
 				local filter = entry.params[1].filter
-				expect(filter.address):toBe(CONTRACT_ADDR)
+				expect(filter.address):toBe(NORMALIZED_ADDR)
 			end
 		end
 		expect(found):toBe(true)
@@ -691,5 +692,72 @@ describe("Contract:parseEvents - address normalization", function()
 
 		local parsed = contract:parseEvents(receipt)
 		expect(#parsed):toBe(1)
+	end)
+
+	it("matches events with leading-zero mismatch (0x049d vs 0x49d)", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		-- Contract created with leading zero in address
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			provider = provider,
+		})
+
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				{
+					-- RPC returns address WITHOUT leading zero
+					from_address = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8", "0x0" },
+				},
+			},
+		}
+
+		local parsed = contract:parseEvents(receipt)
+		expect(#parsed):toBe(1)
+		expect(parsed[1].name):toBe("Transfer")
+	end)
+
+	it("matches events when contract has no leading zero but event does", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		-- Contract created WITHOUT leading zero
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			provider = provider,
+		})
+
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				{
+					-- RPC returns address WITH leading zero
+					from_address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8", "0x0" },
+				},
+			},
+		}
+
+		local parsed = contract:parseEvents(receipt)
+		expect(#parsed):toBe(1)
+		expect(parsed[1].name):toBe("Transfer")
+	end)
+
+	it("normalizes contract address on construction", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			provider = provider,
+		})
+
+		-- Public address should be normalized (leading zero stripped)
+		expect(contract.address):toBe("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 end)

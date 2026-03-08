@@ -8,6 +8,7 @@ local TestUtils = require("../helpers/TestUtils")
 --------------------------------------------------------------------------------
 
 local NFT_ADDR = "0x076503062d78f4481be03c9145022d6a4a71ec0719aa07756f79a2384dc7ef16"
+local NORMALIZED_NFT_ADDR = "0x76503062d78f4481be03c9145022d6a4a71ec0719aa07756f79a2384dc7ef16"
 local OWNER_ADDR = "0x1234567890abcdef1234567890abcdef12345678"
 local OPERATOR_ADDR = "0xabcdef1234567890abcdef1234567890abcdef12"
 local RECIPIENT_ADDR = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
@@ -44,7 +45,7 @@ describe("ERC721.new - constructor", function()
 
 		local nft = ERC721.new(NFT_ADDR, provider)
 		expect(nft):toBeTruthy()
-		expect(nft.address):toBe(NFT_ADDR)
+		expect(nft.address):toBe(NORMALIZED_NFT_ADDR)
 	end)
 
 	it("creates an ERC721 instance with optional account", function()
@@ -54,7 +55,7 @@ describe("ERC721.new - constructor", function()
 
 		local nft = ERC721.new(NFT_ADDR, provider, account)
 		expect(nft):toBeTruthy()
-		expect(nft.address):toBe(NFT_ADDR)
+		expect(nft.address):toBe(NORMALIZED_NFT_ADDR)
 	end)
 
 	it("errors when address is missing", function()
@@ -268,7 +269,7 @@ describe("ERC721 - read methods (view)", function()
 			if entry.method == "starknet_call" then
 				found = true
 				local req = entry.params[1]
-				expect(req.contract_address):toBe(NFT_ADDR)
+				expect(req.contract_address):toBe(NORMALIZED_NFT_ADDR)
 				-- u256 token_id = 2 felts (low, high)
 				expect(#req.calldata):toBe(2)
 			end
@@ -413,7 +414,7 @@ describe("ERC721 - populate for multicall", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local call = nft:populate("transfer_from", { OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1 })
-		expect(call.contractAddress):toBe(NFT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_NFT_ADDR)
 		expect(call.entrypoint):toBe("transfer_from")
 		-- from (1) + to (1) + u256 token_id (2) = 4
 		expect(#call.calldata):toBe(4)
@@ -425,7 +426,7 @@ describe("ERC721 - populate for multicall", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local call = nft:populate("approve", { OPERATOR_ADDR, TOKEN_ID_1 })
-		expect(call.contractAddress):toBe(NFT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_NFT_ADDR)
 		expect(call.entrypoint):toBe("approve")
 		-- to (1) + u256 token_id (2) = 3
 		expect(#call.calldata):toBe(3)
@@ -437,7 +438,7 @@ describe("ERC721 - populate for multicall", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local call = nft:populate("set_approval_for_all", { OPERATOR_ADDR, true })
-		expect(call.contractAddress):toBe(NFT_ADDR)
+		expect(call.contractAddress):toBe(NORMALIZED_NFT_ADDR)
 		expect(call.entrypoint):toBe("set_approval_for_all")
 		-- operator (1) + bool (1) = 2
 		expect(#call.calldata):toBe(2)
@@ -451,8 +452,8 @@ describe("ERC721 - populate for multicall", function()
 		local call1 = nft:populate("approve", { OPERATOR_ADDR, TOKEN_ID_1 })
 		local call2 = nft:populate("transfer_from", { OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_42 })
 
-		expect(call1.contractAddress):toBe(NFT_ADDR)
-		expect(call2.contractAddress):toBe(NFT_ADDR)
+		expect(call1.contractAddress):toBe(NORMALIZED_NFT_ADDR)
+		expect(call2.contractAddress):toBe(NORMALIZED_NFT_ADDR)
 		expect(call1.entrypoint):toBe("approve")
 		expect(call2.entrypoint):toBe("transfer_from")
 	end)

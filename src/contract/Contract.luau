@@ -8,6 +8,7 @@ local StarkField = require("../crypto/StarkField")
 local CallData = require("../tx/CallData")
 local AbiCodec = require("./AbiCodec")
 local Interfaces = require("../shared/interfaces")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -283,9 +284,12 @@ function Contract.new(config: ContractConfig): any
 	local functions, typeMap = parseAbi(config.abi)
 	local eventDefs = parseAbiEvents(config.abi)
 
+	local normalizedAddress = HexUtils.normalizeHex(config.address)
+
 	local self = setmetatable({
 		abi = config.abi,
-		address = config.address,
+		address = normalizedAddress,
+		_normalizedAddress = normalizedAddress,
 		_provider = config.provider,
 		_account = config.account,
 		_functions = functions,
@@ -393,7 +397,7 @@ function Contract:parseEvents(receipt: any): { any }
 	local self_: any = self
 	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
 	local typeMap: AbiCodec.TypeMap = self_._typeMap
-	local contractAddress: string = string.lower(self_.address)
+	local contractAddress: string = self_._normalizedAddress
 
 	local rawEvents = receipt.events
 	if not rawEvents then
@@ -402,8 +406,8 @@ function Contract:parseEvents(receipt: any): { any }
 
 	local parsed: { any } = {}
 	for _, event in rawEvents :: { any } do
-		-- Filter by contract address
-		local fromAddr: string = string.lower(event.from_address or "")
+		-- Filter by contract address (normalize to handle leading-zero differences)
+		local fromAddr: string = HexUtils.normalizeHex(event.from_address or "0x0")
 		if fromAddr == contractAddress then
 			-- Match event by selector (keys[1])
 			local keys: { string } = event.keys or {}

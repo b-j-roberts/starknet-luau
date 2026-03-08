@@ -15,6 +15,7 @@ local OutsideExecution = require("./OutsideExecution")
 local ERC20 = require("../contract/ERC20")
 local Constants = require("../constants")
 local Interfaces = require("../shared/interfaces")
+local HexUtils = require("../shared/HexUtils")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -482,7 +483,7 @@ function Account.new(config: {
 	end
 
 	local self = setmetatable({
-		address = config.address,
+		address = HexUtils.normalizeHex(config.address),
 		signer = config.signer,
 		_provider = config.provider,
 		_builder = TransactionBuilder.new(config.provider),

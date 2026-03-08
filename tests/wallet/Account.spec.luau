@@ -320,6 +320,20 @@ describe("Account.new", function()
 			})
 		end):toThrowType("ValidationError")
 	end)
+
+	it("normalizes address with leading zeros on construction", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_1)
+
+		local account = Account.new({
+			address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+			signer = signer,
+			provider = provider,
+		})
+		-- Leading zero should be stripped via BigInt roundtrip normalization
+		expect(account.address):toBe("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+	end)
 end)
 
 --------------------------------------------------------------------------------
@@ -1011,7 +1025,7 @@ describe("Account.new - explicit address", function()
 		for _, entry in requestLog do
 			if entry.method == "starknet_addInvokeTransaction" then
 				local tx = entry.params[1]
-				expect(tx.sender_address):toBe(customAddress)
+				expect(tx.sender_address):toBe("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 			end
 		end
 	end)

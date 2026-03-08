@@ -20,6 +20,10 @@ local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a208
 local STRK_TOKEN = Constants.STRK_TOKEN_ADDRESS
 local ETH_TOKEN = Constants.ETH_TOKEN_ADDRESS
 
+-- Normalized token addresses (leading zeros stripped via BigInt roundtrip in Contract.new)
+local NORMALIZED_STRK_TOKEN = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+local NORMALIZED_ETH_TOKEN = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+
 -- Keccak selectors (computed by Contract internally, we match in mock)
 -- balance_of selector = starknet_keccak("balance_of") masked to 251 bits
 -- We match on method ("starknet_call") and return balance regardless of selector
@@ -410,7 +414,7 @@ describe("Account.checkDeploymentBalance", function()
 		for _, entry in requestLog do
 			if entry.method == "starknet_call" then
 				foundCall = true
-				expect(entry.params[1].contract_address):toBe(STRK_TOKEN)
+				expect(entry.params[1].contract_address):toBe(NORMALIZED_STRK_TOKEN)
 			end
 		end
 		expect(foundCall).toBeTruthy()
@@ -437,7 +441,7 @@ describe("Account.checkDeploymentBalance", function()
 		for _, entry in requestLog do
 			if entry.method == "starknet_call" then
 				foundCall = true
-				expect(entry.params[1].contract_address):toBe(ETH_TOKEN)
+				expect(entry.params[1].contract_address):toBe(NORMALIZED_ETH_TOKEN)
 			end
 		end
 		expect(foundCall).toBeTruthy()
