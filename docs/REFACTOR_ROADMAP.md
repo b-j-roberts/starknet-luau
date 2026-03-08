@@ -532,12 +532,12 @@ Optimization opportunities identified during the audit. All are low priority sin
 
 ---
 
-### R.4.7 Build _eventsByName Lookup in Contract
+### R.4.7 Build _eventsByName Lookup in Contract ✅
 
 **Description**: `hasEvent()` is O(n) linear scan vs O(1) `hasFunction()` because events are keyed by selector hex.
 
 **Requirements**:
-- [ ] Maintain parallel `_eventsByName` lookup table built in `parseAbiEvents()` (ref: 07-contract.md §Contract [refactor])
+- [x] Maintain parallel `_eventsByName` lookup table built in `parseAbiEvents()` (ref: 07-contract.md §Contract [refactor])
 
 ---
 

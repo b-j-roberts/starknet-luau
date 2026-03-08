@@ -136,8 +136,9 @@ end
 --- Parse event definitions from ABI.
 --- Handles both modern Cairo format (kind="struct" with key/data members)
 --- and legacy format (inputs array, all treated as data).
-local function parseAbiEvents(abi: Abi): { [string]: AbiCodec.EventDef }
+local function parseAbiEvents(abi: Abi): ({ [string]: AbiCodec.EventDef }, { [string]: AbiCodec.EventDef })
 	local events: { [string]: AbiCodec.EventDef } = {}
+	local eventsByName: { [string]: AbiCodec.EventDef } = {}
 
 	local function addEvent(entry: any)
 		local name: string = entry.name or ""
@@ -166,12 +167,14 @@ local function parseAbiEvents(abi: Abi): { [string]: AbiCodec.EventDef }
 			end
 		end
 
-		events[selectorHex] = {
+		local def = {
 			name = shortName,
 			selector = selectorHex,
 			keyMembers = keyMembers,
 			dataMembers = dataMembers,
 		}
+		events[selectorHex] = def
+		eventsByName[shortName] = def
 	end
 
 	for _, entry_ in abi do
@@ -193,7 +196,7 @@ local function parseAbiEvents(abi: Abi): { [string]: AbiCodec.EventDef }
 		end
 	end
 
-	return events
+	return events, eventsByName
 end
 
 -- NOTE: Type encoding/decoding is now handled by AbiCodec module
@@ -309,7 +312,7 @@ function Contract.new(config: ContractConfig): any
 	end
 
 	local functions, typeMap = parseAbi(config.abi)
-	local eventDefs = parseAbiEvents(config.abi)
+	local eventDefs, eventsByName = parseAbiEvents(config.abi)
 
 	local normalizedAddress = HexUtils.normalizeHex(config.address)
 
@@ -321,6 +324,7 @@ function Contract.new(config: ContractConfig): any
 		_account = config.account,
 		_functions = functions,
 		_events = eventDefs,
+		_eventsByName = eventsByName,
 		_typeMap = typeMap,
 	}, Contract)
 
@@ -497,14 +501,10 @@ end
 --- Get the list of event names in the ABI.
 function Contract:getEvents(): { string }
 	local self_: any = self
-	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
+	local eventsByName: { [string]: AbiCodec.EventDef } = self_._eventsByName
 	local names: { string } = {}
-	local seen: { [string]: boolean } = {}
-	for _, def in eventDefs do
-		if not seen[def.name] then
-			table.insert(names, def.name)
-			seen[def.name] = true
-		end
+	for name in eventsByName do
+		table.insert(names, name)
 	end
 	table.sort(names)
 	return names
@@ -513,13 +513,8 @@ end
 --- Check if an event exists in the ABI.
 function Contract:hasEvent(name: string): boolean
 	local self_: any = self
-	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
-	for _, def in eventDefs do
-		if def.name == name then
-			return true
-		end
-	end
-	return false
+	local eventsByName: { [string]: AbiCodec.EventDef } = self_._eventsByName
+	return eventsByName[name] ~= nil
 end
 
 return Contract
