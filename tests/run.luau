@@ -3,6 +3,43 @@ local process = require("@lune/process")
 local fs = require("@lune/fs")
 
 -- Minimal test runner
+
+local function deepEqual(a: any, b: any): boolean
+	if a == b then
+		return true
+	end
+	if type(a) ~= type(b) then
+		return false
+	end
+	if type(a) == "table" then
+		for k, v in a do
+			if not deepEqual(v, (b :: any)[k]) then
+				return false
+			end
+		end
+		for k in b :: any do
+			if (a :: any)[k] == nil then
+				return false
+			end
+		end
+		return true
+	end
+	if type(a) == "buffer" then
+		local bufA = a :: buffer
+		local bufB = b :: buffer
+		if buffer.len(bufA) ~= buffer.len(bufB) then
+			return false
+		end
+		for i = 0, buffer.len(bufA) - 1 do
+			if buffer.readu8(bufA, i) ~= buffer.readu8(bufB, i) then
+				return false
+			end
+		end
+		return true
+	end
+	return false
+end
+
 local totalPassed = 0
 local totalFailed = 0
 local failures: { string } = {}
@@ -49,7 +86,7 @@ function expect(value: any)
 			end
 		end,
 		toEqual = function(_, expected: any)
-			if value ~= expected then
+			if not deepEqual(value, expected) then
 				error(`Expected {expected}, got {value}`, 2)
 			end
 		end,

@@ -96,9 +96,11 @@ function MockPromise:expect(): any
 	if self._status == "Resolved" then
 		return self._value
 	elseif self._status == "Rejected" then
-		error(self._value)
+		-- Preserve structured error identity (tables pass through error() unchanged)
+		-- Level 2 points stack trace at the caller, not this method
+		error(self._value, 2)
 	end
-	error("Promise is still pending")
+	error("Promise is still pending", 2)
 end
 
 function MockPromise:getStatus(): Status
