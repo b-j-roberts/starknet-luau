@@ -709,7 +709,7 @@ describe("OutsideExecution - Error handling", function()
 	it("throws for empty calls array", function()
 		expect(function()
 			OutsideExecution.getTypedData(makeConfig({ calls = {} }))
-		end):toThrowCode(6000)
+		end):toThrowCode(6002)
 	end)
 
 	it("throws INVALID_TIME_BOUNDS for execute_after >= execute_before", function()

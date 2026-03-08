@@ -216,7 +216,7 @@ function OutsideExecution.getTypedData(config: GetTypedDataConfig): { [string]: 
 		error(
 			StarknetError.validation(
 				"Outside execution requires at least one call",
-				ErrorCodes.OUTSIDE_EXECUTION_ERROR.code
+				ErrorCodes.CALL_VALIDATION_FAILED.code
 			)
 		)
 	end

@@ -108,8 +108,8 @@ export type SponsoredExecuteResult = {
 --- Transient: HTTP 502/503/504, network errors, rate limits, paymaster unavailable.
 --- Deterministic paymaster errors (invalid signature, etc.) are NOT transient.
 local function isTransientError(err: any): boolean
-	if type(err) ~= "table" then
-		return true -- raw string errors from network are treated as transient
+	if not StarknetError.isStarknetError(err) then
+		return true -- raw string/non-structured errors from network are treated as transient
 	end
 	-- HTTP gateway errors (502/503/504)
 	local rpcCode = err.rpcCode

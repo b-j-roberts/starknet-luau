@@ -1,74 +1,104 @@
 --!strict
 -- ErrorCodes: Numeric error code constants for the starknet-luau SDK
 -- Codes are segmented by category for easy identification.
+--
+-- Code ranges:
+--   1000-1099  Validation errors
+--   2000-2099  RPC / Network errors
+--   3000-3099  Signing / Crypto errors (3002 intentionally skipped)
+--   4000-4099  ABI / Encoding errors
+--   5000-5099  Transaction errors
+--   6000-6099  Outside Execution (SNIP-9) errors
+--   7000-7099  Paymaster (SNIP-29) errors
+--
+-- Domain crossover notes:
+--   TRANSACTION_REVERTED (2004) and TRANSACTION_REJECTED (2005) live in the 2xxx RPC range
+--   because they originate from RPC polling (waitForTransaction), but are raised via
+--   StarknetError.transaction() since they represent transaction-level failures.
 
 local ErrorCodes = {}
 
+-- Helper: creates an error code entry. Name is auto-set from the table key below.
+local function code(num: number): { code: number, name: string }
+	return { code = num, name = "" }
+end
+
 -- 1000-1099: Validation errors
-ErrorCodes.INVALID_ARGUMENT = { code = 1000, name = "INVALID_ARGUMENT" }
-ErrorCodes.REQUIRED_FIELD = { code = 1001, name = "REQUIRED_FIELD" }
-ErrorCodes.OUT_OF_RANGE = { code = 1002, name = "OUT_OF_RANGE" }
-ErrorCodes.INVALID_FORMAT = { code = 1003, name = "INVALID_FORMAT" }
+ErrorCodes.INVALID_ARGUMENT = code(1000)
+ErrorCodes.REQUIRED_FIELD = code(1001)
+-- 1002: removed (OUT_OF_RANGE was unused; KEY_OUT_OF_RANGE at 3003 serves range checks)
+ErrorCodes.INVALID_FORMAT = code(1003)
 
 -- 2000-2099: RPC / Network errors
-ErrorCodes.RPC_ERROR = { code = 2000, name = "RPC_ERROR" }
-ErrorCodes.NETWORK_ERROR = { code = 2001, name = "NETWORK_ERROR" }
-ErrorCodes.RATE_LIMIT = { code = 2002, name = "RATE_LIMIT" }
-ErrorCodes.TIMEOUT = { code = 2003, name = "TIMEOUT" }
-ErrorCodes.TRANSACTION_REVERTED = { code = 2004, name = "TRANSACTION_REVERTED" }
-ErrorCodes.TRANSACTION_REJECTED = { code = 2005, name = "TRANSACTION_REJECTED" }
-ErrorCodes.QUEUE_FULL = { code = 2010, name = "QUEUE_FULL" }
-ErrorCodes.BATCH_ERROR = { code = 2011, name = "BATCH_ERROR" }
-ErrorCodes.CACHE_ERROR = { code = 2012, name = "CACHE_ERROR" }
-ErrorCodes.NONCE_FETCH_ERROR = { code = 2013, name = "NONCE_FETCH_ERROR" }
-ErrorCodes.NONCE_EXHAUSTED = { code = 2014, name = "NONCE_EXHAUSTED" }
-ErrorCodes.NONCE_MANAGER_ERROR = { code = 2015, name = "NONCE_MANAGER_ERROR" }
+ErrorCodes.RPC_ERROR = code(2000)
+ErrorCodes.NETWORK_ERROR = code(2001)
+ErrorCodes.RATE_LIMIT = code(2002)
+ErrorCodes.TIMEOUT = code(2003)
+-- 2004-2005: transaction status codes from RPC polling — see domain crossover note above
+ErrorCodes.TRANSACTION_REVERTED = code(2004)
+ErrorCodes.TRANSACTION_REJECTED = code(2005)
+ErrorCodes.QUEUE_FULL = code(2010)
+ErrorCodes.BATCH_ERROR = code(2011)
+-- 2012: removed (CACHE_ERROR was unused)
+ErrorCodes.NONCE_FETCH_ERROR = code(2013)
+-- 2014: moved to 5004 (NONCE_EXHAUSTED — used with StarknetError.transaction())
+ErrorCodes.NONCE_MANAGER_ERROR = code(2015)
 
 -- 3000-3099: Signing / Crypto errors
-ErrorCodes.SIGNING_ERROR = { code = 3000, name = "SIGNING_ERROR" }
-ErrorCodes.INVALID_PRIVATE_KEY = { code = 3001, name = "INVALID_PRIVATE_KEY" }
-ErrorCodes.KEY_OUT_OF_RANGE = { code = 3003, name = "KEY_OUT_OF_RANGE" }
-ErrorCodes.MATH_ERROR = { code = 3010, name = "MATH_ERROR" }
+ErrorCodes.SIGNING_ERROR = code(3000)
+ErrorCodes.INVALID_PRIVATE_KEY = code(3001)
+-- 3002: intentionally skipped (no current use case in signing range)
+ErrorCodes.KEY_OUT_OF_RANGE = code(3003)
+ErrorCodes.MATH_ERROR = code(3010)
 
 -- 4000-4099: ABI / Encoding errors
-ErrorCodes.ABI_ERROR = { code = 4000, name = "ABI_ERROR" }
-ErrorCodes.UNKNOWN_TYPE = { code = 4001, name = "UNKNOWN_TYPE" }
-ErrorCodes.ENCODE_ERROR = { code = 4002, name = "ENCODE_ERROR" }
-ErrorCodes.DECODE_ERROR = { code = 4003, name = "DECODE_ERROR" }
-ErrorCodes.UNKNOWN_ENUM_VARIANT = { code = 4004, name = "UNKNOWN_ENUM_VARIANT" }
-ErrorCodes.FUNCTION_NOT_FOUND = { code = 4005, name = "FUNCTION_NOT_FOUND" }
-ErrorCodes.ARGUMENT_COUNT = { code = 4006, name = "ARGUMENT_COUNT" }
+ErrorCodes.ABI_ERROR = code(4000)
+ErrorCodes.UNKNOWN_TYPE = code(4001)
+ErrorCodes.ENCODE_ERROR = code(4002)
+ErrorCodes.DECODE_ERROR = code(4003)
+ErrorCodes.UNKNOWN_ENUM_VARIANT = code(4004)
+ErrorCodes.FUNCTION_NOT_FOUND = code(4005)
+ErrorCodes.ARGUMENT_COUNT = code(4006)
 
 -- 5000-5099: Transaction errors
-ErrorCodes.TRANSACTION_ERROR = { code = 5000, name = "TRANSACTION_ERROR" }
-ErrorCodes.FEE_ESTIMATION_FAILED = { code = 5001, name = "FEE_ESTIMATION_FAILED" }
-ErrorCodes.INSUFFICIENT_BALANCE = { code = 5002, name = "INSUFFICIENT_BALANCE" }
-ErrorCodes.BATCH_DEPLOY_ERROR = { code = 5003, name = "BATCH_DEPLOY_ERROR" }
+ErrorCodes.TRANSACTION_ERROR = code(5000)
+ErrorCodes.FEE_ESTIMATION_FAILED = code(5001)
+-- 5002: removed (INSUFFICIENT_BALANCE was unused)
+ErrorCodes.BATCH_DEPLOY_ERROR = code(5003)
+ErrorCodes.NONCE_EXHAUSTED = code(5004)
 
 -- 6000-6099: Outside Execution (SNIP-9) errors
-ErrorCodes.OUTSIDE_EXECUTION_ERROR = { code = 6000, name = "OUTSIDE_EXECUTION_ERROR" }
-ErrorCodes.INVALID_VERSION = { code = 6001, name = "INVALID_VERSION" }
-ErrorCodes.CALL_VALIDATION_FAILED = { code = 6002, name = "CALL_VALIDATION_FAILED" }
-ErrorCodes.MISSING_FEE_MODE = { code = 6003, name = "MISSING_FEE_MODE" }
-ErrorCodes.INVALID_TIME_BOUNDS = { code = 6004, name = "INVALID_TIME_BOUNDS" }
+-- 6000: removed (OUTSIDE_EXECUTION_ERROR was generic; use specific codes below)
+ErrorCodes.INVALID_VERSION = code(6001)
+ErrorCodes.CALL_VALIDATION_FAILED = code(6002)
+ErrorCodes.MISSING_FEE_MODE = code(6003)
+ErrorCodes.INVALID_TIME_BOUNDS = code(6004)
 
 -- 7000-7099: Paymaster (SNIP-29) errors
-ErrorCodes.PAYMASTER_ERROR = { code = 7000, name = "PAYMASTER_ERROR" }
-ErrorCodes.PAYMASTER_UNAVAILABLE = { code = 7001, name = "PAYMASTER_UNAVAILABLE" }
-ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED = { code = 7002, name = "PAYMASTER_TOKEN_NOT_SUPPORTED" }
-ErrorCodes.PAYMASTER_INVALID_SIGNATURE = { code = 7003, name = "PAYMASTER_INVALID_SIGNATURE" }
-ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW = { code = 7004, name = "PAYMASTER_MAX_AMOUNT_TOO_LOW" }
-ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA = { code = 7005, name = "PAYMASTER_INVALID_DEPLOYMENT_DATA" }
-ErrorCodes.PAYMASTER_EXECUTION_ERROR = { code = 7006, name = "PAYMASTER_EXECUTION_ERROR" }
-ErrorCodes.PAYMASTER_INVALID_ADDRESS = { code = 7007, name = "PAYMASTER_INVALID_ADDRESS" }
-ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED = { code = 7008, name = "PAYMASTER_CLASS_HASH_NOT_SUPPORTED" }
-ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED = { code = 7009, name = "PAYMASTER_CALL_VALIDATION_FAILED" }
-ErrorCodes.PAYMASTER_POLICY_REJECTED = { code = 7010, name = "PAYMASTER_POLICY_REJECTED" }
-ErrorCodes.BUDGET_ERROR = { code = 7011, name = "BUDGET_ERROR" }
-ErrorCodes.INSUFFICIENT_BUDGET = { code = 7012, name = "INSUFFICIENT_BUDGET" }
-ErrorCodes.DATASTORE_ERROR = { code = 7013, name = "DATASTORE_ERROR" }
-ErrorCodes.INVALID_AMOUNT = { code = 7014, name = "INVALID_AMOUNT" }
-ErrorCodes.SPONSORED_EXECUTION_FAILED = { code = 7020, name = "SPONSORED_EXECUTION_FAILED" }
+-- 7000 is the generic fallback for unmapped paymaster RPC error codes (157, 160, 163)
+ErrorCodes.PAYMASTER_ERROR = code(7000)
+ErrorCodes.PAYMASTER_UNAVAILABLE = code(7001)
+ErrorCodes.PAYMASTER_TOKEN_NOT_SUPPORTED = code(7002)
+ErrorCodes.PAYMASTER_INVALID_SIGNATURE = code(7003)
+ErrorCodes.PAYMASTER_MAX_AMOUNT_TOO_LOW = code(7004)
+ErrorCodes.PAYMASTER_INVALID_DEPLOYMENT_DATA = code(7005)
+ErrorCodes.PAYMASTER_EXECUTION_ERROR = code(7006)
+ErrorCodes.PAYMASTER_INVALID_ADDRESS = code(7007)
+ErrorCodes.PAYMASTER_CLASS_HASH_NOT_SUPPORTED = code(7008)
+ErrorCodes.PAYMASTER_CALL_VALIDATION_FAILED = code(7009)
+ErrorCodes.PAYMASTER_POLICY_REJECTED = code(7010)
+ErrorCodes.BUDGET_ERROR = code(7011)
+ErrorCodes.INSUFFICIENT_BUDGET = code(7012)
+ErrorCodes.DATASTORE_ERROR = code(7013)
+ErrorCodes.INVALID_AMOUNT = code(7014)
+ErrorCodes.SPONSORED_EXECUTION_FAILED = code(7020)
+
+-- Auto-generate `name` from the table key to prevent key/name divergence
+for key, entry in pairs(ErrorCodes) do
+	if type(entry) == "table" and entry.code then
+		entry.name = key
+	end
+end
 
 --- Transient error codes that may succeed on retry.
 local TRANSIENT_CODES: { [number]: boolean } = {

@@ -385,13 +385,4 @@ export type EventPollerConfig = {
 	_clock: (() -> number)?,
 }
 
---- Error type constants
-RpcTypes.ErrorTypes = {
-	RPC_ERROR = "RPC_ERROR",
-	NETWORK_ERROR = "NETWORK_ERROR",
-	RATE_LIMIT = "RATE_LIMIT",
-	TIMEOUT = "TIMEOUT",
-	INVALID_ARGUMENT = "INVALID_ARGUMENT",
-}
-
 return RpcTypes

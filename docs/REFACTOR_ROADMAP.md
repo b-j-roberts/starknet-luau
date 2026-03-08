@@ -313,13 +313,13 @@ Improve type annotations, define shared interfaces, fix API inconsistencies, and
 **Description**: Dead error codes, numbering gaps, domain mismatches between numeric ranges and error subtypes.
 
 **Requirements**:
-- [ ] Remove or document 5 dead error codes: `OUT_OF_RANGE` (1002), `INSUFFICIENT_BALANCE` (5002), `CACHE_ERROR` (2012), `OUTSIDE_EXECUTION_ERROR` (6000), `PAYMASTER_ERROR` (7000) (ref: 02-errors.md §ErrorCodes [api])
-- [ ] Document skipped code 3002 in signing range (ref: 02-errors.md §ErrorCodes [refactor])
-- [ ] Document `TRANSACTION_REVERTED` (2004) / `TRANSACTION_REJECTED` (2005) crossover: in 2000 RPC range but used with `StarknetError.transaction()` (ref: 02-errors.md §ErrorCodes [refactor])
-- [ ] Fix `NONCE_EXHAUSTED` (2014) domain mismatch — 2xxx code used with `StarknetError.transaction()` in NonceManager (ref: 14-cross-cutting.md §5)
-- [ ] Remove `RpcTypes.ErrorTypes` dead code (lines 376-382, 5 error type constants never referenced) (ref: 04-provider.md §RpcTypes [api])
-- [ ] Consider generating ErrorCodes `name` from table key to prevent key/name divergence (ref: 02-errors.md §ErrorCodes [refactor])
-- [ ] Audit `isStarknetError()` — never called in production code; either dogfood it or document as test-only utility (ref: 02-errors.md §StarknetError [api])
+- [x] Remove or document 5 dead error codes: `OUT_OF_RANGE` (1002), `INSUFFICIENT_BALANCE` (5002), `CACHE_ERROR` (2012), `OUTSIDE_EXECUTION_ERROR` (6000), `PAYMASTER_ERROR` (7000) (ref: 02-errors.md §ErrorCodes [api])
+- [x] Document skipped code 3002 in signing range (ref: 02-errors.md §ErrorCodes [refactor])
+- [x] Document `TRANSACTION_REVERTED` (2004) / `TRANSACTION_REJECTED` (2005) crossover: in 2000 RPC range but used with `StarknetError.transaction()` (ref: 02-errors.md §ErrorCodes [refactor])
+- [x] Fix `NONCE_EXHAUSTED` (2014) domain mismatch — 2xxx code used with `StarknetError.transaction()` in NonceManager (ref: 14-cross-cutting.md §5)
+- [x] Remove `RpcTypes.ErrorTypes` dead code (lines 376-382, 5 error type constants never referenced) (ref: 04-provider.md §RpcTypes [api])
+- [x] Consider generating ErrorCodes `name` from table key to prevent key/name divergence (ref: 02-errors.md §ErrorCodes [refactor])
+- [x] Audit `isStarknetError()` — never called in production code; either dogfood it or document as test-only utility (ref: 02-errors.md §StarknetError [api])
 
 ---
 
