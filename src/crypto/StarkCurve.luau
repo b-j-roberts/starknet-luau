@@ -194,8 +194,10 @@ function StarkCurve.jacobianAdd(p1: JacobianPoint, p2: JacobianPoint): JacobianP
 end
 
 --------------------------------------------------------------------------------
--- Scalar multiplication (left-to-right double-and-add)
--- Returns INFINITY sentinel for k=0
+-- Scalar multiplication (4-bit windowed method)
+-- Precomputes table[1..15] = i*P, then processes scalar in 4-bit windows.
+-- Reduces additions from ~126 to ~63 for 252-bit scalars (~40% fewer additions).
+-- Returns INFINITY sentinel for k=0.
 --------------------------------------------------------------------------------
 
 function StarkCurve.scalarMul(p: AffinePoint, k: buffer): AffinePoint
@@ -205,12 +207,88 @@ function StarkCurve.scalarMul(p: AffinePoint, k: buffer): AffinePoint
 	end
 
 	local jP = StarkCurve.jacobianFromAffine(p)
+
+	-- Precompute: precomp[i] = i * P for i = 1..15
+	local precomp = table.create(15)
+	precomp[1] = jP
+	precomp[2] = StarkCurve.jacobianDouble(jP)
+	for i = 3, 15 do
+		precomp[i] = StarkCurve.jacobianAdd(precomp[i - 1], jP)
+	end
+
+	-- Process first partial window (1-4 bits)
+	local firstWindowSize = ((bitLen - 1) % 4) + 1
+	local topBit = bitLen - 1
+	local windowVal = 0
+	for b = 0, firstWindowSize - 1 do
+		windowVal = windowVal * 2 + BigInt.getBit(k, topBit - b)
+	end
+
+	local result: JacobianPoint
+	if windowVal > 0 then
+		result = precomp[windowVal]
+	else
+		result = { x = StarkField.one(), y = StarkField.one(), z = StarkField.zero() }
+	end
+	topBit = topBit - firstWindowSize
+
+	-- Process remaining full 4-bit windows
+	while topBit >= 0 do
+		result = StarkCurve.jacobianDouble(result)
+		result = StarkCurve.jacobianDouble(result)
+		result = StarkCurve.jacobianDouble(result)
+		result = StarkCurve.jacobianDouble(result)
+
+		windowVal = BigInt.getBit(k, topBit) * 8
+			+ BigInt.getBit(k, topBit - 1) * 4
+			+ BigInt.getBit(k, topBit - 2) * 2
+			+ BigInt.getBit(k, topBit - 3)
+
+		if windowVal > 0 then
+			result = StarkCurve.jacobianAdd(result, precomp[windowVal])
+		end
+		topBit = topBit - 4
+	end
+
+	return StarkCurve.affineFromJacobian(result)
+end
+
+--------------------------------------------------------------------------------
+-- Shamir's trick: simultaneous scalar multiplication
+-- Computes k1*p1 + k2*p2 in a single pass using joint bit scanning.
+-- Precomputes table: T[1]=p2, T[2]=p1, T[3]=p1+p2
+-- ~50% faster than two independent scalarMul calls for ECDSA verify.
+--------------------------------------------------------------------------------
+
+function StarkCurve.shamirMul(p1: AffinePoint, k1: buffer, p2: AffinePoint, k2: buffer): AffinePoint
+	local bitLen1 = BigInt.bitLength(k1)
+	local bitLen2 = BigInt.bitLength(k2)
+
+	if bitLen1 == 0 and bitLen2 == 0 then
+		return StarkCurve.INFINITY
+	end
+	if bitLen1 == 0 then
+		return StarkCurve.scalarMul(p2, k2)
+	end
+	if bitLen2 == 0 then
+		return StarkCurve.scalarMul(p1, k1)
+	end
+
+	local bitLen = math.max(bitLen1, bitLen2)
+
+	-- Precompute: T[1]=P2, T[2]=P1, T[3]=P1+P2
+	local jP1 = StarkCurve.jacobianFromAffine(p1)
+	local jP2 = StarkCurve.jacobianFromAffine(p2)
+	local jSum = StarkCurve.jacobianAdd(jP1, jP2)
+	local T = { jP2, jP1, jSum }
+
 	local result: JacobianPoint = { x = StarkField.one(), y = StarkField.one(), z = StarkField.zero() }
 
 	for i = bitLen - 1, 0, -1 do
 		result = StarkCurve.jacobianDouble(result)
-		if BigInt.getBit(k, i) == 1 then
-			result = StarkCurve.jacobianAdd(result, jP)
+		local idx = BigInt.getBit(k1, i) * 2 + BigInt.getBit(k2, i)
+		if idx > 0 then
+			result = StarkCurve.jacobianAdd(result, T[idx])
 		end
 	end
 

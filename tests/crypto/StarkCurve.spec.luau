@@ -378,3 +378,105 @@ describe("StarkCurve - Edge Cases", function()
 		expect(StarkCurve.affineEq(result, negG)):toBe(true)
 	end)
 end)
+
+describe("StarkCurve - shamirMul (Shamir's trick)", function()
+	it("shamirMul(G, a, G, b) = (a+b)*G", function()
+		local a = BigInt.fromNumber(7)
+		local b = BigInt.fromNumber(11)
+		local result = StarkCurve.shamirMul(StarkCurve.G, a, StarkCurve.G, b)
+		local expected = StarkCurve.scalarMul(StarkCurve.G, BigInt.fromNumber(18))
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul matches independent scalarMul + add", function()
+		local k1 = BigInt.fromHex("0xdeadbeef")
+		local k2 = BigInt.fromHex("0xcafebabe")
+		local p1 = StarkCurve.G
+		local p2 = StarkCurve.scalarMul(StarkCurve.G, BigInt.fromNumber(42))
+
+		local result = StarkCurve.shamirMul(p1, k1, p2, k2)
+
+		local r1 = StarkCurve.scalarMul(p1, k1)
+		local r2 = StarkCurve.scalarMul(p2, k2)
+		local jr1 = StarkCurve.jacobianFromAffine(r1)
+		local jr2 = StarkCurve.jacobianFromAffine(r2)
+		local expected = StarkCurve.affineFromJacobian(StarkCurve.jacobianAdd(jr1, jr2))
+
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul with zero first scalar = scalarMul second", function()
+		local k2 = BigInt.fromNumber(5)
+		local result = StarkCurve.shamirMul(StarkCurve.G, BigInt.zero(), StarkCurve.G, k2)
+		local expected = StarkCurve.scalarMul(StarkCurve.G, k2)
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul with zero second scalar = scalarMul first", function()
+		local k1 = BigInt.fromNumber(5)
+		local result = StarkCurve.shamirMul(StarkCurve.G, k1, StarkCurve.G, BigInt.zero())
+		local expected = StarkCurve.scalarMul(StarkCurve.G, k1)
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul with both zero scalars = INFINITY", function()
+		local result = StarkCurve.shamirMul(StarkCurve.G, BigInt.zero(), StarkCurve.G, BigInt.zero())
+		expect(StarkCurve.isInfinityAffine(result)):toBe(true)
+	end)
+
+	it("result is on curve with 128-bit scalars", function()
+		local k1 = BigInt.fromHex("0xdeadbeef12345678cafebabe87654321")
+		local k2 = BigInt.fromHex("0x1234567890abcdef1234567890abcdef")
+		local result = StarkCurve.shamirMul(StarkCurve.G, k1, StarkCurve.G, k2)
+		expect(StarkCurve.isOnCurve(result)):toBe(true)
+	end)
+
+	it("shamirMul with different points cross-checks independent computation", function()
+		local k1 = BigInt.fromHex("0xdeadbeef12345678")
+		local k2 = BigInt.fromHex("0xcafebabe87654321")
+		local p1 = StarkCurve.G
+		local p2 = StarkCurve.scalarMul(StarkCurve.G, BigInt.fromNumber(7))
+
+		local result = StarkCurve.shamirMul(p1, k1, p2, k2)
+
+		local r1 = StarkCurve.scalarMul(p1, k1)
+		local r2 = StarkCurve.scalarMul(p2, k2)
+		local jr1 = StarkCurve.jacobianFromAffine(r1)
+		local jr2 = StarkCurve.jacobianFromAffine(r2)
+		local expected = StarkCurve.affineFromJacobian(StarkCurve.jacobianAdd(jr1, jr2))
+
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul(P, 1, P, 1) = 2*P", function()
+		local result = StarkCurve.shamirMul(StarkCurve.G, BigInt.one(), StarkCurve.G, BigInt.one())
+		local expected = StarkCurve.scalarMul(StarkCurve.G, BigInt.fromNumber(2))
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+
+	it("shamirMul is commutative in point-scalar pairs", function()
+		local k1 = BigInt.fromNumber(13)
+		local k2 = BigInt.fromNumber(29)
+		local p1 = StarkCurve.G
+		local p2 = StarkCurve.scalarMul(StarkCurve.G, BigInt.fromNumber(3))
+
+		local r1 = StarkCurve.shamirMul(p1, k1, p2, k2)
+		local r2 = StarkCurve.shamirMul(p2, k2, p1, k1)
+		expect(StarkCurve.affineEq(r1, r2)):toBe(true)
+	end)
+
+	it("shamirMul with mismatched scalar lengths", function()
+		-- k1 is 4 bits, k2 is 128 bits
+		local k1 = BigInt.fromNumber(15)
+		local k2 = BigInt.fromHex("0xffffffffffffffffffffffffffffffff")
+		local result = StarkCurve.shamirMul(StarkCurve.G, k1, StarkCurve.G, k2)
+		expect(StarkCurve.isOnCurve(result)):toBe(true)
+
+		local r1 = StarkCurve.scalarMul(StarkCurve.G, k1)
+		local r2 = StarkCurve.scalarMul(StarkCurve.G, k2)
+		local jr1 = StarkCurve.jacobianFromAffine(r1)
+		local jr2 = StarkCurve.jacobianFromAffine(r2)
+		local expected = StarkCurve.affineFromJacobian(StarkCurve.jacobianAdd(jr1, jr2))
+		expect(StarkCurve.affineEq(result, expected)):toBe(true)
+	end)
+end)
