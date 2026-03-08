@@ -1433,3 +1433,107 @@ describe("Account.deployAccount - full orchestration flow", function()
 		end
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- DA mode passthrough
+--------------------------------------------------------------------------------
+
+describe("TransactionBuilder - deployAccount DA mode passthrough", function()
+	it("passes non-zero DA modes through to submitted deploy account transaction", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local provider = createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = createTestDeployParams()
+
+		builder:deployAccount(account, params, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+		}):expect()
+
+		local foundTx = nil
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				foundTx = req.params[1]
+				break
+			end
+		end
+		expect(foundTx):toBeTruthy()
+		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
+		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+	end)
+
+	it("passes DA modes through to deploy account fee estimation request", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local provider = createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = createTestDeployParams()
+
+		builder:deployAccount(account, params, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+		}):expect()
+
+		local foundTx = nil
+		for _, req in requestLog do
+			if req.method == "starknet_estimateFee" then
+				foundTx = req.params[1][1]
+				break
+			end
+		end
+		expect(foundTx):toBeTruthy()
+		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
+		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+	end)
+
+	it("defaults DA modes to 0x0 when not specified for deploy account", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local provider = createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = createTestDeployParams()
+
+		builder:deployAccount(account, params):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addDeployAccountTransaction" then
+				local tx = req.params[1]
+				expect(tx.nonce_data_availability_mode):toBe("0x0")
+				expect(tx.fee_data_availability_mode):toBe("0x0")
+				break
+			end
+		end
+	end)
+
+	it("produces consistent hash and transaction DA modes for deploy account", function()
+		resetHandlers()
+		rpc.clearRequestLog()
+		local provider = createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local params = createTestDeployParams()
+
+		-- dryRun with non-zero DA modes
+		local result = builder:deployAccount(account, params, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+			dryRun = true,
+		}):expect()
+
+		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
+		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
+
+		-- dryRun with default DA modes (same nonce to compare)
+		local defaultResult = builder:deployAccount(account, params, {
+			nonce = result.transaction.nonce,
+			dryRun = true,
+		}):expect()
+
+		-- Hashes must differ since DA modes differ
+		expect(result.transactionHash ~= defaultResult.transactionHash):toBeTruthy()
+	end)
+end)

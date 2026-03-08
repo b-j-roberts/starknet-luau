@@ -172,8 +172,8 @@ local function buildInvokeTransaction(params: {
 		resource_bounds = toRpcResourceBounds(params.resourceBounds),
 		tip = params.tip or "0x0",
 		paymaster_data = params.paymasterData or {},
-		nonce_data_availability_mode = "0x0",
-		fee_data_availability_mode = "0x0",
+		nonce_data_availability_mode = string.format("0x%x", params.nonceDataAvailabilityMode or 0),
+		fee_data_availability_mode = string.format("0x%x", params.feeDataAvailabilityMode or 0),
 		account_deployment_data = params.accountDeploymentData or {},
 	}
 end
@@ -202,8 +202,8 @@ local function buildDeployAccountTransaction(params: {
 		resource_bounds = toRpcResourceBounds(params.resourceBounds),
 		tip = params.tip or "0x0",
 		paymaster_data = params.paymasterData or {},
-		nonce_data_availability_mode = "0x0",
-		fee_data_availability_mode = "0x0",
+		nonce_data_availability_mode = string.format("0x%x", params.nonceDataAvailabilityMode or 0),
+		fee_data_availability_mode = string.format("0x%x", params.feeDataAvailabilityMode or 0),
 	}
 end
 
@@ -398,6 +398,8 @@ function TransactionBuilder:execute(account: Account, calls: { Call }, options: 
 				nonce = nonce,
 				resourceBounds = ZERO_RESOURCE_BOUNDS,
 				signature = { "0x0", "0x0" },
+				nonceDataAvailabilityMode = opts.nonceDataAvailabilityMode,
+				feeDataAvailabilityMode = opts.feeDataAvailabilityMode,
 			})
 		end,
 		computeHash = function(
@@ -494,6 +496,8 @@ function TransactionBuilder:deployAccount(
 				nonce = nonce,
 				resourceBounds = ZERO_RESOURCE_BOUNDS,
 				signature = { "0x0", "0x0" },
+				nonceDataAvailabilityMode = opts.nonceDataAvailabilityMode,
+				feeDataAvailabilityMode = opts.feeDataAvailabilityMode,
 			})
 		end,
 		computeHash = function(

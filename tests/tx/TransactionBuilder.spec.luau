@@ -902,6 +902,104 @@ end)
 --------------------------------------------------------------------------------
 
 describe("TransactionBuilder - RPC call sequence", function()
+	it("passes non-zero DA modes through to submitted invoke transaction", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+		}):expect()
+
+		local foundTx = nil
+		for _, req in requestLog do
+			if req.method == "starknet_addInvokeTransaction" then
+				foundTx = req.params[1]
+				break
+			end
+		end
+		expect(foundTx):toBeTruthy()
+		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
+		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+	end)
+
+	it("passes DA modes through to invoke fee estimation request", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+		}):expect()
+
+		local foundTx = nil
+		for _, req in requestLog do
+			if req.method == "starknet_estimateFee" then
+				foundTx = req.params[1][1]
+				break
+			end
+		end
+		expect(foundTx):toBeTruthy()
+		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
+		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+	end)
+
+	it("defaults DA modes to 0x0 when not specified", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		builder:execute(account, calls):expect()
+
+		for _, req in requestLog do
+			if req.method == "starknet_addInvokeTransaction" then
+				local tx = req.params[1]
+				expect(tx.nonce_data_availability_mode):toBe("0x0")
+				expect(tx.fee_data_availability_mode):toBe("0x0")
+				break
+			end
+		end
+	end)
+
+	it("produces consistent hash and transaction DA modes for invoke", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		local provider = rpc.createTestProvider()
+		local builder = TransactionBuilder.new(provider)
+		local account = createTestAccount()
+		local calls = createTestCalls()
+
+		-- dryRun with non-zero DA modes
+		local result = builder:execute(account, calls, {
+			nonceDataAvailabilityMode = 1,
+			feeDataAvailabilityMode = 1,
+			dryRun = true,
+		}):expect()
+
+		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
+		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
+
+		-- dryRun with default DA modes (same nonce to compare)
+		local defaultResult = builder:execute(account, calls, {
+			nonce = result.transaction.nonce,
+			dryRun = true,
+		}):expect()
+
+		-- Hashes must differ since DA modes differ
+		expect(result.transactionHash ~= defaultResult.transactionHash):toBeTruthy()
+	end)
+
 	it("calls RPCs in correct order: getNonce, getChainId, estimateFee, addInvokeTransaction", function()
 		rpc.resetHandlers()
 		rpc.clearRequestLog()
