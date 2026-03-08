@@ -12,7 +12,7 @@ local TransactionBuilder = require("../tx/TransactionBuilder")
 local AccountType = require("./AccountType")
 local TypedData = require("./TypedData")
 local OutsideExecution = require("./OutsideExecution")
-local ERC20 = require("../contract/ERC20")
+local Keccak = require("../crypto/Keccak")
 local Constants = require("../constants")
 local Interfaces = require("../shared/interfaces")
 local HexUtils = require("../shared/HexUtils")
@@ -336,20 +336,28 @@ function Account.checkDeploymentBalance(config: {
 
 	local Promise = config.provider:getPromise()
 	return Promise.new(function(resolve: (any) -> (), reject: (any) -> ())
-		-- Fetch balance via ERC20
-		local erc20 = ERC20.new(tokenAddress, config.provider)
+		-- Fetch balance via direct provider:call (avoids contract-layer dependency)
+		local selector = StarkField.toHex(Keccak.getSelectorFromName("balance_of"))
 		local balOk, balResult = pcall(function()
-			return erc20:balance_of(config.address):expect()
+			return config.provider:call({
+				contract_address = tokenAddress,
+				entry_point_selector = selector,
+				calldata = { config.address },
+			}):expect()
 		end)
 		if not balOk then
 			reject(balResult)
 			return
 		end
 
-		-- Convert u256 balance to BigInt
+		-- Convert u256 (low, high felts) balance to BigInt
 		local balanceBigInt: buffer
-		if type(balResult) == "table" and balResult.low ~= nil then
-			balanceBigInt = BigInt.fromU256(balResult)
+		if type(balResult) == "table" and #balResult >= 2 then
+			-- u256 = high * 2^128 + low
+			local low = BigInt.fromHex(tostring(balResult[1]))
+			local high = BigInt.fromHex(tostring(balResult[2]))
+			local shift128 = BigInt.shl(BigInt.one(), 128)
+			balanceBigInt = BigInt.add(BigInt.mul(high, shift128), low)
 		else
 			-- Fallback: single felt result
 			balanceBigInt = BigInt.fromHex(tostring(balResult))
