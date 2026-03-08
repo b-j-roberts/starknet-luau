@@ -56,6 +56,23 @@ export type InvokeOptions = {
 	dryRun: boolean?,
 }
 
+--- Options for parseEvents()
+export type ParseEventsOptions = {
+	strict: boolean?, -- if true, re-throw decode errors instead of collecting them
+}
+
+--- A single event decode error collected by parseEvents()
+export type ParseEventError = {
+	event: any, -- the raw event that failed to decode
+	error: string, -- the error message
+}
+
+--- Result of parseEvents()
+export type ParseEventsResult = {
+	events: { any }, -- successfully decoded events
+	errors: { ParseEventError }, -- events that failed to decode (empty in strict mode)
+}
+
 --------------------------------------------------------------------------------
 -- Internal: ABI parsing
 --------------------------------------------------------------------------------
@@ -392,19 +409,22 @@ end
 --- Parse and decode events from a transaction receipt that match this contract's ABI.
 --- Filters events by this contract's address, then decodes using ABI event definitions.
 --- @param receipt -- TransactionReceipt (or table with events: { Event })
---- @return Array of { name: string, fields: { [string]: any }, raw: Event }
-function Contract:parseEvents(receipt: any): { any }
+--- @param options -- Optional { strict: boolean? }. When strict=true, decode errors are re-thrown.
+--- @return ParseEventsResult { events: { ... }, errors: { ... } }
+function Contract:parseEvents(receipt: any, options: ParseEventsOptions?): ParseEventsResult
 	local self_: any = self
 	local eventDefs: { [string]: AbiCodec.EventDef } = self_._events
 	local typeMap: AbiCodec.TypeMap = self_._typeMap
 	local contractAddress: string = self_._normalizedAddress
+	local strict = if options then options.strict else false
 
 	local rawEvents = receipt.events
 	if not rawEvents then
-		return {}
+		return { events = {}, errors = {} }
 	end
 
 	local parsed: { any } = {}
+	local errors: { ParseEventError } = {}
 	for _, event in rawEvents :: { any } do
 		-- Filter by contract address (normalize to handle leading-zero differences)
 		local fromAddr: string = HexUtils.normalizeHex(event.from_address or "0x0")
@@ -422,13 +442,21 @@ function Contract:parseEvents(receipt: any): { any }
 							fields = fields,
 							raw = event,
 						})
+					else
+						if strict then
+							error(fields) -- fields is the error object from pcall
+						end
+						local errMsg = if type(fields) == "table" and (fields :: any).message
+							then (fields :: any).message
+							else tostring(fields)
+						table.insert(errors, { event = event, error = errMsg })
 					end
 				end
 			end
 		end
 	end
 
-	return parsed
+	return { events = parsed, errors = errors }
 end
 
 --- Query events from the provider filtered to this contract's address.

@@ -403,12 +403,12 @@ Fix incorrect implementations and correctness issues.
 **Description**: `decode()` reads array indices without bounds checking, producing silent `nil` for malformed responses. `parseHexNumber` has a dead first branch. Unreachable fallbacks exist in encode/decode.
 
 **Requirements**:
-- [ ] Add bounds checking in `AbiCodec.decode()` — validate `offset <= #results` before reading (ref: 07-contract.md §AbiCodec [fix])
-- [ ] Extract `parseHexToNumber(hex)` helper replacing 4 instances of broken two-branch pattern where first `tonumber(hex, 16)` always fails for `0x`-prefixed strings (ref: 07-contract.md §AbiCodec [fix]; implementation shared with R.1.5 HexUtils extraction)
-- [ ] Remove or replace unreachable fallbacks in `encode()` (line 411-412) and `decode()` (line 573-574) with `error("unreachable")` assertions (ref: 07-contract.md §AbiCodec [refactor])
-- [ ] Add `warn()` or strict mode option for `resolveType()` unknown type fallback to felt (ref: 07-contract.md §AbiCodec [refactor])
-- [ ] Fix `AbiCodec.decodeEvent()` silently skipping members when keys/data arrays are shorter than expected — should warn or error (ref: 07-contract.md §AbiCodec [refactor])
-- [ ] Fix `Contract.parseEvents()` silently swallowing decode errors — no logging, callback, or strict-mode option (ref: 07-contract.md §Contract [refactor])
+- [x] Add bounds checking in `AbiCodec.decode()` — validate `offset <= #results` before reading (ref: 07-contract.md §AbiCodec [fix])
+- [x] Extract `parseHexToNumber(hex)` helper replacing 4 instances of broken two-branch pattern where first `tonumber(hex, 16)` always fails for `0x`-prefixed strings (ref: 07-contract.md §AbiCodec [fix]; implementation shared with R.1.5 HexUtils extraction)
+- [x] Remove or replace unreachable fallbacks in `encode()` (line 411-412) and `decode()` (line 573-574) with `error("unreachable")` assertions (ref: 07-contract.md §AbiCodec [refactor])
+- [x] Add `warn()` or strict mode option for `resolveType()` unknown type fallback to felt (ref: 07-contract.md §AbiCodec [refactor])
+- [x] Fix `AbiCodec.decodeEvent()` silently skipping members when keys/data arrays are shorter than expected — should warn or error (ref: 07-contract.md §AbiCodec [refactor])
+- [x] Fix `Contract.parseEvents()` silently swallowing decode errors — no logging, callback, or strict-mode option (ref: 07-contract.md §Contract [refactor])
 
 ---
 

@@ -1529,3 +1529,311 @@ describe("AbiCodec.decodeOutputs", function()
 		expect(#(result :: { any })):toBe(2)
 	end)
 end)
+
+--------------------------------------------------------------------------------
+-- decode() bounds checking (R.3.3)
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.decode - bounds checking", function()
+	it("errors when decoding felt from empty results", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::felt252", tm)
+		end):toThrow()
+	end)
+
+	it("errors when decoding felt at offset past end", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({ "0x1" }, 2, "core::felt252", tm)
+		end):toThrow()
+	end)
+
+	it("errors when decoding bool from empty results", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::bool", tm)
+		end):toThrow()
+	end)
+
+	it("errors when decoding u256 from 1-element array", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({ "0x1" }, 1, "core::integer::u256", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding u256 from empty results", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::integer::u256", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding array with missing length element", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::array::Array::<core::felt252>", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding array element past end", function()
+		local tm = builtinTypeMap()
+		-- Length says 2 but only 1 element provided
+		expect(function()
+			AbiCodec.decode({ "0x2", "0xabc" }, 1, "core::array::Array::<core::felt252>", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding struct member past end", function()
+		local tm = typeMapWithStruct("mymod::Point", {
+			{ name = "x", type = "core::felt252" },
+			{ name = "y", type = "core::felt252" },
+		})
+		-- Only 1 element, but struct needs 2
+		expect(function()
+			AbiCodec.decode({ "0x1" }, 1, "mymod::Point", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding enum variant index from empty results", function()
+		local tm = typeMapWithEnum("mymod::Color", {
+			{ name = "Red", type = "()" },
+			{ name = "Blue", type = "()" },
+		})
+		expect(function()
+			AbiCodec.decode({}, 1, "mymod::Color", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when decoding bytearray from empty results", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::byte_array::ByteArray", tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("succeeds decoding unit from empty results (zero consumption)", function()
+		local tm = builtinTypeMap()
+		local val, consumed = AbiCodec.decode({}, 1, "()", tm)
+		expect(val):toBeFalsy()
+		expect(consumed):toBe(0)
+	end)
+
+	it("succeeds decoding felt at valid offset", function()
+		local tm = builtinTypeMap()
+		local val, consumed = AbiCodec.decode({ "0xabc" }, 1, "core::felt252", tm)
+		expect(val):toBe("0xabc")
+		expect(consumed):toBe(1)
+	end)
+
+	it("succeeds decoding u256 with exactly 2 elements", function()
+		local tm = builtinTypeMap()
+		local val, consumed = AbiCodec.decode({ "0x1", "0x0" }, 1, "core::integer::u256", tm)
+		expect((val :: any).low):toBe("0x1")
+		expect((val :: any).high):toBe("0x0")
+		expect(consumed):toBe(2)
+	end)
+
+	it("includes type name in error message", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({}, 1, "core::felt252", tm)
+		end):toThrowMatching(function(err)
+			return type(err) == "table" and string.find(err.message, "core::felt252") ~= nil
+		end)
+	end)
+
+	it("includes offset and results length in error message", function()
+		local tm = builtinTypeMap()
+		expect(function()
+			AbiCodec.decode({ "0x1" }, 5, "core::felt252", tm)
+		end):toThrowMatching(function(err)
+			return type(err) == "table"
+				and string.find(err.message, "offset 5") ~= nil
+				and string.find(err.message, "have 1") ~= nil
+		end)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- encode() / decode() unreachable fallback assertions (R.3.3)
+--------------------------------------------------------------------------------
+
+describe("AbiCodec - unreachable fallback assertions", function()
+	it("encode fallback is unreachable for valid types (felt)", function()
+		local tm = builtinTypeMap()
+		-- This should succeed normally — not hit fallback
+		local result = AbiCodec.encode("0x1", "core::felt252", tm)
+		expect(#result):toBe(1)
+	end)
+
+	it("decode fallback is unreachable for valid types (felt)", function()
+		local tm = builtinTypeMap()
+		local val, consumed = AbiCodec.decode({ "0x1" }, 1, "core::felt252", tm)
+		expect(val):toBe("0x1")
+		expect(consumed):toBe(1)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- resolveType() unknown type warning (R.3.3)
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.resolveType - unknown type fallback", function()
+	it("falls back to felt for unknown type names", function()
+		local tm = builtinTypeMap()
+		local def = AbiCodec.resolveType("core::flelt252", tm)
+		expect(def.kind):toBe("felt")
+	end)
+
+	it("caches the felt fallback for unknown types", function()
+		local tm = builtinTypeMap()
+		AbiCodec.resolveType("my::unknown::Type", tm)
+		-- Second call should return cached value
+		local def = AbiCodec.resolveType("my::unknown::Type", tm)
+		expect(def.kind):toBe("felt")
+	end)
+
+	it("unknown type encodes as felt (via fallback)", function()
+		local tm = builtinTypeMap()
+		local result = AbiCodec.encode("0xabc", "core::nonexistent", tm)
+		expect(#result):toBe(1)
+		expect(result[1]):toBe("0xabc")
+	end)
+
+	it("unknown type decodes as felt (via fallback)", function()
+		local tm = builtinTypeMap()
+		local val, consumed = AbiCodec.decode({ "0xdef" }, 1, "core::nonexistent", tm)
+		expect(val):toBe("0xdef")
+		expect(consumed):toBe(1)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- decodeEvent() bounds checking (R.3.3)
+--------------------------------------------------------------------------------
+
+describe("AbiCodec.decodeEvent - bounds checking", function()
+	it("errors when key members exceed keys array", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {
+				{ name = "from", type = "core::felt252" },
+				{ name = "to", type = "core::felt252" },
+			},
+			dataMembers = {},
+		}
+		-- Only selector in keys, missing both key members
+		expect(function()
+			AbiCodec.decodeEvent({ "0x1" }, {}, eventDef, tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors when data members exceed data array", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "value", type = "core::felt252" },
+			},
+		}
+		-- Empty data array
+		expect(function()
+			AbiCodec.decodeEvent({ "0x1" }, {}, eventDef, tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("errors with event name in message for missing key member", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {
+				{ name = "from", type = "core::felt252" },
+			},
+			dataMembers = {},
+		}
+		expect(function()
+			AbiCodec.decodeEvent({ "0x1" }, {}, eventDef, tm)
+		end):toThrowMatching(function(err)
+			return type(err) == "table"
+				and string.find(err.message, "Transfer") ~= nil
+				and string.find(err.message, "from") ~= nil
+		end)
+	end)
+
+	it("errors with event name in message for missing data member", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "value", type = "core::integer::u256" },
+			},
+		}
+		expect(function()
+			AbiCodec.decodeEvent({ "0x1" }, {}, eventDef, tm)
+		end):toThrowMatching(function(err)
+			return type(err) == "table"
+				and string.find(err.message, "Transfer") ~= nil
+				and string.find(err.message, "value") ~= nil
+		end)
+	end)
+
+	it("errors when u256 data member has only 1 element instead of 2", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {},
+			dataMembers = {
+				{ name = "amount", type = "core::integer::u256" },
+			},
+		}
+		-- Only 1 data element, but u256 needs 2
+		expect(function()
+			AbiCodec.decodeEvent({ "0x1" }, { "0x3e8" }, eventDef, tm)
+		end):toThrowCode(4003)
+	end)
+
+	it("succeeds when keys and data have exactly enough elements", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "Transfer",
+			selector = "0x1",
+			keyMembers = {
+				{ name = "from", type = "core::felt252" },
+			},
+			dataMembers = {
+				{ name = "amount", type = "core::integer::u256" },
+			},
+		}
+		local fields = AbiCodec.decodeEvent({ "0x1", "0xsender" }, { "0x3e8", "0x0" }, eventDef, tm)
+		expect(fields.from):toBe("0xsender")
+		expect((fields.amount :: any).low):toBe("0x3e8")
+		expect((fields.amount :: any).high):toBe("0x0")
+	end)
+
+	it("succeeds with no key members and no data members", function()
+		local tm = builtinTypeMap()
+		local eventDef: AbiCodec.EventDef = {
+			name = "EmptyEvent",
+			selector = "0x1",
+			keyMembers = {},
+			dataMembers = {},
+		}
+		local fields = AbiCodec.decodeEvent({ "0x1" }, {}, eventDef, tm)
+		-- Should return empty table
+		local count = 0
+		for _ in fields do
+			count += 1
+		end
+		expect(count):toBe(0)
+	end)
+end)

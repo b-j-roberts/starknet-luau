@@ -259,7 +259,8 @@ function AbiCodec.resolveType(typeName: string, typeMap: TypeMap): TypeDef
 		return def
 	end
 
-	-- Fallback: treat as felt (backward compat)
+	-- Unknown type: warn and fall back to felt
+	warn(`AbiCodec: unknown type "{typeName}", falling back to felt encoding`)
 	local def: TypeDef = { kind = "felt" }
 	typeMap[typeName] = def
 	return def
@@ -323,8 +324,13 @@ function AbiCodec.encode(value: any, typeName: string, typeMap: TypeMap): { stri
 		return result
 	end
 
-	-- Fallback: treat as felt
-	return CallData.encodeFelt(tostring(value))
+	-- All type kinds are handled above; resolveType() always returns a known kind.
+	error(
+		StarknetError.abi(
+			`AbiCodec: unreachable encode branch for kind "{kind}" (type "{typeName}")`,
+			ErrorCodes.ENCODE_ERROR.code
+		)
+	)
 end
 
 --- Encode an enum value. Handles Option, Result, and custom enums.
@@ -405,6 +411,19 @@ end
 -- Recursive Decoder
 --------------------------------------------------------------------------------
 
+--- Validate that offset is within bounds of results array.
+--- Errors with DECODE_ERROR if out of bounds.
+local function checkDecodeBounds(results: { string }, offset: number, count: number, context: string)
+	if offset + count - 1 > #results then
+		error(
+			StarknetError.abi(
+				`AbiCodec: decode out of bounds at offset {offset} (need {count} felt(s), have {#results}) while decoding {context}`,
+				ErrorCodes.DECODE_ERROR.code
+			)
+		)
+	end
+end
+
 --- Decode a value from result felts starting at offset.
 --- Returns (decoded_value, felts_consumed).
 function AbiCodec.decode(results: { string }, offset: number, typeName: string, typeMap: TypeMap): (any, number)
@@ -412,16 +431,20 @@ function AbiCodec.decode(results: { string }, offset: number, typeName: string, 
 	local kind = typeDef.kind
 
 	if kind == "felt" then
+		checkDecodeBounds(results, offset, 1, typeName)
 		return results[offset], 1
 	elseif kind == "bool" then
+		checkDecodeBounds(results, offset, 1, typeName)
 		return results[offset] == "0x1", 1
 	elseif kind == "u256" then
+		checkDecodeBounds(results, offset, 2, typeName)
 		local low = results[offset]
 		local high = results[offset + 1]
 		return { low = low, high = high }, 2
 	elseif kind == "unit" then
 		return nil, 0
 	elseif kind == "bytearray" then
+		checkDecodeBounds(results, offset, 1, typeName)
 		return AbiCodec.decodeByteArray(results, offset)
 	elseif kind == "struct" then
 		local members = typeDef.members or {}
@@ -438,6 +461,7 @@ function AbiCodec.decode(results: { string }, offset: number, typeName: string, 
 		return AbiCodec.decodeEnum(results, offset, variants, typeMap)
 	elseif kind == "array" then
 		local elementType = typeDef.elementType or "core::felt252"
+		checkDecodeBounds(results, offset, 1, typeName)
 		-- Read length
 		local lenHex = results[offset]
 		local len = HexUtils.parseHexToNumber(lenHex)
@@ -462,8 +486,13 @@ function AbiCodec.decode(results: { string }, offset: number, typeName: string, 
 		return arr, totalConsumed
 	end
 
-	-- Fallback: single felt
-	return results[offset], 1
+	-- All type kinds are handled above; resolveType() always returns a known kind.
+	error(
+		StarknetError.abi(
+			`AbiCodec: unreachable decode branch for kind "{kind}" (type "{typeName}")`,
+			ErrorCodes.DECODE_ERROR.code
+		)
+	)
 end
 
 --- Decode an enum value from result felts.
@@ -475,6 +504,7 @@ function AbiCodec.decodeEnum(
 	typeMap: TypeMap
 ): (any, number)
 	-- Read variant index
+	checkDecodeBounds(results, offset, 1, "enum variant index")
 	local idxHex = results[offset]
 	local idx = HexUtils.parseHexToNumber(idxHex)
 	local totalConsumed = 1
@@ -542,6 +572,7 @@ export type EventDef = {
 
 --- Decode event keys and data using an event definition.
 --- keys[1] is the selector (skipped), keys[2..] are key members, data[1..] are data members.
+--- Errors if keys or data arrays are shorter than expected by the event definition.
 --- Returns a table of decoded fields keyed by member name.
 function AbiCodec.decodeEvent(
 	keys: { string },
@@ -554,21 +585,33 @@ function AbiCodec.decodeEvent(
 	-- Decode key members from keys[2..] (keys[1] is the selector)
 	local keyOffset = 2
 	for _, member in eventDef.keyMembers do
-		if keyOffset <= #keys then
-			local decoded, consumed = AbiCodec.decode(keys, keyOffset, member.type, typeMap)
-			fields[member.name] = decoded
-			keyOffset += consumed
+		if keyOffset > #keys then
+			error(
+				StarknetError.abi(
+					`AbiCodec: event "{eventDef.name}" key member "{member.name}" missing — keys has {#keys} element(s), need offset {keyOffset}`,
+					ErrorCodes.DECODE_ERROR.code
+				)
+			)
 		end
+		local decoded, consumed = AbiCodec.decode(keys, keyOffset, member.type, typeMap)
+		fields[member.name] = decoded
+		keyOffset += consumed
 	end
 
 	-- Decode data members from data[1..]
 	local dataOffset = 1
 	for _, member in eventDef.dataMembers do
-		if dataOffset <= #data then
-			local decoded, consumed = AbiCodec.decode(data, dataOffset, member.type, typeMap)
-			fields[member.name] = decoded
-			dataOffset += consumed
+		if dataOffset > #data then
+			error(
+				StarknetError.abi(
+					`AbiCodec: event "{eventDef.name}" data member "{member.name}" missing — data has {#data} element(s), need offset {dataOffset}`,
+					ErrorCodes.DECODE_ERROR.code
+				)
+			)
 		end
+		local decoded, consumed = AbiCodec.decode(data, dataOffset, member.type, typeMap)
+		fields[member.name] = decoded
+		dataOffset += consumed
 	end
 
 	return fields

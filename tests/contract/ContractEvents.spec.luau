@@ -240,13 +240,13 @@ describe("Contract:parseEvents - modern events", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("Transfer")
-		expect(parsed[1].fields.from):toBe("0xsender")
-		expect(parsed[1].fields.to):toBe("0xrecipient")
-		expect(parsed[1].fields.value.low):toBe("0x3e8")
-		expect(parsed[1].fields.value.high):toBe("0x0")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[1].fields.from):toBe("0xsender")
+		expect(result.events[1].fields.to):toBe("0xrecipient")
+		expect(result.events[1].fields.value.low):toBe("0x3e8")
+		expect(result.events[1].fields.value.high):toBe("0x0")
 	end)
 
 	it("decodes Approval event from receipt", function()
@@ -269,12 +269,12 @@ describe("Contract:parseEvents - modern events", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("Approval")
-		expect(parsed[1].fields.owner):toBe("0xowner")
-		expect(parsed[1].fields.spender):toBe("0xspender")
-		expect(parsed[1].fields.value.low):toBe("0x7d0")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("Approval")
+		expect(result.events[1].fields.owner):toBe("0xowner")
+		expect(result.events[1].fields.spender):toBe("0xspender")
+		expect(result.events[1].fields.value.low):toBe("0x7d0")
 	end)
 
 	it("decodes multiple events from a single receipt", function()
@@ -307,11 +307,11 @@ describe("Contract:parseEvents - modern events", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(3)
-		expect(parsed[1].name):toBe("Transfer")
-		expect(parsed[2].name):toBe("Approval")
-		expect(parsed[3].name):toBe("Transfer")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(3)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[2].name):toBe("Approval")
+		expect(result.events[3].name):toBe("Transfer")
 	end)
 
 	it("preserves raw event in parsed output", function()
@@ -330,9 +330,9 @@ describe("Contract:parseEvents - modern events", function()
 		}
 
 		local receipt = { transaction_hash = "0xabc", events = { rawEvent } }
-		local parsed = contract:parseEvents(receipt)
-		expect(parsed[1].raw):toBeTruthy()
-		expect(parsed[1].raw.from_address):toBe(CONTRACT_ADDR)
+		local result = contract:parseEvents(receipt)
+		expect(result.events[1].raw):toBeTruthy()
+		expect(result.events[1].raw.from_address):toBe(CONTRACT_ADDR)
 	end)
 end)
 
@@ -366,9 +366,9 @@ describe("Contract:parseEvents - address filtering", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].fields.from):toBe("0xsender")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].fields.from):toBe("0xsender")
 	end)
 
 	it("skips events with unknown selectors", function()
@@ -391,8 +391,8 @@ describe("Contract:parseEvents - address filtering", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(0)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
 	end)
 
 	it("returns empty array for receipt with no events", function()
@@ -405,8 +405,8 @@ describe("Contract:parseEvents - address filtering", function()
 		})
 
 		local receipt = { transaction_hash = "0xabc", events = {} }
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(0)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
 	end)
 
 	it("handles receipt with nil events field", function()
@@ -419,8 +419,8 @@ describe("Contract:parseEvents - address filtering", function()
 		})
 
 		local receipt = { transaction_hash = "0xabc" }
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(0)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
 	end)
 
 	it("handles events with empty keys array", function()
@@ -439,8 +439,8 @@ describe("Contract:parseEvents - address filtering", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(0)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
 	end)
 end)
 
@@ -469,13 +469,13 @@ describe("Contract:parseEvents - legacy events", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("Transfer")
-		expect(parsed[1].fields.from):toBe("0xsender")
-		expect(parsed[1].fields.to):toBe("0xrecipient")
-		expect(parsed[1].fields.value.low):toBe("0x3e8")
-		expect(parsed[1].fields.value.high):toBe("0x0")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[1].fields.from):toBe("0xsender")
+		expect(result.events[1].fields.to):toBe("0xrecipient")
+		expect(result.events[1].fields.value.low):toBe("0x3e8")
+		expect(result.events[1].fields.value.high):toBe("0x0")
 	end)
 end)
 
@@ -505,11 +505,11 @@ describe("Contract:parseEvents - bool event fields", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("StatusChanged")
-		expect(parsed[1].fields.id):toBe("0x42")
-		expect(parsed[1].fields.active):toBe(true)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("StatusChanged")
+		expect(result.events[1].fields.id):toBe("0x42")
+		expect(result.events[1].fields.active):toBe(true)
 	end)
 
 	it("decodes bool data field correctly (false)", function()
@@ -533,9 +533,9 @@ describe("Contract:parseEvents - bool event fields", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].fields.active):toBe(false)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].fields.active):toBe(false)
 	end)
 end)
 
@@ -690,8 +690,8 @@ describe("Contract:parseEvents - address normalization", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
 	end)
 
 	it("matches events with leading-zero mismatch (0x049d vs 0x49d)", function()
@@ -716,9 +716,9 @@ describe("Contract:parseEvents - address normalization", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("Transfer")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("Transfer")
 	end)
 
 	it("matches events when contract has no leading zero but event does", function()
@@ -743,9 +743,9 @@ describe("Contract:parseEvents - address normalization", function()
 			},
 		}
 
-		local parsed = contract:parseEvents(receipt)
-		expect(#parsed):toBe(1)
-		expect(parsed[1].name):toBe("Transfer")
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].name):toBe("Transfer")
 	end)
 
 	it("normalizes contract address on construction", function()
@@ -759,5 +759,182 @@ describe("Contract:parseEvents - address normalization", function()
 
 		-- Public address should be normalized (leading zero stripped)
 		expect(contract.address):toBe("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- parseEvents - error handling (R.3.3)
+--------------------------------------------------------------------------------
+
+describe("Contract:parseEvents - error handling", function()
+	it("returns ParseEventsResult with events and errors fields", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local receipt = { transaction_hash = "0xabc", events = {} }
+		local result = contract:parseEvents(receipt)
+		expect(result.events):toBeTruthy()
+		expect(result.errors):toBeTruthy()
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(0)
+	end)
+
+	it("collects decode errors in errors array by default", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		-- Transfer event with truncated data (u256 needs 2 felts, only 1 provided)
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8" }, -- missing high word for u256
+				},
+			},
+		}
+
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(1)
+		expect(result.errors[1].event):toBeTruthy()
+		expect(type(result.errors[1].error)):toBe("string")
+	end)
+
+	it("preserves raw event reference in error entry", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local badEvent = {
+			from_address = CONTRACT_ADDR,
+			keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+			data = {}, -- completely empty data for u256 event
+		}
+		local receipt = { transaction_hash = "0xabc", events = { badEvent } }
+
+		local result = contract:parseEvents(receipt)
+		expect(#result.errors):toBe(1)
+		expect(result.errors[1].event.from_address):toBe(CONTRACT_ADDR)
+	end)
+
+	it("in strict mode, re-throws decode errors", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8" }, -- truncated u256
+				},
+			},
+		}
+
+		expect(function()
+			contract:parseEvents(receipt, { strict = true })
+		end):toThrow()
+	end)
+
+	it("mixes successful and failed events correctly", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				-- Good event
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8", "0x0" }, -- valid u256
+				},
+				-- Bad event (truncated data)
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { TRANSFER_SELECTOR, "0xsender2", "0xrecipient2" },
+					data = { "0x1" }, -- truncated u256
+				},
+				-- Good event
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { APPROVAL_SELECTOR, "0xowner", "0xspender" },
+					data = { "0x7d0", "0x0" }, -- valid u256
+				},
+			},
+		}
+
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(2)
+		expect(#result.errors):toBe(1)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[2].name):toBe("Approval")
+	end)
+
+	it("returns empty errors when all events decode successfully", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local receipt = {
+			transaction_hash = "0xabc",
+			events = {
+				{
+					from_address = CONTRACT_ADDR,
+					keys = { TRANSFER_SELECTOR, "0xsender", "0xrecipient" },
+					data = { "0x3e8", "0x0" },
+				},
+			},
+		}
+
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+	end)
+
+	it("returns events and errors as empty arrays for nil events field", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local contract = Contract.new({
+			abi = MODERN_EVENT_ABI,
+			address = CONTRACT_ADDR,
+			provider = provider,
+		})
+
+		local receipt = { transaction_hash = "0xabc" }
+		local result = contract:parseEvents(receipt)
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(0)
 	end)
 end)
