@@ -639,15 +639,15 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 
 ---
 
-### R.5.8 Test Framework Improvements
+### R.5.8 Test Framework Improvements ✅
 
 **Description**: The test runner (`run.luau`) lacks standard test infrastructure features that would improve test reliability and developer experience.
 
 **Requirements**:
-- [ ] Consider adding `beforeEach`/`afterEach` hooks for test isolation (ref: 12-tests.md §run.luau [test])
-- [ ] Consider adding per-test timeouts to catch infinite loops (ref: 12-tests.md §run.luau [test])
-- [ ] Consider parallel test execution for faster CI (ref: 12-tests.md §run.luau [test])
-- [ ] Consider adding `finally()`, `cancel()`, `race()`, `allSettled()` to MockPromise for completeness (low priority — none currently used in production) (ref: 12-tests.md §MockPromise [test])
+- [x] Consider adding `beforeEach`/`afterEach` hooks for test isolation (ref: 12-tests.md §run.luau [test])
+- [x] Consider adding per-test timeouts to catch infinite loops (ref: 12-tests.md §run.luau [test])
+- [x] Consider parallel test execution for faster CI (ref: 12-tests.md §run.luau [test])
+- [x] Consider adding `finally()`, `cancel()`, `race()`, `allSettled()` to MockPromise for completeness (low priority — none currently used in production) (ref: 12-tests.md §MockPromise [test])
 
 ---
 

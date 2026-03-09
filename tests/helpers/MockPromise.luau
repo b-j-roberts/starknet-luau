@@ -6,7 +6,7 @@
 local MockPromise = {}
 MockPromise.__index = MockPromise
 
-export type Status = "Started" | "Resolved" | "Rejected"
+export type Status = "Started" | "Resolved" | "Rejected" | "Cancelled"
 
 export type MockPromise = {
 	andThen: (self: MockPromise, onResolve: ((value: any) -> any)?) -> MockPromise,
@@ -120,6 +120,72 @@ function MockPromise.all(promises: { MockPromise }): MockPromise
 				results[i] = p._value
 			else
 				reject("Promise.all: promise is still pending")
+				return
+			end
+		end
+		resolve(results)
+	end)
+end
+
+--- Runs callback regardless of resolve/reject. The returned promise preserves
+--- the original settlement (resolve/reject) unless the callback throws.
+function MockPromise:finally(onFinally: () -> ()): MockPromise
+	if self._status == "Resolved" then
+		local ok, err = pcall(onFinally)
+		if ok then
+			return MockPromise.resolve(self._value)
+		else
+			return MockPromise.reject(err)
+		end
+	elseif self._status == "Rejected" then
+		local ok, err = pcall(onFinally)
+		if ok then
+			return MockPromise.reject(self._value)
+		else
+			return MockPromise.reject(err)
+		end
+	end
+	return self :: any
+end
+
+--- Cancel a pending promise. Sets status to "Cancelled".
+--- No-op if already settled.
+function MockPromise:cancel()
+	if self._status == "Started" then
+		self._status = "Cancelled"
+		self._value = nil
+	end
+end
+
+--- Returns a promise that settles with the first settled promise in the array.
+--- If the array is empty, the returned promise stays pending.
+function MockPromise.race(promises: { MockPromise }): MockPromise
+	return MockPromise.new(function(resolve, reject)
+		for _, p in promises do
+			if p._status == "Resolved" then
+				resolve(p._value)
+				return
+			elseif p._status == "Rejected" then
+				reject(p._value)
+				return
+			end
+		end
+		-- All still pending — returned promise stays pending
+	end)
+end
+
+--- Returns a promise that resolves when all promises have settled (resolved or rejected).
+--- The result is an array of { status: string, value: any? } tables.
+function MockPromise.allSettled(promises: { MockPromise }): MockPromise
+	return MockPromise.new(function(resolve, reject)
+		local results = {}
+		for i, p in promises do
+			if p._status == "Resolved" then
+				results[i] = { status = "Resolved", value = p._value }
+			elseif p._status == "Rejected" then
+				results[i] = { status = "Rejected", value = p._value }
+			else
+				reject("Promise.allSettled: promise is still pending")
 				return
 			end
 		end
