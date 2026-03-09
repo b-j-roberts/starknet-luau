@@ -126,13 +126,13 @@ local NON_RETRYABLE_PAYMASTER_CODES: { [number]: boolean } = {
 }
 
 --- Check if an error code represents a transient (retryable) error.
-function ErrorCodes.isTransient(code: number): boolean
-	return TRANSIENT_CODES[code] == true
+function ErrorCodes.isTransient(errorCode: number): boolean
+	return TRANSIENT_CODES[errorCode] == true
 end
 
 --- Check if a paymaster error code is deterministic (should not be retried).
-function ErrorCodes.isNonRetryablePaymaster(code: number): boolean
-	return NON_RETRYABLE_PAYMASTER_CODES[code] == true
+function ErrorCodes.isNonRetryablePaymaster(errorCode: number): boolean
+	return NON_RETRYABLE_PAYMASTER_CODES[errorCode] == true
 end
 
 return ErrorCodes
