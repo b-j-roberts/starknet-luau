@@ -93,6 +93,12 @@ ErrorCodes.DATASTORE_ERROR = code(7013)
 ErrorCodes.INVALID_AMOUNT = code(7014)
 ErrorCodes.SPONSORED_EXECUTION_FAILED = code(7020)
 
+-- 8000-8099: KeyStore / Onboarding errors
+ErrorCodes.KEY_STORE_ERROR = code(8000)
+ErrorCodes.KEY_STORE_DECRYPT_ERROR = code(8001)
+ErrorCodes.KEY_STORE_SECRET_INVALID = code(8002)
+ErrorCodes.ONBOARDING_ERROR = code(8010)
+
 -- Auto-generate `name` from the table key to prevent key/name divergence
 for key, entry in pairs(ErrorCodes) do
 	if type(entry) == "table" and entry.code then

@@ -42,6 +42,8 @@ local wallet = {
 	AccountType = require("../src/wallet/AccountType"),
 	AccountFactory = require("../src/wallet/AccountFactory"),
 	OutsideExecution = require("../src/wallet/OutsideExecution"),
+	KeyStore = require("../src/wallet/KeyStore"),
+	OnboardingManager = require("../src/wallet/OnboardingManager"),
 }
 
 local contract = {
@@ -201,14 +203,14 @@ end)
 --------------------------------------------------------------------------------
 
 describe("Barrel Export - wallet namespace", function()
-	local expectedKeys = { "Account", "TypedData", "AccountType", "AccountFactory", "OutsideExecution" }
+	local expectedKeys = { "Account", "TypedData", "AccountType", "AccountFactory", "OutsideExecution", "KeyStore", "OnboardingManager" }
 
-	it("exports exactly 5 sub-modules", function()
+	it("exports exactly 7 sub-modules", function()
 		local count = 0
 		for _ in StarknetLuau.wallet do
 			count += 1
 		end
-		expect(count):toBe(5)
+		expect(count):toBe(7)
 	end)
 
 	for _, key in expectedKeys do
