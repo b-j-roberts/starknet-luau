@@ -1,11 +1,16 @@
 --!strict
 -- Comprehensive test vectors cross-referenced from starknet.js / @scure/starknet
 -- These are the canonical known-good values for validating all crypto primitives.
--- Source references:
---   starknet.js: https://github.com/starknet-io/starknet.js
---   @scure/starknet: https://github.com/paulmillr/scure-starknet
---   Ethereum Keccak spec: https://keccak.team/
---   SNIP-8: Starknet transaction hash specification
+--
+-- Source references (with version tags):
+--   starknet.js v6.x:     https://github.com/starknet-io/starknet.js/tree/v6.23.1
+--   @scure/starknet v2.0: https://github.com/paulmillr/scure-starknet/tree/2.0.0
+--   NIST FIPS 180-4:      https://doi.org/10.6028/NIST.FIPS.180-4
+--   RFC 4231:             https://datatracker.ietf.org/doc/html/rfc4231
+--   RFC 6979:             https://datatracker.ietf.org/doc/html/rfc6979
+--   Keccak spec:          https://keccak.team/
+--   SNIP-8:               https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-8.md
+--   SNIP-12:              https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md
 
 local TestVectors = {}
 
@@ -119,7 +124,7 @@ TestVectors.BigInt = {
 
 --------------------------------------------------------------------------------
 -- Poseidon hash vectors
--- Cross-referenced from starknet.js poseidonHash / @scure/starknet
+-- Cross-referenced from starknet.js v6.x poseidonHash / @scure/starknet v2.0
 --------------------------------------------------------------------------------
 
 TestVectors.Poseidon = {
@@ -152,7 +157,7 @@ TestVectors.Poseidon = {
 
 --------------------------------------------------------------------------------
 -- Pedersen hash vectors
--- Cross-referenced from starknet.js computePedersenHash / starknet-crypto-py
+-- Cross-referenced from starknet.js v6.x computePedersenHash
 --------------------------------------------------------------------------------
 
 TestVectors.Pedersen = {
@@ -176,7 +181,7 @@ TestVectors.Pedersen = {
 
 --------------------------------------------------------------------------------
 -- Keccak / Selector vectors
--- Cross-referenced from Ethereum Keccak spec, starknet.js getSelectorFromName
+-- Cross-referenced from Keccak spec (keccak.team), starknet.js v6.x getSelectorFromName
 --------------------------------------------------------------------------------
 
 TestVectors.Keccak = {
@@ -210,8 +215,9 @@ TestVectors.Keccak = {
 
 --------------------------------------------------------------------------------
 -- ECDSA signature vectors
--- Cross-referenced from @scure/starknet test suite
--- Source: https://github.com/paulmillr/scure-starknet/blob/main/test/stark.test.ts
+-- Cross-referenced from @scure/starknet v2.0 test suite
+-- Source: https://github.com/paulmillr/scure-starknet/blob/2.0.0/test/stark.test.ts
+-- RFC 6979: https://datatracker.ietf.org/doc/html/rfc6979
 --------------------------------------------------------------------------------
 
 TestVectors.ECDSA = {
@@ -288,7 +294,8 @@ TestVectors.ECDSA = {
 
 --------------------------------------------------------------------------------
 -- Transaction hash vectors
--- Cross-referenced from starknet.js / SNIP-8 spec
+-- Cross-referenced from starknet.js v6.x / SNIP-8 spec
+-- SNIP-8: https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-8.md
 --------------------------------------------------------------------------------
 
 TestVectors.TransactionHash = {
@@ -411,36 +418,53 @@ TestVectors.TransactionHash = {
 
 --------------------------------------------------------------------------------
 -- Account address vectors
--- Cross-referenced from starknet.js calculateContractAddressFromHash
+-- Cross-referenced from starknet.js v6.x calculateContractAddressFromHash
 --------------------------------------------------------------------------------
 
 TestVectors.Account = {
-	-- OZ class hash v0.11
+	-- OZ class hash v0.11 (v0.8.1 Cairo 1)
 	ozClassHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
 	-- OZ class hash v0.14
 	ozClassHash2 = "0x01a736d6ed154502257f02b1ccdf4d9d1089f80811cd6acad48e6b6a9d1f2003",
+	-- Argent X class hash (v0.4.0, Cairo 1)
+	argentClassHash = "0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f",
+	-- Braavos base class hash (v1.2.0, used for address computation)
+	braavosBaseClassHash = "0x03d16c7a9a60b0593bd202f660a28c5d76e0403601d9ccc7e4fa253b6a70c201",
 
-	-- Private key -> public key -> address vectors
-	-- Format: { privateKey, publicKeyX, addressOZ, addressOZ2 }
+	-- Private key -> public key -> address vectors (3 key pairs, all account types)
+	-- Format: { privateKey, publicKey, addressOZ, addressOZ2, addressArgent, addressBraavos }
 	addresses = {
 		{
 			privateKey = "0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c",
 			publicKey = "0x499f65ae2f71d5298d2d88823b2e5e19596a71aac1984710479e406a002439",
 			addressOZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d",
 			addressOZ2 = "0x38de74aab5907ad06a25dd88fafe0296a2ca303fedb8b37926edf15363aee67",
+			addressArgent = "0x4fa568d3d598d25e4d9ee7b826f6fc1ffbe1914fe9546019507ab662451623c",
+			addressBraavos = "0x2270cb3dcd6ea9349c122cf2dc3e17ffe0d19130a524b96ccbae577846eb533",
 		},
 		{
 			privateKey = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F",
 			publicKey = "0x1895a6a77ae14e7987b9cb51329a5adfb17bd8e7c638f92d6892d76e51cebcf",
 			addressOZ = "0x568f41175d86b1ea857a8daba89430ebe5b5da27c6848fa8234392151ea8b39",
 			addressOZ2 = "0x365ff7fefa7c4a5e0c41e2c27aa55d35b6439fa891ad5b85da1cdffeb736f08",
+			addressArgent = "0x42daaf2564a6231861945eba630e2ead610e1fd16af350b9450b28da60b3ef3",
+			addressBraavos = "0x13f206265ce80c4dd163a66cd826276329430b3a9b94fe1d67207ec6b722381",
 		},
 		{
 			privateKey = "0x1",
 			publicKey = "0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca",
 			addressOZ = "0x2b5cea709ab25612f9d014a3312f1c6dbd988add3bf396c1866db1b03b09194",
 			addressOZ2 = "0x4235a538f2315ca101e7260ff94997456428a1a7138b71ab335a423602400d8",
+			addressArgent = "0x1ace7c995fff4059266d7ae6b85abce75273bc3b2873531a45c038ed798d082",
+			addressBraavos = "0x260565660443aa1bd7b49040bc600b36e3dd82c4dd8d06ee1a77b4dc595bae7",
 		},
+	},
+
+	-- Argent X address with guardian (privkey_1, Argent class hash, calldata = [0, pubkey, 1, 0, guardian])
+	argentGuardianAddress = {
+		publicKey = "0x499f65ae2f71d5298d2d88823b2e5e19596a71aac1984710479e406a002439",
+		guardianKey = "0xdeadbeef",
+		expected = "0x129c3b10ff728e0be8a1e23004df70de1b67875506b5857bde61d657eecf38a",
 	},
 
 	-- Special case vectors: { publicKey, deployer, salt, classHash, expected }
@@ -462,7 +486,7 @@ TestVectors.Account = {
 
 --------------------------------------------------------------------------------
 -- Constants vectors
--- Cross-referenced from starknet.js constants
+-- Cross-referenced from starknet.js v6.x constants
 --------------------------------------------------------------------------------
 
 TestVectors.Constants = {
@@ -479,6 +503,246 @@ TestVectors.Constants = {
 	CURVE_ORDER = "0x800000000000010ffffffffffffffffb781126dcae7b2321e66a241adc64d2f",
 	GENERATOR_X = "0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca",
 	GENERATOR_Y = "0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f",
+}
+
+--------------------------------------------------------------------------------
+-- SHA-256 hash vectors
+-- Cross-referenced from NIST FIPS 180-4 examples
+-- Source: https://csrc.nist.gov/projects/cryptographic-standards-and-guidelines
+--------------------------------------------------------------------------------
+
+TestVectors.SHA256 = {
+	-- hash vectors: { inputAscii (or "" for empty), expectedHex }
+	hash = {
+		{ input = "", expected = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+		{ input = "abc", expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
+		{
+			input = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+			expected = "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+		},
+		{
+			input = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+			expected = "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1",
+		},
+		{ input = "a", expected = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb" },
+		-- Single zero byte (inputHex = "00")
+		{ inputHex = "00", expected = "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d" },
+	},
+	-- HMAC-SHA-256 vectors from RFC 4231
+	-- Source: https://datatracker.ietf.org/doc/html/rfc4231
+	hmac = {
+		{
+			keyDesc = "20 bytes of 0x0b",
+			keyFill = { len = 20, byte = 0x0b },
+			dataAscii = "Hi There",
+			expected = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+		},
+		{
+			keyDesc = "Jefe",
+			keyAscii = "Jefe",
+			dataAscii = "what do ya want for nothing?",
+			expected = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+		},
+		{
+			keyDesc = "20 bytes of 0xaa",
+			keyFill = { len = 20, byte = 0xaa },
+			dataFill = { len = 50, byte = 0xdd },
+			expected = "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe",
+		},
+		{
+			keyDesc = "incrementing 0x01..0x19",
+			keyHex = "0102030405060708090a0b0c0d0e0f10111213141516171819",
+			dataFill = { len = 50, byte = 0xcd },
+			expected = "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b",
+		},
+		{
+			keyDesc = "131 bytes of 0xaa",
+			keyFill = { len = 131, byte = 0xaa },
+			dataAscii = "Test Using Larger Than Block-Size Key - Hash Key First",
+			expected = "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
+		},
+		{
+			keyDesc = "131 bytes of 0xaa (longer data)",
+			keyFill = { len = 131, byte = 0xaa },
+			dataAscii = "This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
+			expected = "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2",
+		},
+	},
+}
+
+--------------------------------------------------------------------------------
+-- StarkScalarField vectors
+-- Scalar field operations with curve order N
+--------------------------------------------------------------------------------
+
+TestVectors.StarkScalarField = {
+	curveOrder = "0x800000000000010ffffffffffffffffb781126dcae7b2321e66a241adc64d2f",
+	-- N-1 (max valid scalar / near-boundary inversion target)
+	nMinus1 = "0x800000000000010ffffffffffffffffb781126dcae7b2321e66a241adc64d2e",
+}
+
+--------------------------------------------------------------------------------
+-- StarkSigner vectors
+-- Private key derivation and signing (cross-referenced from @scure/starknet)
+-- Note: Signing vectors overlap with TestVectors.ECDSA but are keyed by signer usage
+--------------------------------------------------------------------------------
+
+TestVectors.StarkSigner = {
+	-- Private keys used across signer tests
+	privateKeys = {
+		"0x2dccce1da22003777062ee0870e9881b460a8b7eca276870f57c601f182136c",
+		"0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F",
+	},
+	-- pubKeyX derivation: same as ECDSA.publicKeys[2] and [3]
+	-- Signing: same as ECDSA.signatures[1] (@scure/starknet vector set 1)
+}
+
+--------------------------------------------------------------------------------
+-- TypedData (SNIP-12) vectors
+-- Cross-referenced from starknet.js typed data tests
+-- Source: https://github.com/starknet-io/starknet.js (v6.x typedData tests)
+--------------------------------------------------------------------------------
+
+TestVectors.TypedData = {
+	-- Account address used across all message hash tests
+	exampleAddress = "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826",
+
+	-- Type hash vectors: { typeName, revision, expectedHash }
+	typeHashes = {
+		-- LEGACY (revision "0")
+		{ typeName = "StarkNetDomain", revision = "0", expected = "0x1bfc207425a47a5dfa1a50a4f5241203f50624ca5fdf5e18755765416b8e288" },
+		{ typeName = "Person", revision = "0", expected = "0x2896dbe4b96a67110f454c01e5336edc5bbc3635537efd690f122f4809cc855" },
+		{ typeName = "Mail", revision = "0", expected = "0x13d89452df9512bf750f539ba3001b945576243288137ddb6c788457d4b2f79" },
+		{ typeName = "Post", revision = "0", expected = "0x1d71e69bf476486b43cdcfaf5a85c00bb2d954c042b281040e513080388356d" },
+		{ typeName = "MailStructArray", revision = "0", expected = "0x873b878e35e258fc99e3085d5aaad3a81a0c821f189c08b30def2cde55ff27" },
+		-- ACTIVE (revision "1")
+		{ typeName = "ExampleBaseTypes", revision = "1", expected = "0x1f94cd0be8b4097a41486170fdf09a4cd23aefbc74bb2344718562994c2c111" },
+		{ typeName = "ExamplePresetTypes", revision = "1", expected = "0x1a25a8bb84b761090b1fadaebe762c4b679b0d8883d2bedda695ea340839a55" },
+		{ typeName = "ExampleEnum", revision = "1", expected = "0x8eb4aeac64b707f3e843284c4258df6df1f0f7fd38dcffdd8a153a495cd351" },
+		{ typeName = "ExampleEnumNested", revision = "1", expected = "0x2143bb787fabace39d62e9acf8b6e97d9a369000516c3e6ffd963dc1370fc1a" },
+	},
+
+	-- Message hash vectors: { description, expectedHash }
+	messageHashes = {
+		-- LEGACY
+		{ desc = "baseExample", expected = "0x6fcff244f63e38b9d88b9e3378d44757710d1b244282b435cb472053c8d78d0" },
+		{ desc = "mail_StructArray", expected = "0x5914ed2764eca2e6a41eb037feefd3d2e33d9af6225a9e7fe31ac943ff712c" },
+		{ desc = "string", expected = "0x70338fb11b8f70b68b261de8a322bcb004bd85e88ac47d9147982c7f5ac66fd" },
+		{ desc = "session_MerkleTree", expected = "0x751fb7d98545f7649d0d0eadc80d770fcd88d8cfaa55590b284f4e1b701ef0a" },
+		-- ACTIVE
+		{ desc = "baseTypes", expected = "0xdb7829db8909c0c5496f5952bcfc4fc894341ce01842537fc4f448743480b6" },
+		{ desc = "presetTypes", expected = "0x185b339d5c566a883561a88fb36da301051e2c0225deb325c91bb7aa2f3473a" },
+		{ desc = "enum", expected = "0x6e61abaf480b1370bbf231f54e298c5f4872f40a6d2dd409ff30accee5bbd1e" },
+		{ desc = "enumNested", expected = "0x691fc54567306a8ea5431130f1b98299e74a748ac391540a86736f20ef5f2b7" },
+	},
+}
+
+--------------------------------------------------------------------------------
+-- DeployAccount transaction hash vectors
+-- Computed via TransactionHash.calculateDeployAccountTransactionHash
+-- Cross-referenced from starknet.js / SNIP-8 spec
+--------------------------------------------------------------------------------
+
+TestVectors.DeployAccountHash = {
+	-- V3 DEPLOY_ACCOUNT transaction hash vectors
+	deploy = {
+		-- Test vector 1: Minimal
+		{
+			params = {
+				classHash = "0x1",
+				constructorCalldata = {},
+				contractAddress = "0x1",
+				salt = "0x0",
+				chainId = "0x534e5f5345504f4c4941",
+				nonce = "0x0",
+			},
+			expected = "0x62211985366cf450239fdec126d1b5729a6f140e20b757ebcb04651deab7a85",
+		},
+		-- Test vector 2: OZ account on Sepolia
+		{
+			params = {
+				classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+				constructorCalldata = { "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c" },
+				contractAddress = "0x2fab82e4aef1d8664874e1f194951856d48463c3e6bf9a8c68e234a629a6f50",
+				salt = "0x5cd65f3d7daea6c63939d659b8473ea0c5cd81576035a4d34e52fb06840196c",
+				chainId = "0x534e5f5345504f4c4941",
+				nonce = "0x0",
+				resourceBounds = {
+					l1Gas = { maxAmount = "0x186a0", maxPricePerUnit = "0x5af3107a4000" },
+					l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+					l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				},
+			},
+			expected = "0x544e9d636e1a8e663064a77da86a377d05aad6c1776477ea10353de01ed9e1d",
+		},
+		-- Test vector 3: Multi-arg constructor
+		{
+			params = {
+				classHash = "0x65bcf29c898ff912fa2bdd4c6cd94b9142da0399127601ef35dfc9babc7a691",
+				constructorCalldata = { "0x21b", "0x151" },
+				contractAddress = "0x219bea54dc352c0d6853de34019644758620fa6298c4608829228c3f5f8db33",
+				salt = "0x12fd537",
+				chainId = "0x32",
+				nonce = "0x0",
+				resourceBounds = {
+					l1Gas = { maxAmount = "0x7c9", maxPricePerUnit = "0x1" },
+					l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+					l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				},
+			},
+			expected = "0x3aa44d769a27ab568d71e8f25a7b0f7fe004d35da589175528c066a631b12c4",
+		},
+		-- Test vector 4: Paymaster data
+		{
+			params = {
+				classHash = "0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f",
+				constructorCalldata = { "0x33434ad846cdd5f23eb73ff09fe6fddd568284a0fb7d1be20ee482f044dabe2" },
+				contractAddress = "0x6b86e40118f29ebe393a75469b4d926c7a44c2e2681b6d319520b7c1156d114",
+				salt = "0x33434ad846cdd5f23eb73ff09fe6fddd568284a0fb7d1be20ee482f044dabe2",
+				chainId = "0x534e5f4d41494e",
+				nonce = "0x0",
+				paymasterData = { "0xdead", "0xbeef" },
+				resourceBounds = {
+					l1Gas = { maxAmount = "0x2710", maxPricePerUnit = "0x174876e800" },
+					l2Gas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+					l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				},
+			},
+			expected = "0x2dd5cec3d2c0d4f433eb77d90e01709d8185abe223b735b226f14d6749ae493",
+		},
+		-- Test vector 5: Tip + L2 gas
+		{
+			params = {
+				classHash = "0xdeadbeefdeadbeefdeadbeefdeadbeef",
+				constructorCalldata = {},
+				contractAddress = "0x1234567890abcdef1234567890abcdef12345678",
+				salt = "0xabc",
+				chainId = "0x534e5f5345504f4c4941",
+				nonce = "0x1",
+				tip = "0x5",
+				resourceBounds = {
+					l1Gas = { maxAmount = "0x100", maxPricePerUnit = "0x3e8" },
+					l2Gas = { maxAmount = "0x200", maxPricePerUnit = "0x1f4" },
+					l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
+				},
+			},
+			expected = "0x3f4a88286d111ecf280334aed5c794faebac755d13321d80fb1f4a1cdb5fe41",
+		},
+		-- Test vector 6: L2 DA mode
+		{
+			params = {
+				classHash = "0x1",
+				constructorCalldata = { "0x1" },
+				contractAddress = "0x12fd538",
+				salt = "0x1",
+				chainId = "0x534e5f5345504f4c4941",
+				nonce = "0x0",
+				nonceDataAvailabilityMode = 1,
+				feeDataAvailabilityMode = 1,
+			},
+			expected = "0x3648c77dc2d3134fa2562f3fa0b2505a0bb7cb541c71fc8dd84693c0eaa165a",
+		},
+	},
 }
 
 return TestVectors

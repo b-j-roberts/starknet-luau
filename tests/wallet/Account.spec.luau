@@ -5,46 +5,40 @@ local ErrorCodes = require("../../src/errors/ErrorCodes")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local MockPromise = require("../helpers/MockPromise")
 local TestUtils = require("../helpers/TestUtils")
+local TV = require("../fixtures/test-vectors")
 
 --------------------------------------------------------------------------------
--- Test constants
+-- Test constants (from centralized test vectors)
 --------------------------------------------------------------------------------
 
--- Private keys from StarkSigner test suite
-local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
-local PRIVKEY_2 = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F"
-local PRIVKEY_3 = "0x1"
+local PRIVKEY_1 = TV.Account.addresses[1].privateKey
+local PRIVKEY_2 = TV.Account.addresses[2].privateKey
+local PRIVKEY_3 = TV.Account.addresses[3].privateKey
 
--- Public keys (verified from StarkSigner tests)
-local PUBKEY_1 = TestUtils.TEST_PUBLIC_KEY
-local PUBKEY_2 = "0x1895a6a77ae14e7987b9cb51329a5adfb17bd8e7c638f92d6892d76e51cebcf"
-local PUBKEY_3 = "0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca"
+local PUBKEY_1 = TV.Account.addresses[1].publicKey
+local PUBKEY_2 = TV.Account.addresses[2].publicKey
+local PUBKEY_3 = TV.Account.addresses[3].publicKey
 
--- OZ class hashes
-local OZ_CLASS_HASH = TestUtils.OZ_CLASS_HASH
-local OZ_CLASS_HASH_2 = TestUtils.OZ_CLASS_HASH_2
+local OZ_CLASS_HASH = TV.Account.ozClassHash
+local OZ_CLASS_HASH_2 = TV.Account.ozClassHash2
 
--- Expected OZ addresses (computed by starknet.js calculateContractAddressFromHash)
-local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d"
-local EXPECTED_ADDR_2_OZ = "0x568f41175d86b1ea857a8daba89430ebe5b5da27c6848fa8234392151ea8b39"
-local EXPECTED_ADDR_3_OZ = "0x2b5cea709ab25612f9d014a3312f1c6dbd988add3bf396c1866db1b03b09194"
+local EXPECTED_ADDR_1_OZ = TV.Account.addresses[1].addressOZ
+local EXPECTED_ADDR_2_OZ = TV.Account.addresses[2].addressOZ
+local EXPECTED_ADDR_3_OZ = TV.Account.addresses[3].addressOZ
 
-local EXPECTED_ADDR_1_OZ2 = "0x38de74aab5907ad06a25dd88fafe0296a2ca303fedb8b37926edf15363aee67"
-local EXPECTED_ADDR_2_OZ2 = "0x365ff7fefa7c4a5e0c41e2c27aa55d35b6439fa891ad5b85da1cdffeb736f08"
-local EXPECTED_ADDR_3_OZ2 = "0x4235a538f2315ca101e7260ff94997456428a1a7138b71ab335a423602400d8"
+local EXPECTED_ADDR_1_OZ2 = TV.Account.addresses[1].addressOZ2
+local EXPECTED_ADDR_2_OZ2 = TV.Account.addresses[2].addressOZ2
+local EXPECTED_ADDR_3_OZ2 = TV.Account.addresses[3].addressOZ2
 
--- Expected Argent X addresses (v0.4.0, calldata = [0, publicKey, 0])
-local EXPECTED_ADDR_1_ARGENT = "0x4fa568d3d598d25e4d9ee7b826f6fc1ffbe1914fe9546019507ab662451623c"
-local EXPECTED_ADDR_2_ARGENT = "0x42daaf2564a6231861945eba630e2ead610e1fd16af350b9450b28da60b3ef3"
-local EXPECTED_ADDR_3_ARGENT = "0x1ace7c995fff4059266d7ae6b85abce75273bc3b2873531a45c038ed798d082"
+local EXPECTED_ADDR_1_ARGENT = TV.Account.addresses[1].addressArgent
+local EXPECTED_ADDR_2_ARGENT = TV.Account.addresses[2].addressArgent
+local EXPECTED_ADDR_3_ARGENT = TV.Account.addresses[3].addressArgent
 
--- Expected Argent X address with guardian
-local EXPECTED_ADDR_1_ARGENT_GUARDIAN = "0x129c3b10ff728e0be8a1e23004df70de1b67875506b5857bde61d657eecf38a"
+local EXPECTED_ADDR_1_ARGENT_GUARDIAN = TV.Account.argentGuardianAddress.expected
 
--- Expected Braavos addresses (base class hash, calldata = [publicKey])
-local EXPECTED_ADDR_1_BRAAVOS = "0x2270cb3dcd6ea9349c122cf2dc3e17ffe0d19130a524b96ccbae577846eb533"
-local EXPECTED_ADDR_2_BRAAVOS = "0x13f206265ce80c4dd163a66cd826276329430b3a9b94fe1d67207ec6b722381"
-local EXPECTED_ADDR_3_BRAAVOS = "0x260565660443aa1bd7b49040bc600b36e3dd82c4dd8d06ee1a77b4dc595bae7"
+local EXPECTED_ADDR_1_BRAAVOS = TV.Account.addresses[1].addressBraavos
+local EXPECTED_ADDR_2_BRAAVOS = TV.Account.addresses[2].addressBraavos
+local EXPECTED_ADDR_3_BRAAVOS = TV.Account.addresses[3].addressBraavos
 
 --------------------------------------------------------------------------------
 -- Mock RPC layer (shared via TestUtils)
@@ -725,7 +719,7 @@ end)
 -- Account constants
 --------------------------------------------------------------------------------
 
-describe("Constants class hashes", function()
+describe("Account - constants class hashes", function()
 	it("OZ_ACCOUNT_CLASS_HASH matches test vector", function()
 		expect(Constants.OZ_ACCOUNT_CLASS_HASH):toBe(OZ_CLASS_HASH)
 	end)

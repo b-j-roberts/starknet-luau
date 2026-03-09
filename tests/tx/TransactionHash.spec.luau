@@ -122,7 +122,7 @@ end)
 -- Chain ID constants
 --------------------------------------------------------------------------------
 
-describe("Constants - chain ID constants", function()
+describe("TransactionHash - chain ID constants", function()
 	it("SN_MAIN is correct ASCII encoding", function()
 		expect(Constants.SN_MAIN):toBe("0x534e5f4d41494e")
 	end)

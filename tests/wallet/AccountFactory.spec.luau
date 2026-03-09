@@ -5,31 +5,29 @@ local Account = require("../../src/wallet/Account")
 local Constants = require("../../src/constants")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local TestUtils = require("../helpers/TestUtils")
+local TV = require("../fixtures/test-vectors")
 
 --------------------------------------------------------------------------------
--- Test constants
+-- Test constants (from centralized test vectors)
 --------------------------------------------------------------------------------
 
--- Private keys from StarkSigner test suite
-local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
-local PRIVKEY_2 = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F"
-local PRIVKEY_3 = "0x1"
+local PRIVKEY_1 = TV.Account.addresses[1].privateKey
+local PRIVKEY_2 = TV.Account.addresses[2].privateKey
+local PRIVKEY_3 = TV.Account.addresses[3].privateKey
 
--- Public keys (verified from StarkSigner tests)
-local PUBKEY_1 = TestUtils.TEST_PUBLIC_KEY
-local PUBKEY_2 = "0x1895a6a77ae14e7987b9cb51329a5adfb17bd8e7c638f92d6892d76e51cebcf"
-local PUBKEY_3 = "0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca"
+local PUBKEY_1 = TV.Account.addresses[1].publicKey
+local PUBKEY_2 = TV.Account.addresses[2].publicKey
+local PUBKEY_3 = TV.Account.addresses[3].publicKey
 
--- Expected addresses (from Account.spec.luau, verified against starknet.js)
-local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d"
-local EXPECTED_ADDR_2_OZ = "0x568f41175d86b1ea857a8daba89430ebe5b5da27c6848fa8234392151ea8b39"
-local EXPECTED_ADDR_3_OZ = "0x2b5cea709ab25612f9d014a3312f1c6dbd988add3bf396c1866db1b03b09194"
+local EXPECTED_ADDR_1_OZ = TV.Account.addresses[1].addressOZ
+local EXPECTED_ADDR_2_OZ = TV.Account.addresses[2].addressOZ
+local EXPECTED_ADDR_3_OZ = TV.Account.addresses[3].addressOZ
 
-local EXPECTED_ADDR_1_ARGENT = "0x4fa568d3d598d25e4d9ee7b826f6fc1ffbe1914fe9546019507ab662451623c"
-local EXPECTED_ADDR_2_ARGENT = "0x42daaf2564a6231861945eba630e2ead610e1fd16af350b9450b28da60b3ef3"
-local EXPECTED_ADDR_3_ARGENT = "0x1ace7c995fff4059266d7ae6b85abce75273bc3b2873531a45c038ed798d082"
+local EXPECTED_ADDR_1_ARGENT = TV.Account.addresses[1].addressArgent
+local EXPECTED_ADDR_2_ARGENT = TV.Account.addresses[2].addressArgent
+local EXPECTED_ADDR_3_ARGENT = TV.Account.addresses[3].addressArgent
 
-local EXPECTED_ADDR_1_ARGENT_GUARDIAN = "0x129c3b10ff728e0be8a1e23004df70de1b67875506b5857bde61d657eecf38a"
+local EXPECTED_ADDR_1_ARGENT_GUARDIAN = TV.Account.argentGuardianAddress.expected
 
 --------------------------------------------------------------------------------
 -- Mock RPC layer
@@ -65,7 +63,7 @@ resetHandlers()
 -- AccountType - class hash constants
 --------------------------------------------------------------------------------
 
-describe("AccountType - class hash constants from Constants", function()
+describe("AccountFactory - AccountType class hash constants", function()
 	it("OZ classHash matches Constants.OZ_ACCOUNT_CLASS_HASH", function()
 		expect(AccountType.OZ.classHash):toBe(Constants.OZ_ACCOUNT_CLASS_HASH)
 	end)
@@ -95,7 +93,7 @@ end)
 -- AccountType.OZ - constructor calldata builder
 --------------------------------------------------------------------------------
 
-describe("AccountType.OZ - calldata builder", function()
+describe("AccountFactory - AccountType.OZ calldata builder", function()
 	it("produces [publicKey] for a single public key", function()
 		local calldata = AccountType.OZ(PUBKEY_1)
 		expect(#calldata):toBe(1)
@@ -122,7 +120,7 @@ end)
 -- AccountType.Argent - constructor calldata builder
 --------------------------------------------------------------------------------
 
-describe("AccountType.Argent - calldata builder", function()
+describe("AccountFactory - AccountType.Argent calldata builder", function()
 	it("produces [0, ownerKey, 0] without guardian", function()
 		local calldata = AccountType.Argent(PUBKEY_1)
 		expect(#calldata):toBe(3)

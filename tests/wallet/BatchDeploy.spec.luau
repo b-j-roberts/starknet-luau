@@ -4,15 +4,15 @@ local AccountFactory = require("../../src/wallet/AccountFactory")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local TestUtils = require("../helpers/TestUtils")
 local MockPromise = require("../helpers/MockPromise")
+local TV = require("../fixtures/test-vectors")
 
 --------------------------------------------------------------------------------
--- Test constants
+-- Test constants (from centralized test vectors)
 --------------------------------------------------------------------------------
 
--- Private keys (must be < curve order N)
-local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
-local PRIVKEY_2 = "0x178047D3869489C055D7EA54C014FFB834A069C9595186ABE04EA4D1223A03F"
-local PRIVKEY_3 = "0x1"
+local PRIVKEY_1 = TV.Account.addresses[1].privateKey
+local PRIVKEY_2 = TV.Account.addresses[2].privateKey
+local PRIVKEY_3 = TV.Account.addresses[3].privateKey
 local PRIVKEY_4 = "0x2"
 local PRIVKEY_5 = "0x3"
 
@@ -1044,42 +1044,5 @@ describe("batchDeploy - summary report", function()
 
 		local status = report.results[1].status
 		expect(status == "deployed" or status == "failed" or status == "skipped"):toBe(true)
-	end)
-end)
-
---------------------------------------------------------------------------------
--- MockPromise.all
---------------------------------------------------------------------------------
-
-describe("MockPromise.all", function()
-	it("resolves array of resolved promises", function()
-		local p1 = MockPromise.resolve("a")
-		local p2 = MockPromise.resolve("b")
-		local result = MockPromise.all({ p1, p2 }):expect()
-		expect(result[1]):toBe("a")
-		expect(result[2]):toBe("b")
-	end)
-
-	it("rejects if any promise is rejected", function()
-		local p1 = MockPromise.resolve("ok")
-		local p2 = MockPromise.reject("fail")
-
-		local p = MockPromise.all({ p1, p2 })
-		expect(p:getStatus()):toBe("Rejected")
-	end)
-
-	it("handles empty array", function()
-		local result = MockPromise.all({}):expect()
-		expect(#result):toBe(0)
-	end)
-
-	it("preserves order", function()
-		local p1 = MockPromise.resolve(10)
-		local p2 = MockPromise.resolve(20)
-		local p3 = MockPromise.resolve(30)
-		local result = MockPromise.all({ p1, p2, p3 }):expect()
-		expect(result[1]):toBe(10)
-		expect(result[2]):toBe(20)
-		expect(result[3]):toBe(30)
 	end)
 end)

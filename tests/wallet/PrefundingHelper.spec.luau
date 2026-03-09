@@ -3,18 +3,18 @@ local Account = require("../../src/wallet/Account")
 local BigInt = require("../../src/crypto/BigInt")
 local Constants = require("../../src/constants")
 local TestUtils = require("../helpers/TestUtils")
+local TV = require("../fixtures/test-vectors")
 
 --------------------------------------------------------------------------------
--- Test constants
+-- Test constants (from centralized test vectors)
 --------------------------------------------------------------------------------
 
-local PRIVKEY_1 = TestUtils.TEST_PRIVATE_KEY
-local PUBKEY_1 = TestUtils.TEST_PUBLIC_KEY
-local OZ_CLASS_HASH = TestUtils.OZ_CLASS_HASH
-local ARGENT_CLASS_HASH = TestUtils.ARGENT_CLASS_HASH
+local PRIVKEY_1 = TV.Account.addresses[1].privateKey
+local PUBKEY_1 = TV.Account.addresses[1].publicKey
+local OZ_CLASS_HASH = TV.Account.ozClassHash
+local ARGENT_CLASS_HASH = TV.Account.argentClassHash
 
--- Pre-computed OZ address for PUBKEY_1 (from Account.spec.luau)
-local EXPECTED_ADDR_1_OZ = "0x76d427e4760e8a0947f747c98263827154aca2c999b288a2087cd9655e2008d"
+local EXPECTED_ADDR_1_OZ = TV.Account.addresses[1].addressOZ
 
 -- STRK/ETH token addresses
 local STRK_TOKEN = Constants.STRK_TOKEN_ADDRESS
