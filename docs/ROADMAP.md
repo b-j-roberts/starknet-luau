@@ -2,6 +2,66 @@
 
 ---
 
+# Phase 1: Core SDK ✅
+
+Foundation layer — all crypto primitives, signing, provider, transaction building, account management, and contract interaction. Fully implemented.
+
+### 1.1–1.9 Cryptographic Primitives ✅
+
+- [x] **BigInt**: Buffer-based arbitrary precision integers with 24-bit f64 limbs, Barrett reduction (94 tests)
+- [x] **StarkField**: Field arithmetic over Stark prime P = 2^251 + 17·2^192 + 1 (51 tests)
+- [x] **StarkScalarField**: Scalar arithmetic over curve order N (54 tests)
+- [x] **StarkCurve**: Elliptic curve point operations with Jacobian coordinates (53 tests)
+- [x] **Poseidon**: Hades permutation hash (width=3, 91 rounds) for V3 transaction hashing (22 tests)
+- [x] **Pedersen**: EC point-based hash for legacy address computation (17 tests)
+- [x] **Keccak**: Keccak-256 (Ethereum variant) for function selector computation (24 tests)
+- [x] **SHA256**: FIPS 180-4 SHA-256 + HMAC-SHA-256 for RFC 6979 nonce generation (31 tests)
+- [x] **ECDSA**: Stark ECDSA signing with RFC 6979, cross-referenced against @scure/starknet (37 tests)
+
+### 1.10 StarkSigner ✅
+
+- [x] Key derivation, transaction signing, public key caching (21 tests)
+
+### 1.11 RpcProvider ✅
+
+- [x] JSON-RPC 2.0 client with Promise-based async, token bucket rate limiting, exponential backoff retry (59 tests)
+- [x] EventPoller: configurable polling for contract events with start/stop lifecycle
+- [x] RequestQueue: 3-bucket priority queue with JSON-RPC batching (82 tests)
+- [x] ResponseCache: LRU cache with per-method TTL and block-based invalidation (89 tests)
+- [x] NonceManager: per-address local nonce tracking with parallel reservation and auto-resync (64 tests)
+- [x] Expanded RPC methods: `getBlockWithTxs`, `getBlockWithReceipts`, `getTransactionByHash`, `getStorageAt`, `getClassHashAt`, `getClassAt`, `getSpecVersion` (39 tests)
+
+### 1.12 TransactionBuilder ✅
+
+- [x] V3 INVOKE and DEPLOY_ACCOUNT transaction orchestration: nonce fetch, fee estimation, hash computation, signing, submission (36 tests)
+- [x] TransactionHash: Poseidon-based V3 INVOKE and DEPLOY_ACCOUNT hash computation
+- [x] CallData: multicall calldata encoding for `__execute__`
+
+### 1.13 Account ✅
+
+- [x] Address derivation, transaction execution, fee estimation for OpenZeppelin, Argent X, and Braavos account types (80 tests)
+
+### 1.14 Contract ✅
+
+- [x] ABI-driven dynamic dispatch — view functions via `call()`, external functions via `invoke()`, with `populate()` for multicall batching (60 tests)
+- [x] AbiCodec: recursive encoder/decoder for all Cairo types — felt, bool, u256, structs, enums, Option, Result, Array, Span, ByteArray, tuples (109 tests)
+- [x] ERC-20 preset: standard token interface with read/write methods (35 tests)
+- [x] ERC-721 preset: NFT interface with ownership and approval methods (41 tests)
+
+### 1.15 Error System ✅
+
+- [x] Typed error hierarchy: RpcError, SigningError, AbiError, ValidationError, TransactionError (42 tests)
+- [x] ErrorCodes: categorized constants across 7 ranges (1000s–7000s)
+
+### 1.16 Infrastructure ✅
+
+- [x] Constants: chain IDs, class hashes, token addresses, transaction versions, SDK version
+- [x] Main entry point: single `require()` barrel export for the entire SDK
+- [x] Dual package manager support: Wally + Pesde
+- [x] 5 example scripts, 7 documentation guides
+
+---
+
 # Phase 2: Nice to Have
 
 Features that enhance the MVP and make it fully production-ready and feature complete.
@@ -12,8 +72,8 @@ Features that enhance the MVP and make it fully production-ready and feature com
 
 **Requirements**:
 - [ ] Benchmark suite for all crypto operations (BigInt, field ops, Poseidon, ECDSA)
+- [x] Optimize scalar multiplication: 4-bit windowed method + Shamir's trick (done in refactor R.4.1)
 - [ ] Optimize Poseidon: inline MDS multiplication, minimize allocations
-- [ ] Optimize scalar multiplication: windowed method or NAF encoding
 - [ ] Pre-computed generator table for faster public key derivation
 - [ ] Montgomery's trick for batch affine conversions
 - [ ] Pedersen lookup table optimization
@@ -46,67 +106,121 @@ Features that enhance the MVP and make it fully production-ready and feature com
 
 ---
 
-### 2.12 Encrypted Key Store (Player-Linked Accounts)
+### 2.12 Encrypted Key Store (Player-Linked Accounts) ✅
 
-**Description**: Secure DataStoreService-backed persistence for player private keys, enabling automatic account recovery across sessions. Keys are encrypted at rest using a server-managed secret so that raw private keys are never stored in plaintext in Roblox's DataStore. This is a custodial model — the game developer is the custodian. SDK docs should point developers toward relay server mode (5.1) or wallet linking (5.6) for non-custodial alternatives.
+**Status**: Implemented — `src/wallet/KeyStore.luau` (72 tests)
 
-**Requirements**:
-- [ ] `KeyStore.new(config)` — encrypted key persistence via DataStoreService
-  - `config.serverSecret`: hex string from a private ServerStorage config module (minimum 32 bytes / 64 hex chars, validated on construction)
-  - `config.dataStoreName`: DataStore name (default: `"StarknetKeyStore"`)
-  - `config.accountType`: account type for generated accounts (default: `"oz"`)
-  - `config._dataStore`: injectable `DataStoreLike` for testing (same pattern as PaymasterBudget)
-  - `config._clock`: injectable clock for testing (same pattern as PaymasterBudget)
-- [ ] `keyStore:generateAndStore(playerId, provider)` → `{ account, address }` — generate new keypair via ECDSA, encrypt private key, persist to DataStore, return hydrated Account
-- [ ] `keyStore:loadAccount(playerId, provider)` → `Account?` — load encrypted key from DataStore, decrypt, return hydrated Account via `Account.fromPrivateKey()` (or nil if no key exists)
-- [ ] `keyStore:getOrCreate(playerId, provider)` → `{ account, isNew: boolean }` — load existing or generate + store new key (primary onboarding API for PlayerAdded)
-- [ ] `keyStore:hasAccount(playerId)` → `boolean` — check existence without decrypting (reads address field only)
-- [ ] `keyStore:deleteKey(playerId)` — remove key from DataStore via `RemoveAsync` (account deletion / GDPR Right to Erasure compliance)
-- [ ] Encryption: `ciphertext = XOR(privateKey, HMAC-SHA256(serverSecret, tostring(playerId)))` — deterministic per-player keystream, no IV/nonce storage needed since each playerId is unique; uses existing `SHA256.hmac()` from crypto layer
-- [ ] Validation: reject serverSecret shorter than 64 hex chars (32 bytes); reject empty strings and obvious weak values (e.g., all zeros)
-- [ ] Security: never log, print, or expose decrypted private keys in error messages, DataStore error context, or stack traces
-- [ ] `keyStore:rotateSecret(oldSecret, newSecret, playerIds)` — re-encrypt specified player keys with a new server secret; returns `{ rotated: number, failed: { playerId, error }[] }`
-- [ ] DataStore format: `{ version = 1, encrypted = "0x...", address = "0x...", accountType = "oz", createdAt = <os.time()> }`
-- [ ] Tag DataStore writes with `userIds = { playerId }` via `DataStoreSetOptions` for Roblox Right to Erasure webhook compliance
-- [ ] ErrorCodes: `KEY_STORE_ERROR`, `KEY_STORE_DECRYPT_ERROR`, `KEY_STORE_SECRET_INVALID`
-- [ ] Comprehensive test suite with MockDataStore (functional + failure modes), matching PaymasterBudget test patterns
-
-**Implementation Notes**:
-- Follow the `DataStoreLike` injection pattern from `PaymasterBudget.luau` — `{ GetAsync, SetAsync, RemoveAsync }` structural type, nil-check guards, fully testable in Lune without Roblox runtime.
-- Address stored in plaintext alongside encrypted key — enables `hasAccount()` and address lookups without decryption overhead.
-- `getOrCreate()` is the primary onboarding API — game servers call it on `PlayerAdded` to transparently create or restore player accounts.
-- Integration with `Account.fromPrivateKey()` — decrypt → construct Account → return. Account type string stored in DataStore record for correct reconstruction.
-- Server secret lives in a private ModuleScript in `ServerStorage` (not checked into source control). `HttpService:GetSecret()` returns an opaque `Secret` object that cannot be used as raw bytes for HMAC — a private config module is the pragmatic approach. SDK docs must emphasize: never commit the config module, never pass the secret to clients.
-- Security model: Roblox infrastructure sees only encrypted blobs (cannot decrypt without serverSecret); game developer holds serverSecret (trust boundary); players cannot access ServerStorage, DataStore, or server memory.
-- DataStore rate limits: `SetAsync` has a 6-second cooldown per key and a budget of `(60 + numPlayers × 10)` writes per minute per server. For mass onboarding (many players joining simultaneously), consider sequential processing or queuing rather than parallel `SetAsync` calls.
-- GDPR: `deleteKey()` uses `RemoveAsync` (not `SetAsync(nil)`) for full removal. `userIds` tagging on writes enables Roblox's automated Right to Erasure webhook notifications.
-- Dependencies: SHA256 + HMAC (crypto layer), Account.fromPrivateKey() (wallet layer), PaymasterBudget DataStoreLike pattern (paymaster layer) — all already implemented.
+- [x] `KeyStore.new(config)` — encrypted key persistence via DataStoreService with serverSecret, dataStoreName, accountType, injectable DataStore/clock
+- [x] `keyStore:generateAndStore(playerId, provider)` → `{ account, address }`
+- [x] `keyStore:loadAccount(playerId, provider)` → `Account?`
+- [x] `keyStore:getOrCreate(playerId, provider)` → `{ account, isNew: boolean }`
+- [x] `keyStore:hasAccount(playerId)` → `boolean`
+- [x] `keyStore:deleteKey(playerId)` — GDPR Right to Erasure via `RemoveAsync`
+- [x] Encryption: `XOR(privateKey, HMAC-SHA256(serverSecret, tostring(playerId)))`
+- [x] Validation: reject serverSecret < 64 hex chars
+- [x] `keyStore:rotateSecret(oldSecret, newSecret, playerIds)` — re-encryption with new secret
+- [x] DataStore format with version, encrypted key, address, accountType, createdAt
+- [x] `userIds` tagging for Roblox Right to Erasure webhook compliance
+- [x] ErrorCodes: `KEY_STORE_ERROR`, `KEY_STORE_DECRYPT_ERROR`, `KEY_STORE_SECRET_INVALID`
 
 ---
 
-### 2.13 EventPoller lastBlockNumber Persistence
+### 2.13 EventPoller lastBlockNumber Persistence ✅
 
-**Description**: Persist the EventPoller's `_lastBlockNumber` across server restarts so no events are missed during downtime. A 30-second Roblox server restart skips ~2 blocks — games relying on Transfer events for rewards or NFT minting would silently lose data. The persistence payload is a single number, making this high value for minimal complexity.
+**Status**: Implemented — `EventPoller.luau` updated + `RpcTypes.luau` types (26 tests)
 
-**Requirements**:
-- [ ] Add `onCheckpoint: ((blockNumber: number) -> ())?` callback to `EventPollerConfig` — fires after each poll cycle that advances `_lastBlockNumber`, letting users persist to any backend
-- [ ] Add `_dataStore: DataStoreLike?` and `checkpointKey: string?` to `EventPollerConfig` — reuse PaymasterBudget's `DataStoreLike` structural type (`{ GetAsync, SetAsync }`)
-- [ ] On `start()`, if `_dataStore` is provided, call `GetAsync(checkpointKey)` to seed `_lastBlockNumber` and the initial `from_block` filter (skip seeding if result is nil or non-number)
-- [ ] After each poll cycle that updates `_lastBlockNumber`, call `_dataStore:SetAsync(checkpointKey, maxBlock)` wrapped in `pcall` — log errors via `onError` but do not halt polling
-- [ ] Fire `onCheckpoint(blockNumber)` after the DataStore write (or in place of it when `_dataStore` is nil) so callback-only users get the same hook
-- [ ] Add `setLastBlockNumber(blockNumber: number)` public method — enables manual seeding before `start()` for users who restore state from their own backend via `onCheckpoint`
-- [ ] Add `getCheckpointKey()` public method — returns the configured key (or nil), useful for debugging
-- [ ] When both `_dataStore` and `onCheckpoint` are provided, DataStore write fires first, then callback (callback receives the block number regardless of DataStore success/failure)
-- [ ] Zero behavior change when neither `_dataStore` nor `onCheckpoint` is configured — existing users unaffected
-- [ ] Update `EventPollerConfig` type in `RpcTypes.luau` with the new optional fields
-- [ ] Comprehensive tests: DataStore restore on start, checkpoint after events, pcall error handling, callback-only mode, setLastBlockNumber seeding, no-op when unconfigured
+- [x] `onCheckpoint` callback in `EventPollerConfig`
+- [x] `_dataStore` / `checkpointKey` config fields using `DataStoreLike` injection
+- [x] DataStore restore on `start()`, checkpoint after each poll cycle
+- [x] `setLastBlockNumber(blockNumber)` public method for manual seeding
+- [x] `getCheckpointKey()` public method
+- [x] DataStore write fires first, then callback; pcall-wrapped error handling
+- [x] Zero behavior change when unconfigured
 
-**Implementation Notes**:
-- Follow PaymasterBudget's `DataStoreLike` injection pattern exactly — nil-check guards, `pcall` wrapping, mockable in Lune tests with a simple table `{ GetAsync = fn, SetAsync = fn }`.
-- DataStore writes are infrequent (once per poll interval, default 10s) and tiny (single number), well within Roblox's `SetAsync` rate limits (6s cooldown per key, ~70+ writes/min budget).
-- The `onCheckpoint` callback gives non-DataStore users (relay servers, custom backends) the same persistence capability without coupling to Roblox APIs.
-- `setLastBlockNumber()` must also update the internal filter's `from_block` so a subsequent `start()` resumes from that point rather than re-fetching the chain tip.
-- Consider storing `{ blockNumber = n, timestamp = os.time() }` in DataStore instead of a bare number — enables staleness detection on restore (e.g., warn if checkpoint is >1 hour old). Keep the `onCheckpoint` callback signature as just `(number)` for simplicity.
+---
+
+# Phase 3: Paymaster & Standards ✅
+
+SNIP-9 outside execution, SNIP-12 typed data, SNIP-29 paymaster support, and account type extensibility. Fully implemented.
+
+### 3.1 SNIP-12 TypedData ✅
+
+**Status**: Implemented — `src/wallet/TypedData.luau` (43 tests)
+
+- [x] LEGACY revision (Pedersen, `"StarkNetDomain"`) and ACTIVE revision (Poseidon, `"StarknetDomain"`)
+- [x] Recursive type encoding with dependency resolution
+- [x] Merkle tree support with sorted pair hashing
+- [x] Preset types (u256, TokenAmount, NftId) for ACTIVE revision
+- [x] `Account:hashMessage(typedData)` and `Account:signMessage(typedData)` integration
+
+### 3.2 SNIP-9 Outside Execution ✅
+
+**Status**: Implemented — `src/wallet/OutsideExecution.luau` (82 tests)
+
+- [x] V1, V2, V3 meta-transaction support
+- [x] `getTypedData()` — build SNIP-12 typed data for off-chain signing
+- [x] `buildExecuteFromOutsideCall()` — construct the on-chain submission call
+- [x] `validateCalls()` — validate calls against outside execution constraints
+- [x] Interface ID constants for V1/V2
+
+### 3.3 SNIP-29 Paymaster ✅
+
+**Status**: Implemented across 5 modules (377+ tests)
+
+- [x] **PaymasterRpc** (`src/paymaster/PaymasterRpc.luau`, 67 tests): SNIP-29 JSON-RPC client with `buildTypedData()`, `executeTransaction()`, sponsored and self-paid fee modes
+- [x] **AvnuPaymaster** (`src/paymaster/AvnuPaymaster.luau`, 61 tests): AVNU-specific paymaster integration with gas token selection
+- [x] **PaymasterPolicy** (`src/paymaster/PaymasterPolicy.luau`, 66 tests): policy engine — contract/method allowlists, player whitelists, rate limits, daily caps
+- [x] **PaymasterBudget** (`src/paymaster/PaymasterBudget.luau`, 105 tests): per-player budget tracking with DataStore persistence, dirty write batching
+- [x] **SponsoredExecutor** (`src/paymaster/SponsoredExecutor.luau`, 78 tests): orchestrator combining policy, budget, paymaster for gasless execution
+
+### 3.4 Account Paymaster Integration ✅
+
+- [x] `Account:estimatePaymasterFee()` — estimate fees via paymaster
+- [x] `Account:executePaymaster()` — execute transactions with paymaster sponsorship
+- [x] `Account:deployWithPaymaster()` — deploy accounts with paymaster sponsorship
+- [x] `Account:getDeploymentData()` — get deployment data for paymaster
+
+### 3.5 Multi-Account-Type Support ✅
+
+**Status**: Implemented — `src/wallet/AccountType.luau` + `AccountFactory.luau` (52 tests)
+
+- [x] AccountType: OZ, Argent, and `custom()` callable constructors with validation
+- [x] AccountFactory: `createAccount()`, `batchCreate()`, `batchDeploy()` for game onboarding
+- [x] Prefunding helpers: `getDeploymentFeeEstimate()`, `checkDeploymentBalance()`, `getDeploymentFundingInfo()` (44 tests)
+- [x] Batch deploy for game onboarding (53 tests)
+
+### 3.6 Encrypted Key Store & Player Onboarding ✅
+
+- [x] **KeyStore** (`src/wallet/KeyStore.luau`, 72 tests) — see 2.12
+- [x] **OnboardingManager** (`src/wallet/OnboardingManager.luau`, 37 tests): player lifecycle management — `onboard()`, `ensureDeployed()`, `getStatus()`, `removePlayer()`
+
+---
+
+# Phase 4: Deploy Account ✅
+
+V3 DEPLOY_ACCOUNT transaction support — hash computation, transaction building, RPC integration, and full Account orchestration. Fully implemented.
+
+### 4.1 DEPLOY_ACCOUNT V3 Hash ✅
+
+**Status**: Implemented — `TransactionHash.calculateDeployAccountTransactionHash()` (23 tests)
+
+### 4.2 Deploy Account Transaction Builder ✅
+
+**Status**: Implemented — `TransactionBuilder.deployAccount()` + `estimateDeployAccountFee()` (39 tests)
+
+### 4.3 Account Deploy Orchestration ✅
+
+**Status**: Implemented — `Account:deployAccount()` (58 tests)
+
+- [x] Idempotency check: getNonce success → `{ alreadyDeployed = true }`
+- [x] Fee estimation with configurable `maxFee` cap
+- [x] `waitForConfirmation` option (default true)
+- [x] NonceManager integration (reserve/confirm/reject pattern)
+- [x] RPC `starknet_addDeployAccountTransaction` submission
+
+### 4.4 Paymaster-Sponsored Deployment ✅
+
+**Status**: Implemented — `Account:deployWithPaymaster()` (25 tests)
 
 ---
 
@@ -301,7 +415,7 @@ Features, improvements, and explorations to take the project to the next level. 
 - Arbitrary contract call mapping: product ID → `{ contractAddress, entrypoint, calldataBuilder }`
 - ERC-20 preset: product ID → `erc20:transfer` or `erc20:mint` with configurable amount
 - ERC-721 preset: product ID → `erc721:mint` with metadata/tokenId generation
-- Paymaster token top-up: product ID → `PaymasterBudget:grantTokens()` (see 3.3.6)
+- Paymaster token top-up: product ID → `PaymasterBudget:grantTokens()`
 - Idempotent receipt processing: track `receiptId → transactionHash` to prevent double-grants
 - `ProcessReceipt` handler that orchestrates: validate receipt → resolve action → execute on-chain tx → confirm → grant
 - Receipt persistence via DataStoreService (injected, mockable) for crash recovery
