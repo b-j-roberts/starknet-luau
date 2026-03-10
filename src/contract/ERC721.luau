@@ -102,6 +102,40 @@ local ERC721_ABI: Contract.Abi = {
 		outputs = {},
 		state_mutability = "external",
 	},
+	-- Events
+	-- Transfer(from, to, token_id)
+	{
+		type = "event",
+		name = "Transfer",
+		kind = "struct",
+		members = {
+			{ name = "from", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "to", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "token_id", type = "core::integer::u256", kind = "data" },
+		},
+	},
+	-- Approval(owner, approved, token_id)
+	{
+		type = "event",
+		name = "Approval",
+		kind = "struct",
+		members = {
+			{ name = "owner", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "approved", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "token_id", type = "core::integer::u256", kind = "data" },
+		},
+	},
+	-- ApprovalForAll(owner, operator, approved)
+	{
+		type = "event",
+		name = "ApprovalForAll",
+		kind = "struct",
+		members = {
+			{ name = "owner", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "operator", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "approved", type = "core::bool", kind = "data" },
+		},
+	},
 	-- camelCase aliases (OZ ERC721CamelOnly compatibility)
 	-- balanceOf(owner) -> u256
 	{

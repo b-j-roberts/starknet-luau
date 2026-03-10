@@ -98,6 +98,29 @@ local ERC20_ABI: Contract.Abi = {
 		outputs = { { name = "success", type = "core::bool" } },
 		state_mutability = "external",
 	},
+	-- Events
+	-- Transfer(from, to, value)
+	{
+		type = "event",
+		name = "Transfer",
+		kind = "struct",
+		members = {
+			{ name = "from", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "to", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "value", type = "core::integer::u256", kind = "data" },
+		},
+	},
+	-- Approval(owner, spender, value)
+	{
+		type = "event",
+		name = "Approval",
+		kind = "struct",
+		members = {
+			{ name = "owner", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "spender", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+			{ name = "value", type = "core::integer::u256", kind = "data" },
+		},
+	},
 	-- camelCase aliases (OZ ERC20CamelOnly compatibility)
 	-- totalSupply() -> u256
 	{

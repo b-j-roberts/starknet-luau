@@ -2,6 +2,8 @@
 local ERC20 = require("../../src/contract/ERC20")
 local Account = require("../../src/wallet/Account")
 local ErrorCodes = require("../../src/errors/ErrorCodes")
+local Keccak = require("../../src/crypto/Keccak")
+local StarkField = require("../../src/crypto/StarkField")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -498,5 +500,172 @@ describe("ERC20 - edge cases", function()
 
 		expect(token1.address):toBe("0xaaa")
 		expect(token2.address):toBe("0xbbb")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Event definitions
+--------------------------------------------------------------------------------
+
+local TRANSFER_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
+local APPROVAL_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("Approval"))
+
+describe("ERC20 - event definitions", function()
+	it("hasEvent returns true for Transfer", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		expect(token:hasEvent("Transfer")):toBe(true)
+	end)
+
+	it("hasEvent returns true for Approval", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		expect(token:hasEvent("Approval")):toBe(true)
+	end)
+
+	it("hasEvent returns false for non-existent event", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		expect(token:hasEvent("Mint")):toBe(false)
+		expect(token:hasEvent("Burn")):toBe(false)
+	end)
+
+	it("getEvents returns Transfer and Approval", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local events = token:getEvents()
+		expect(#events):toBe(2)
+		-- getEvents returns sorted names
+		expect(events[1]):toBe("Approval")
+		expect(events[2]):toBe("Transfer")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Event parsing (parseEvents)
+--------------------------------------------------------------------------------
+
+describe("ERC20 - parseEvents", function()
+	it("parses a Transfer event from receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = TOKEN_ADDR,
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x3e8", "0x0" }, -- u256(1000)
+				},
+			},
+		}
+
+		local result = token:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[1].fields.from):toBe(OWNER_ADDR)
+		expect(result.events[1].fields.to):toBe(RECIPIENT_ADDR)
+		expect((result.events[1].fields.value :: any).low):toBe("0x3e8")
+		expect((result.events[1].fields.value :: any).high):toBe("0x0")
+	end)
+
+	it("parses an Approval event from receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = TOKEN_ADDR,
+					keys = { APPROVAL_SELECTOR, OWNER_ADDR, SPENDER_ADDR },
+					data = { "0x5f5e100", "0x0" }, -- u256(100000000)
+				},
+			},
+		}
+
+		local result = token:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+		expect(result.events[1].name):toBe("Approval")
+		expect(result.events[1].fields.owner):toBe(OWNER_ADDR)
+		expect(result.events[1].fields.spender):toBe(SPENDER_ADDR)
+		expect((result.events[1].fields.value :: any).low):toBe("0x5f5e100")
+		expect((result.events[1].fields.value :: any).high):toBe("0x0")
+	end)
+
+	it("parses multiple events from a single receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = TOKEN_ADDR,
+					keys = { APPROVAL_SELECTOR, OWNER_ADDR, SPENDER_ADDR },
+					data = { "0x5f5e100", "0x0" },
+				},
+				{
+					from_address = TOKEN_ADDR,
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x3e8", "0x0" },
+				},
+			},
+		}
+
+		local result = token:parseEvents(receipt)
+		expect(#result.events):toBe(2)
+		expect(result.events[1].name):toBe("Approval")
+		expect(result.events[2].name):toBe("Transfer")
+	end)
+
+	it("ignores events from other contracts", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = "0xdeadbeef",
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x3e8", "0x0" },
+				},
+			},
+		}
+
+		local result = token:parseEvents(receipt)
+		expect(#result.events):toBe(0)
+	end)
+
+	it("returns empty results for receipt with no events", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local result = token:parseEvents({ events = {} })
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(0)
+	end)
+
+	it("returns empty results for receipt without events field", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local result = token:parseEvents({})
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(0)
 	end)
 end)

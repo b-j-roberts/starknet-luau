@@ -2,6 +2,8 @@
 local ERC721 = require("../../src/contract/ERC721")
 local Account = require("../../src/wallet/Account")
 local ErrorCodes = require("../../src/errors/ErrorCodes")
+local Keccak = require("../../src/crypto/Keccak")
+local StarkField = require("../../src/crypto/StarkField")
 local TestUtils = require("../helpers/TestUtils")
 
 --------------------------------------------------------------------------------
@@ -582,5 +584,216 @@ describe("ERC721 - edge cases", function()
 			end
 		end
 		expect(found):toBe(true)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Event definitions
+--------------------------------------------------------------------------------
+
+local TRANSFER_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
+local APPROVAL_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("Approval"))
+local APPROVAL_FOR_ALL_SELECTOR = StarkField.toHex(Keccak.getSelectorFromName("ApprovalForAll"))
+
+describe("ERC721 - event definitions", function()
+	it("hasEvent returns true for Transfer", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		expect(nft:hasEvent("Transfer")):toBe(true)
+	end)
+
+	it("hasEvent returns true for Approval", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		expect(nft:hasEvent("Approval")):toBe(true)
+	end)
+
+	it("hasEvent returns true for ApprovalForAll", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		expect(nft:hasEvent("ApprovalForAll")):toBe(true)
+	end)
+
+	it("hasEvent returns false for non-existent event", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		expect(nft:hasEvent("Mint")):toBe(false)
+		expect(nft:hasEvent("Burn")):toBe(false)
+	end)
+
+	it("getEvents returns Transfer, Approval, and ApprovalForAll", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local events = nft:getEvents()
+		expect(#events):toBe(3)
+		-- getEvents returns sorted names
+		expect(events[1]):toBe("Approval")
+		expect(events[2]):toBe("ApprovalForAll")
+		expect(events[3]):toBe("Transfer")
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- Event parsing (parseEvents)
+--------------------------------------------------------------------------------
+
+describe("ERC721 - parseEvents", function()
+	it("parses a Transfer event from receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = NFT_ADDR,
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x2a", "0x0" }, -- u256(42)
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+		expect(result.events[1].name):toBe("Transfer")
+		expect(result.events[1].fields.from):toBe(OWNER_ADDR)
+		expect(result.events[1].fields.to):toBe(RECIPIENT_ADDR)
+		expect((result.events[1].fields.token_id :: any).low):toBe("0x2a")
+		expect((result.events[1].fields.token_id :: any).high):toBe("0x0")
+	end)
+
+	it("parses an Approval event from receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = NFT_ADDR,
+					keys = { APPROVAL_SELECTOR, OWNER_ADDR, OPERATOR_ADDR },
+					data = { "0x1", "0x0" }, -- u256(1)
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+		expect(result.events[1].name):toBe("Approval")
+		expect(result.events[1].fields.owner):toBe(OWNER_ADDR)
+		expect(result.events[1].fields.approved):toBe(OPERATOR_ADDR)
+		expect((result.events[1].fields.token_id :: any).low):toBe("0x1")
+		expect((result.events[1].fields.token_id :: any).high):toBe("0x0")
+	end)
+
+	it("parses an ApprovalForAll event from receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = NFT_ADDR,
+					keys = { APPROVAL_FOR_ALL_SELECTOR, OWNER_ADDR, OPERATOR_ADDR },
+					data = { "0x1" }, -- bool true
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(#result.errors):toBe(0)
+		expect(result.events[1].name):toBe("ApprovalForAll")
+		expect(result.events[1].fields.owner):toBe(OWNER_ADDR)
+		expect(result.events[1].fields.operator):toBe(OPERATOR_ADDR)
+		expect(result.events[1].fields.approved):toBe(true)
+	end)
+
+	it("parses ApprovalForAll with approved=false", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = NFT_ADDR,
+					keys = { APPROVAL_FOR_ALL_SELECTOR, OWNER_ADDR, OPERATOR_ADDR },
+					data = { "0x0" }, -- bool false
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(1)
+		expect(result.events[1].fields.approved):toBe(false)
+	end)
+
+	it("parses multiple events from a single receipt", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = NFT_ADDR,
+					keys = { APPROVAL_SELECTOR, OWNER_ADDR, OPERATOR_ADDR },
+					data = { "0x1", "0x0" },
+				},
+				{
+					from_address = NFT_ADDR,
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x1", "0x0" },
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(2)
+		expect(result.events[1].name):toBe("Approval")
+		expect(result.events[2].name):toBe("Transfer")
+	end)
+
+	it("ignores events from other contracts", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local receipt = {
+			events = {
+				{
+					from_address = "0xdeadbeef",
+					keys = { TRANSFER_SELECTOR, OWNER_ADDR, RECIPIENT_ADDR },
+					data = { "0x1", "0x0" },
+				},
+			},
+		}
+
+		local result = nft:parseEvents(receipt)
+		expect(#result.events):toBe(0)
+	end)
+
+	it("returns empty results for receipt with no events", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local result = nft:parseEvents({ events = {} })
+		expect(#result.events):toBe(0)
+		expect(#result.errors):toBe(0)
 	end)
 end)
