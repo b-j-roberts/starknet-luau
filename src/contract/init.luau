@@ -1,5 +1,6 @@
 --!strict
 -- Contract module: ABI-driven interface, ERC-20/ERC-721 presets
+-- Barrel export: uses require(script.X) (Roblox Instance-based). Source modules use require("./X") (relative path).
 
 local Contract = require(script.Contract)
 local ERC20 = require(script.ERC20)

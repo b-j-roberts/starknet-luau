@@ -1,5 +1,6 @@
 --!strict
 -- starknet-luau: Pure Luau SDK for Starknet blockchain interaction
+-- Barrel export: uses require(script.X) (Roblox Instance-based). Source modules use require("./X") (relative path).
 
 local crypto = require(script.crypto)
 local signer = require(script.signer)

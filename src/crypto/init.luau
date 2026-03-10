@@ -1,5 +1,6 @@
 --!strict
 -- Cryptographic primitives: BigInt, StarkField, StarkCurve, Poseidon, Pedersen, Keccak, SHA256, ECDSA
+-- Barrel export: uses require(script.X) (Roblox Instance-based). Source modules use require("./X") (relative path).
 
 local BigInt = require(script.BigInt)
 local FieldFactory = require(script.FieldFactory)

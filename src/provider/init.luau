@@ -1,5 +1,6 @@
 --!strict
 -- Provider module: JSON-RPC client over HttpService with Promise-based async
+-- Barrel export: uses require(script.X) (Roblox Instance-based). Source modules use require("./X") (relative path).
 
 local RpcProvider = require(script.RpcProvider)
 local RpcTypes = require(script.RpcTypes)

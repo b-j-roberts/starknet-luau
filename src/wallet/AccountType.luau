@@ -114,10 +114,7 @@ function AccountType.custom(config: {
 	end
 	if not config.type or type(config.type) ~= "string" then
 		error(
-			StarknetError.validation(
-				"AccountType.custom: config.type must be a string",
-				ErrorCodes.REQUIRED_FIELD.code
-			)
+			StarknetError.validation("AccountType.custom: config.type must be a string", ErrorCodes.REQUIRED_FIELD.code)
 		)
 	end
 	if not config.classHash or type(config.classHash) ~= "string" then

@@ -53,4 +53,12 @@ make check      # lint + fmt check + test
 ## Dependencies
 
 - `evaera/promise@^3.1.0` -- Promise library
-- `daily3014/cryptography@^3.1.0` -- Optional peer dep for SHA/Keccak
+
+## Publishing
+
+- **Wally**: scope `b-j-roberts` (wally.toml `name = "b-j-roberts/starknet-luau"`)
+- **pesde**: scope `magic` (pesde.toml `name = "magic/starknet_luau"`) — pesde scopes are organization-level and `magic` is the registered pesde scope for this publisher
+
+## Require Conventions
+
+Barrel exports (`init.luau`) use Roblox-style `require(script.Module)` — these only execute inside Roblox runtime where `script` is the Instance reference. Source modules use relative path `require("./Module")` which works in both Lune tests and modern Roblox.
