@@ -66,4 +66,11 @@ Constants.DECLARE_TX_V3 = "0x3"
 -- ANY_CALLER: short string encoding of "ANY_CALLER" — allows any address to submit
 Constants.ANY_CALLER = "0x414e595f43414c4c4552"
 
+--------------------------------------------------------------------------------
+-- SDK Version
+--------------------------------------------------------------------------------
+
+-- Runtime-queryable SDK version (keep in sync with wally.toml / pesde.toml)
+Constants.SDK_VERSION = "0.1.0"
+
 return Constants

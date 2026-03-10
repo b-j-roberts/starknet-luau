@@ -265,6 +265,10 @@ describe("Barrel Export - constants namespace", function()
 		expect(StarknetLuau.constants.ETH_TOKEN_ADDRESS ~= nil):toBe(true)
 		expect(StarknetLuau.constants.STRK_TOKEN_ADDRESS ~= nil):toBe(true)
 	end)
+
+	it("contains SDK_VERSION", function()
+		expect(StarknetLuau.constants.SDK_VERSION):toBe("0.1.0")
+	end)
 end)
 
 --------------------------------------------------------------------------------
