@@ -1,7 +1,7 @@
 --!strict
 -- AbiCodec: Recursive ABI type resolution, encoding, and decoding for Cairo types
 -- Supports: felt252, bool, u256, structs, enums, arrays, spans, tuples, Option, Result, ByteArray
--- Internal module consumed by Contract.luau — not exported through barrel init.luau
+-- Exported through contract barrel init.luau for direct consumer access
 -- Reference: starknet.js CallData.compile / CallData.parse
 
 local CallData = require("../tx/CallData")

@@ -47,6 +47,7 @@ local wallet = {
 }
 
 local contract = {
+	AbiCodec = require("../src/contract/AbiCodec"),
 	Contract = require("../src/contract/Contract"),
 	ERC20 = require("../src/contract/ERC20"),
 	ERC721 = require("../src/contract/ERC721"),
@@ -225,14 +226,14 @@ end)
 --------------------------------------------------------------------------------
 
 describe("Barrel Export - contract namespace", function()
-	local expectedKeys = { "Contract", "ERC20", "ERC721", "PresetFactory" }
+	local expectedKeys = { "AbiCodec", "Contract", "ERC20", "ERC721", "PresetFactory" }
 
-	it("exports exactly 4 sub-modules", function()
+	it("exports exactly 5 sub-modules", function()
 		local count = 0
 		for _ in StarknetLuau.contract do
 			count += 1
 		end
-		expect(count):toBe(4)
+		expect(count):toBe(5)
 	end)
 
 	for _, key in expectedKeys do
@@ -348,6 +349,10 @@ describe("Barrel Export - sub-module usability", function()
 
 	it("wallet.Account has new", function()
 		expect(type(StarknetLuau.wallet.Account.new)):toBe("function")
+	end)
+
+	it("contract.AbiCodec has buildTypeMap", function()
+		expect(type(StarknetLuau.contract.AbiCodec.buildTypeMap)):toBe("function")
 	end)
 
 	it("contract.Contract has new", function()
