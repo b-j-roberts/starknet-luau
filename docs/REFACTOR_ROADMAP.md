@@ -653,94 +653,256 @@ Fill coverage gaps, strengthen assertions, and add missing test vectors.
 
 ## Phase R6: Documentation
 
-Fix inaccurate documentation, fill coverage gaps, and update stale content.
+Overhaul all documentation to reflect the current codebase (57 source files, 9 modules, 2,846 tests). The SDK has grown significantly since v0.1.0 — adding paymaster (SNIP-29), deploy account, KeyStore, OnboardingManager, shared utilities, and completing 60+ refactor items — but documentation still describes the v0.1.0 state. Every doc file needs updating.
 
 ---
 
 ### R.6.1 Overhaul SPEC.md
 
-**Description**: SPEC.md has 13+ nonexistent file paths, 50+ function signature mismatches, 15+ modules with zero spec coverage, and fundamentally wrong error handling description.
+**Description**: SPEC.md describes a v0.1.0 codebase that no longer exists. It has 13+ nonexistent file paths, 50+ function signature mismatches, 25+ modules with zero spec coverage, and a fundamentally wrong error handling description. The repository structure section (§2.3) lists 35 files; the actual codebase has 57. The architecture diagram omits 3 entire module trees (paymaster/, shared/, errors/).
 
 **Requirements**:
-- [ ] Fix all nonexistent file paths (SignerInterface.luau, RpcMethods.luau, CalldataEncoder.luau, TransactionTypes.luau, AccountTypes.luau, AbiParser.luau, AbiTypes.luau, presets/ subdirectory, etc.) (ref: 11-docs.md §SPEC.md)
-- [ ] Fix all function signature mismatches (StarkCurve param order, ECDSA return types, RpcProvider config, Account methods, etc.) (ref: 11-docs.md §SPEC.md)
-- [ ] Add spec coverage for 15+ unspecced modules: constants, errors, AbiCodec, TypedData, OutsideExecution, AccountType, AccountFactory, EventPoller, RequestQueue, ResponseCache, NonceManager, entire paymaster/ (ref: 11-docs.md §SPEC.md)
-- [ ] Fix error handling section: field is `_type` not `type`, update category descriptions to match actual 7-range numeric system (ref: 11-docs.md §SPEC.md)
-- [ ] Fix constants/networks section to match actual `Constants.SN_MAIN/SN_SEPOLIA` etc. (ref: 11-docs.md §SPEC.md)
+- [ ] Rewrite §2.1 architecture diagram — add `paymaster`, `shared`, and `errors` module boxes; show paymaster→provider dependency; show shared as cross-cutting utility layer
+- [ ] Rewrite §2.2 dependency graph — add paymaster→wallet→provider, errors as cross-cutting, shared as foundation alongside crypto
+- [ ] Rewrite §2.3 repository structure to match actual 57-file layout:
+  - Fix nonexistent paths: `SignerInterface.luau` (inline in StarkSigner), `RpcMethods.luau` (in RpcProvider directly), `CalldataEncoder.luau` (actual: `CallData.luau`), `TransactionTypes.luau` (inline), `AccountTypes.luau` (actual: `AccountType.luau`), `AbiParser.luau`/`AbiTypes.luau` (actual: `AbiCodec.luau`), `presets/` subdir (files are directly in `src/contract/`)
+  - Add all missing source files: `FieldFactory.luau`, `PoseidonConstants.luau`, `JsonRpcClient.luau`, `RequestQueue.luau`, `ResponseCache.luau`, `NonceManager.luau`, `EventPoller.luau`, `AccountType.luau`, `AccountFactory.luau`, `OutsideExecution.luau`, `KeyStore.luau`, `OnboardingManager.luau`, `TypedData.luau`, `AbiCodec.luau`, `PresetFactory.luau`, entire `paymaster/` (5 modules), entire `shared/` (5 modules), entire `errors/` (3 modules), `constants.luau`
+  - Add missing test files: 50 spec files across 13 directories (vs 11 listed in spec)
+  - Fix example file name: `sign-transaction.luau` → `send-transaction.luau`
+- [ ] Fix all function signature mismatches across §3.x modules (ref: 11-docs.md §SPEC.md):
+  - StarkCurve: `scalarMul(p, k)` not `(k, p)`; no `pointAdd`/`pointDouble` (actual: `jacobianAdd`/`jacobianDouble`); type is `AffinePoint` not `Point`; `StarkCurve.P` not exported
+  - ECDSA: return type is `{ r: buffer, s: buffer }` not `{ r: Felt, s: Felt }`
+  - Signer: `signTransaction` takes `buffer` not `Felt`; `signRaw` returns `{ r: buffer, s: buffer }`
+  - RpcProvider: config missing `enableQueue/Cache/NonceManager`, `queueConfig`, `cacheConfig`, injection fields; 12+ methods undocumented
+  - CallData (not CalldataEncoder): `encodeFelt` is string-only; missing `encodeShortString`, `numberToHex`, `concat`
+  - TransactionHash: function is `calculateInvokeTransactionHash` not `computeInvokeV3Hash`; missing `calculateDeployAccountTransactionHash`
+  - TransactionBuilder: no public `buildInvoke`/`submitTransaction`; missing `deployAccount`/`estimateDeployAccountFee`; `execute` returns `Promise<ExecuteResult>` not `Promise<string>`
+  - Account: `computeAddress` classHash is required; no public `.publicKey`/`.provider` properties; no `getBalance()` method; missing 10+ instance methods, 5+ static methods
+  - NonceManager: wrong location (provider/ not wallet/); API is `reserve/confirm/reject/resync` not `getNonce/incrementNonce/invalidate`
+  - Contract: no `attach()` method; missing 7 methods (`getFunctions`, `getFunction`, `hasFunction`, `parseEvents`, `queryEvents`, `getEvents`, `hasEvent`)
+  - Presets: access path is `Starknet.contract.ERC20` not `Starknet.contract.presets.ERC20`
+- [ ] Add spec sections for 25+ unspecced modules:
+  - `src/constants.luau` — chain IDs, class hashes, token addresses, SDK version
+  - `src/errors/` — StarknetError hierarchy, ErrorCodes 7-range system (1000s-7000s), `:is()` type checking
+  - `src/contract/AbiCodec.luau` — recursive encoder/decoder for all Cairo types (now publicly exported)
+  - `src/contract/PresetFactory.luau` — DRY factory for ERC-20/ERC-721 preset construction
+  - `src/wallet/TypedData.luau` — SNIP-12 LEGACY (Pedersen) and ACTIVE (Poseidon) revisions
+  - `src/wallet/OutsideExecution.luau` — SNIP-9 V1/V2/V3 meta-transactions
+  - `src/wallet/AccountType.luau` — OZ, Argent callable account type constructors, `custom()`
+  - `src/wallet/AccountFactory.luau` — `createAccount()`, `batchCreate()`, `batchDeploy()`
+  - `src/wallet/KeyStore.luau` — encrypted DataStore key persistence with XOR+HMAC-SHA256
+  - `src/wallet/OnboardingManager.luau` — player account lifecycle (onboard, deploy, status, cleanup)
+  - `src/provider/EventPoller.luau` — event polling with DataStore persistence, `onCheckpoint` callback
+  - `src/provider/RequestQueue.luau` — 3-bucket priority queue with JSON-RPC batching
+  - `src/provider/ResponseCache.luau` — LRU cache with per-method TTL, block invalidation
+  - `src/provider/NonceManager.luau` — reserve/confirm/reject pattern for parallel nonce management
+  - `src/provider/JsonRpcClient.luau` — shared base for RpcProvider and PaymasterRpc
+  - `src/paymaster/PaymasterRpc.luau` — SNIP-29 JSON-RPC client
+  - `src/paymaster/AvnuPaymaster.luau` — AVNU paymaster integration
+  - `src/paymaster/PaymasterPolicy.luau` — policy engine for sponsorship rules
+  - `src/paymaster/PaymasterBudget.luau` — per-player budget tracking with DataStore
+  - `src/paymaster/SponsoredExecutor.luau` — orchestrator for sponsored execution
+  - `src/shared/` — HexUtils, BufferUtils, ByteArray, TestableDefaults, interfaces
+  - `src/crypto/FieldFactory.luau` — parameterized field constructor (DRY StarkField/StarkScalarField)
+- [ ] Fix §5 error handling: field is `_type` not `type`; update from 8 string categories to actual typed hierarchy with 7 numeric code ranges (1000s=validation, 2000s=RPC, 3000s=signing, 4000s=ABI, 5000s=transaction, 6000s=outside execution, 7000s=paymaster); document `:is()`, `isStarknetError()`, `pcall`-safe identity
+- [ ] Fix §8 constants/networks: `Starknet.networks` does not exist; constants are `Constants.SN_MAIN`/`SN_SEPOLIA`; add `SDK_VERSION`, class hash constants, `CONTRACT_ADDRESS_PREFIX`, `ANY_CALLER`
+- [ ] Fix §9 usage examples: correct `Starknet.contract.presets.ERC20` → `Starknet.contract.ERC20`
+
+**Implementation Notes**:
+- Cross-reference every §3.x API block against the actual source module's exported functions and types. The 11-docs.md audit has a complete list of mismatches but was written before AbiCodec export (now resolved), KeyStore, OnboardingManager, FieldFactory, and shared/ modules were added.
+- Consider restructuring §3 to match the actual 9-namespace barrel export: crypto, signer, provider, tx, wallet, contract, constants, errors, paymaster.
+- The spec is 1,155 lines — expect ~40% rewrite. Modules with correct specs (BigInt, StarkField, StarkScalarField, Poseidon, Pedersen, Keccak, SHA256) need only minor fixes; modules with wrong specs (Account, Contract, TransactionBuilder, RpcProvider) need full rewrites; 25+ modules need new sections.
 
 ---
 
-### R.6.2 Update ROADMAP.md & CHANGELOG.md
+### R.6.2 Update ROADMAP.md, REFACTOR_ROADMAP.md & CHANGELOG.md
 
-**Description**: ROADMAP.md has 10 sections with all checkboxes incorrectly marked `[ ]` when work is 100% complete. CHANGELOG.md claims "1,429 tests" (actual ~2,075+) and has factually wrong "Known Limitations".
+**Description**: ROADMAP.md has 10+ completed sections still marked `[ ]`. REFACTOR_ROADMAP.md has 60+ completed items still marked `[ ]`. CHANGELOG.md only covers v0.1.0 with 1,429 tests (actual: 2,846) and false "Known Limitations". A full v0.2.0 CHANGELOG section is needed covering all post-v0.1.0 work.
 
 **Requirements**:
-- [ ] Mark all completed ROADMAP sections as done: 3.3.1, 3.3.3, 3.3.4, 3.3.5, 3.4.1-3.4.4, 3.4.7, 3.4.8 (ref: 11-docs.md §ROADMAP.md)
-- [ ] Fix ROADMAP phase numbering (Phase 4 uses `3.4.x` prefix) and add missing Phase 1 entries (ref: 11-docs.md §ROADMAP.md)
-- [ ] Update CHANGELOG test counts to match actual suite (ref: 11-docs.md §CHANGELOG.md)
-- [ ] Fix CHANGELOG "Known Limitations" — remove false claims about missing DEPLOY_ACCOUNT and paymaster support (ref: 11-docs.md §CHANGELOG.md)
-- [ ] Add CHANGELOG entries for all missing implemented modules: paymaster/, deploy account, AccountType, AccountFactory, BatchDeploy, prefunding, OutsideExecution, ContractEvents, etc. (ref: 11-docs.md §CHANGELOG.md)
-- [ ] Fix API naming mismatches between roadmap and code (ref: 11-docs.md §ROADMAP.md)
-- [ ] Resolve test count contradiction between 12-tests.md (1926) and 11-docs.md (~2,075+) — re-count with `make test` and update both docs (ref: 14-cross-cutting.md §11)
+- [ ] **ROADMAP.md**: Mark all completed sections `[x]`:
+  - 2.12 Encrypted Key Store (KeyStore.luau, 72 tests)
+  - 2.13 EventPoller lastBlockNumber Persistence (26 tests)
+  - All Phase 3 paymaster items: 3.3.1 SNIP-9 (82 tests), 3.3.3 AVNU Paymaster (61 tests), 3.3.4 Account Paymaster Integration, 3.3.5 Paymaster Policy (66 tests)
+  - All Phase 4 deploy items: 3.4.1-3.4.4 Deploy Account (hash, builder, RPC, orchestration), 3.4.7 Batch Deploy (53 tests), 3.4.8 Paymaster-Sponsored Deployment
+  - Remove stale dependency notes ("Depends on Phase 3... implement after both phases are complete" — both are done)
+- [ ] **ROADMAP.md**: Fix structural issues:
+  - Fix Phase 4 prefix numbering (`3.4.x` → `4.x` or leave with note)
+  - Add missing Phase 1 section (all crypto, signer, provider, tx, wallet, contract are implemented but have no roadmap record)
+  - Fix API naming mismatches: `paymaster_execute` → `executeTransaction`, `_computeDeployAccountHash` → `TransactionHash.calculateDeployAccountTransactionHash`, `buildDeployAccountTransaction` → `deployAccount`/`estimateDeployAccountFee`
+- [ ] **REFACTOR_ROADMAP.md**: Mark all completed refactor items `[x]` across phases:
+  - R1 (14+ items): R.1.1 JsonRpcClient, R.1.2 TestUtils, R.1.4 FieldFactory, R.1.8 DRY Account, R.1.9 DRY TransactionBuilder, R.1.12 DRY Contract/Presets, plus 8+ sub-items
+  - R2 (16+ items): R.2.1 shared/interfaces.luau, R.2.2 private method coupling, R.2.6 type annotations, plus 13+ sub-items
+  - R3 (9 items): R.3.3 AbiCodec decode bounds, plus all sub-items — phase 100% complete
+  - R4 (3 items): R.4.1 windowed scalar mul, R.4.5 cache/queue micro-opts, R.4.6 Barrett powmodB
+  - R5 (8 items): R.5.1-R.5.8 all complete — phase 100% complete
+  - R7 (4+ items): R.7.1 project JSON, R.7.2 Makefile (partial), R.7.3 config cleanup (partial), R.7.4 SDK version constant
+  - Feature items: R.F.1 ERC event definitions, R.F.2 missing ERC functions, R.F.4 AccountType.custom() validation
+- [ ] **REFACTOR_ROADMAP.md**: Update summary table completion percentages to reflect actual state
+- [ ] **CHANGELOG.md**: Write v0.2.0 section covering all post-v0.1.0 work:
+  - **Paymaster (SNIP-29)**: PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor (377+ tests across 5 modules)
+  - **Account Paymaster Integration**: `estimatePaymasterFee()`, `executePaymaster()`, `deployWithPaymaster()`, `getDeploymentData()`
+  - **Deploy Account V3**: TransactionHash deploy hash, TransactionBuilder deploy flow, Account orchestration with idempotency check, RPC `addDeployAccountTransaction`
+  - **Multi-Account-Type Support**: AccountType (OZ, Argent, custom), AccountFactory (`batchCreate`, `batchDeploy`), prefunding helpers
+  - **SNIP-9 Outside Execution**: V1/V2/V3 meta-transactions (82 tests)
+  - **SNIP-12 TypedData**: LEGACY (Pedersen) and ACTIVE (Poseidon) revisions, Merkle tree, preset types (43 tests)
+  - **Encrypted Key Store**: XOR+HMAC-SHA256 encrypted DataStore persistence, secret rotation, GDPR deletion (72 tests)
+  - **Onboarding Manager**: Player lifecycle management — onboard, deploy, status tracking, cleanup (37 tests)
+  - **EventPoller Persistence**: DataStore checkpointing, `onCheckpoint` callback, `setLastBlockNumber` (26 tests)
+  - **AbiCodec**: Recursive encoder/decoder for all Cairo types — now publicly exported (109 tests)
+  - **Error System**: Typed hierarchy (5 subtypes), 40+ error codes across 7 categories, `pcall`-safe identity (42 tests)
+  - **Refactoring**: JsonRpcClient base, FieldFactory, PresetFactory, shared utilities (HexUtils, BufferUtils, ByteArray, interfaces), DRY reductions (~2,500 lines eliminated)
+  - **Performance**: 4-bit windowed scalar mul + Shamir's trick, Barrett powmodB, cache/queue micro-optimizations
+  - **Test Improvements**: Test framework with beforeEach/afterEach hooks, per-test timing, --parallel flag, MockPromise enhancements; total 2,846 tests (was 1,429)
+  - **Infrastructure**: Wally package JSON restructure, Makefile improvements, SDK version constant, ERC event definitions, missing ERC standard functions
+- [ ] **CHANGELOG.md**: Fix v0.1.0 section:
+  - Update test count from 1,429 to actual v0.1.0 count (or note v0.2.0 total of 2,846)
+  - Fix "Known Limitations": remove false claims about missing DEPLOY_ACCOUNT and missing paymaster support; remove "windowed scalar multiplication not yet applied" (done in R.4.1); keep genuinely pending items (no DECLARE, no WebSocket, no session keys)
+  - Update per-module test counts to match current suite
+
+**Implementation Notes**:
+- Run `make test` to get authoritative test count (currently 2,846). Individual module counts from MEMORY.md are stale — the refactor phases added/removed/moved tests.
+- For REFACTOR_ROADMAP, grep each R.x.x item ID against MEMORY.md's "Implementation Status" to confirm completion. Cross-reference with git log for commit evidence.
+- The v0.2.0 CHANGELOG section should follow the same Keep a Changelog format as v0.1.0 (### Added, ### Changed, ### Fixed sections).
+- Consider moving completed ROADMAP sections to a "Completed" archive section rather than just checking boxes, to reduce visual noise.
 
 ---
 
 ### R.6.3 Fix All Guides
 
-**Description**: Every guide has inaccuracies ranging from nonexistent methods to broken code examples.
+**Description**: Every guide has inaccuracies ranging from nonexistent methods to broken code examples. Since the original audit (11-docs.md), additional modules have been added (KeyStore, OnboardingManager, PresetFactory, EventPoller persistence, shared/) that need guide coverage, and the AbiCodec public/private contradiction has been resolved (now exported).
 
 **Requirements**:
-- [ ] **getting-started.md**: Add `paymaster` module to module listing (ref: 11-docs.md §getting-started)
-- [ ] **crypto.md**: Fix StarkCurve `pointAdd`/`pointDouble` (actual: `jacobianAdd`/`jacobianDouble`), fix `scalarMul` param order, fix ECDSA return type description, document missing functions (ref: 11-docs.md §crypto.md)
-- [ ] **accounts.md**: Fix `classHash` vs `accountType` usage, Braavos example, `computeAddress` required params, `signMessage` return type, add AccountType/AccountFactory/OutsideExecution docs, add 9+ missing Account methods (ref: 11-docs.md §accounts.md)
-- [ ] **contracts.md**: Remove nonexistent `Contract:attach()`, add 7 missing Contract methods, add event ABI examples, document camelCase aliases, add preset `getAbi()` methods (ref: 11-docs.md §contracts.md)
-- [ ] **patterns.md**: Fix `tonumber(balance.low, 16)` bug, fix `Keccak.getSelectorFromName()` buffer→hex, fix `getEvents` filter BlockId format, fix wallet linking point decompression, fix address comparison normalization, add missing Keccak import, add paymaster/deploy/error-handling patterns (ref: 11-docs.md §patterns.md)
-- [ ] **roblox.md**: Fix config nesting (`maxQueueDepth`→`queueConfig`, `maxCacheEntries`→`cacheConfig.maxEntries`), complete cache TTL table, fix `tonumber` bugs, fix `signRaw` parameter type, fix `--!native` terminology (native codegen, not JIT), add NonceManager/paymaster/deploy guidance (ref: 11-docs.md §roblox.md)
-- [ ] **api-reference.md**: Add 8 missing modules (AccountType, AccountFactory, OutsideExecution, PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor), fix TypedData section (wrong function names), fix TransactionHash identifiers, remove nonexistent `Contract:attach()`, add 9+ missing Account methods, add 7 missing Contract methods, add 18 missing ErrorCodes, resolve AbiCodec public/private contradiction (ref: 11-docs.md §api-reference.md)
+- [ ] **getting-started.md**: Add `paymaster` and `shared` modules to module listing; add `wallet.KeyStore`, `wallet.OnboardingManager` to wallet module description (ref: 11-docs.md §getting-started)
+- [ ] **crypto.md**: Fix StarkCurve `pointAdd`/`pointDouble` (actual: `jacobianAdd`/`jacobianDouble`), fix `scalarMul` param order `(p, k)`, fix ECDSA return type `{ r: buffer, s: buffer }`, document FieldFactory, document missing BigInt/StarkField/StarkScalarField/StarkCurve functions (ref: 11-docs.md §crypto.md)
+- [ ] **accounts.md**:
+  - Fix `classHash` vs `accountType` usage and Braavos example
+  - Fix `computeAddress` required params (classHash is required)
+  - Fix `signMessage` return type
+  - Add AccountType/AccountFactory documentation (OZ, Argent, custom(), batchCreate, batchDeploy)
+  - Add OutsideExecution (SNIP-9) documentation
+  - Add KeyStore documentation (encrypted key persistence, getOrCreate, rotateSecret, deleteKey)
+  - Add OnboardingManager documentation (onboard, ensureDeployed, getStatus, removePlayer)
+  - Add 10+ missing Account methods (deployAccount, estimateDeployAccountFee, getDeploymentData, deployWithPaymaster, estimatePaymasterFee, executePaymaster, hashMessage, signMessage, waitForReceipt, getPublicKeyHex, static: detectAccountType, getConstructorCalldata, getDeploymentFeeEstimate, checkDeploymentBalance, getDeploymentFundingInfo)
+  - (ref: 11-docs.md §accounts.md)
+- [ ] **contracts.md**:
+  - Remove nonexistent `Contract:attach()`
+  - Add 7 missing Contract methods (getFunctions, getFunction, hasFunction, parseEvents, queryEvents, getEvents, hasEvent)
+  - Add event ABI examples and document camelCase aliases
+  - Add EventPoller documentation including DataStore persistence and `onCheckpoint` callback
+  - Add AbiCodec public API documentation (now exported via `Starknet.contract.AbiCodec`)
+  - Add PresetFactory documentation
+  - Add preset `getAbi()` static methods
+  - (ref: 11-docs.md §contracts.md)
+- [ ] **patterns.md**:
+  - Verify `tonumber(balance.low, 16)` bug (may be fixed by commit faecee7 "Fix Example tonumber Bug")
+  - Fix `Keccak.getSelectorFromName()` buffer→hex conversion (needs `StarkField.toHex()`)
+  - Fix `getEvents` filter BlockId format (`{ block_tag = "latest" }` not `"latest"`)
+  - Fix wallet linking point decompression (needs full y-coordinate)
+  - Fix address comparison normalization (use `BigInt.toHex(BigInt.fromHex(...))`)
+  - Add missing Keccak import
+  - Add paymaster/sponsored transaction pattern (SponsoredExecutor + AvnuPaymaster)
+  - Add account deployment/onboarding pattern (KeyStore + OnboardingManager flow)
+  - Add structured error handling pattern (StarknetError `:is()`, error codes, recovery)
+  - Add NonceManager pattern for parallel transactions
+  - (ref: 11-docs.md §patterns.md)
+- [ ] **roblox.md**:
+  - Fix config nesting (`maxQueueDepth`→`queueConfig.maxQueueDepth`, `maxCacheEntries`→`cacheConfig.maxEntries`)
+  - Complete cache TTL table (add `getClass`/`getClassAt` indefinite, `getBlockWithTxs`/`getBlockWithReceipts` 10s, list never-cached methods)
+  - Fix `signRaw` parameter type (buffer, not hex string)
+  - Fix `--!native` terminology (native codegen, not JIT)
+  - Add NonceManager guidance for concurrent server requests
+  - Add paymaster integration patterns for gasless player transactions
+  - Add KeyStore/OnboardingManager patterns for player wallet setup
+  - Add EventPoller persistence guidance (DataStore checkpointing)
+  - Verify `tonumber` bugs are fixed (commit faecee7)
+  - (ref: 11-docs.md §roblox.md)
+- [ ] **api-reference.md**:
+  - Add 13+ missing modules: AccountType, AccountFactory, OutsideExecution, KeyStore, OnboardingManager, PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor, PresetFactory, JsonRpcClient, shared/* (HexUtils, BufferUtils, ByteArray, interfaces)
+  - Fix TypedData section (wrong function names: actual is `getMessageHash`, `encodeType`, not `hash`/`hashLegacy`/`hashActive`/`encodeValue`)
+  - Fix TransactionHash identifiers (`calculateInvokeTransactionHash` not `computeInvokeV3Hash`; add `calculateDeployAccountTransactionHash`)
+  - Remove nonexistent `Contract:attach()` and `account:waitForTransaction()` (actual: `waitForReceipt`)
+  - Add 10+ missing Account methods and 7 missing Contract methods
+  - Add 20+ missing ErrorCodes (outside execution 6000s, paymaster 7000s categories)
+  - Update AbiCodec section — now publicly exported (contradiction resolved by commit 4f3047f), document full public API
+  - Add EventPoller persistence API (onCheckpoint, setLastBlockNumber, getCheckpointKey, DataStore config)
+  - Add RpcTypes section (~25 export types)
+  - (ref: 11-docs.md §api-reference.md)
+
+**Implementation Notes**:
+- The 11-docs.md audit is the authoritative reference for specific line-by-line issues, but it was written before KeyStore, OnboardingManager, PresetFactory, FieldFactory, shared/*, and EventPoller persistence were added. Each guide needs additional sections for these.
+- The `tonumber(balance.low, 16)` bug in patterns.md and roblox.md may already be fixed by commit faecee7 — verify before editing.
+- AbiCodec public/private contradiction is resolved: `contract/init.luau` now exports AbiCodec and PresetFactory alongside Contract, ERC20, ERC721.
+- Consider restructuring api-reference.md to mirror the 9-namespace barrel export structure rather than the current ad-hoc ordering.
 
 ---
 
-### R.6.4 Update README.md
+### R.6.4 Update README.md & CLAUDE.md
+
+**Description**: README.md is missing 3+ module trees from the API overview and project structure. CLAUDE.md accurately describes core conventions but is missing the paymaster, shared, and wallet expansion modules from its architecture description.
 
 **Requirements**:
-- [ ] Add `errors` and `paymaster` modules to API Overview table (ref: 13-config-build.md §README [refactor])
-- [ ] Add `src/errors/`, `src/paymaster/`, `src/constants.luau` to project structure diagram (ref: 13-config-build.md §README [refactor])
-- [ ] Add feature highlights for SNIP-9/12/29, paymaster, deploy, events, queue/cache/nonce (ref: 13-config-build.md §README)
-- [ ] Consider adding test count badge (ref: 13-config-build.md §README)
-- [ ] Add quick-start require path note for pesde users (`roblox_packages` vs `Packages` path difference) (ref: 13-config-build.md §README)
-- [ ] Add required Rokit version or tool prerequisites to README (ref: 13-config-build.md §fresh clone experience)
+- [ ] **README.md**:
+  - Add `errors`, `paymaster`, and `shared` modules to API Overview table
+  - Add `src/errors/`, `src/paymaster/`, `src/shared/`, `src/constants.luau` to project structure diagram
+  - Expand `wallet` module description to include KeyStore, OnboardingManager, AccountType, AccountFactory, OutsideExecution
+  - Expand `provider` module description to include EventPoller, RequestQueue, ResponseCache, NonceManager, JsonRpcClient
+  - Expand `contract` module description to include AbiCodec, PresetFactory
+  - Add feature highlights: SNIP-9 outside execution, SNIP-12 typed data, SNIP-29 paymaster, deploy account, encrypted key store, player onboarding, event polling with persistence, request queuing/caching
+  - Update test count (2,846 tests, 50 spec files)
+  - Add quick-start require path note for pesde users (`roblox_packages` vs `Packages` path)
+  - Add required Rokit version or tool prerequisites
+  - Update version references to 0.2.0 where applicable
+- [ ] **CLAUDE.md**:
+  - Update Architecture section — add `paymaster`, `shared`, `errors` to the module list
+  - Add wallet sub-modules: KeyStore, OnboardingManager, AccountType, AccountFactory, OutsideExecution, TypedData
+  - Add provider sub-modules: EventPoller, RequestQueue, ResponseCache, NonceManager, JsonRpcClient
+  - Add contract sub-modules: AbiCodec, PresetFactory
+  - Remove `rbx-cryptography` from Dependencies section (it's a comment attribution in BigInt.luau, not a dependency)
+  - Add `shared` module to Key Patterns section
+  - Update test count reference if present
+
+**Implementation Notes**:
+- README badge version should match `wally.toml` / `pesde.toml` version.
+- CLAUDE.md is loaded into Claude Code context on every session — keep it concise and focused on conventions and key patterns, not exhaustive API docs.
+- The project structure diagram in README should match SPEC.md §2.3 after the R.6.1 overhaul.
 
 ---
 
 ### R.6.5 Add Missing Examples
 
-**Description**: 5 current examples cover basic usage. Production-critical features (paymaster, deploy, events, error handling) have no example coverage.
+**Description**: 5 current examples cover basic usage (read-contract, send-transaction, multicall, nft-gate, leaderboard). Production-critical features — paymaster, deploy account, events, error handling, player onboarding, key management — have no example coverage. The SDK now has 9 modules and 57 source files; examples should demonstrate the full breadth of the API.
 
 **Requirements**:
-- [ ] Create `sponsored-transaction.luau` — gasless game action using SponsoredExecutor + AvnuPaymaster (ref: 10-examples.md §feature coverage gaps)
-- [ ] Create `deploy-account.luau` — create and deploy a new player account on-chain (ref: 10-examples.md §feature coverage gaps)
-- [ ] Create `event-listener.luau` — poll for on-chain events and react in-game (ref: 10-examples.md §feature coverage gaps)
-- [ ] Create `error-handling.luau` — demonstrate StarknetError types, `:is()` checks, recovery patterns (ref: 10-examples.md §feature coverage gaps)
-- [ ] Create `batch-onboarding.luau` — batch account creation using AccountFactory (ref: 10-examples.md §feature coverage gaps [doc])
-- [ ] Create `typed-data.luau` — SNIP-12 TypedData signing example (ref: 10-examples.md §feature coverage gaps [doc])
-- [ ] Create `outside-execution.luau` — SNIP-9 Outside Execution example (ref: 10-examples.md §feature coverage gaps [doc])
-- [ ] Create `provider-features.luau` — RequestQueue, ResponseCache, NonceManager configuration example (ref: 10-examples.md §feature coverage gaps [doc])
-- [ ] Fix `read-contract.luau` missing `:catch()` on metadata calls and missing module return (ref: 10-examples.md §read-contract [doc])
-- [ ] Polish existing examples — add missing annotations and pedagogical improvements:
-  - [ ] `leaderboard.luau`: note single contract instance suffices for read+write; add u128 score overflow warning (>2^53) (ref: 10-examples.md §leaderboard [doc])
-  - [ ] `multicall.luau`: annotate `feeMultiplier = 1.5` as default or use non-default value (ref: 10-examples.md §multicall [doc])
-  - [ ] `nft-gate.luau`: add `:expect()` thread-blocking comment; use placeholder address instead of hardcoded (ref: 10-examples.md §nft-gate [doc])
-  - [ ] `read-contract.luau`: add human-readable balance formatting (divide by 10^18) (ref: 10-examples.md §read-contract [doc])
-  - [ ] `send-transaction.luau`: annotate `retryInterval = 5` as default; add f64 precision warning for large balances (ref: 10-examples.md §send-transaction [doc])
-  - [ ] Cross-cutting: standardize module return pattern across all examples (ref: 10-examples.md §cross-cutting [doc])
-  - [ ] Cross-cutting: retrofit structured error handling (`:is()`, error codes) in existing examples (ref: 10-examples.md §cross-cutting [doc])
-  - [ ] Cross-cutting: explicitly state Roblox-only runtime in examples documentation (ref: 10-examples.md §cross-cutting [doc])
+- [ ] Create `sponsored-transaction.luau` — gasless game action using SponsoredExecutor + AvnuPaymaster: configure paymaster, set up policy, execute a sponsored transfer with zero gas cost to the player
+- [ ] Create `deploy-account.luau` — create and deploy a new player account on-chain: generate keypair, compute address, fund account, deploy via `Account:deployAccount()`, verify deployment
+- [ ] Create `player-onboarding.luau` — full player lifecycle using KeyStore + OnboardingManager: `getOrCreate` on PlayerAdded, `ensureDeployed`, `getStatus` for UI, `removePlayer` on leave
+- [ ] Create `event-listener.luau` — poll for on-chain events using EventPoller with DataStore persistence: configure `onCheckpoint`, handle events in callback, demonstrate resume after restart
+- [ ] Create `error-handling.luau` — demonstrate StarknetError types, `:is()` checks, ErrorCodes constants, recovery patterns for RPC errors, transaction reverts, and validation failures
+- [ ] Create `typed-data.luau` — SNIP-12 TypedData signing: build a typed data structure, `account:hashMessage()`, `account:signMessage()`, verify signature
+- [ ] Create `outside-execution.luau` — SNIP-9 Outside Execution: build typed data for meta-transaction, sign off-chain, submit via relayer
+- [ ] Create `provider-features.luau` — RequestQueue, ResponseCache, NonceManager configuration: show `enableQueue`/`enableCache`/`enableNonceManager`, demonstrate batching, cache hits, nonce reservation
+- [ ] Fix `read-contract.luau`: add missing `:catch()` on metadata calls, add module return, add human-readable balance formatting (divide by 10^18)
+- [ ] Polish existing examples:
+  - [ ] `leaderboard.luau`: note single contract instance suffices for read+write; add u128 score overflow warning (>2^53)
+  - [ ] `multicall.luau`: annotate `feeMultiplier = 1.5` as default or use non-default value
+  - [ ] `nft-gate.luau`: add `:expect()` thread-blocking comment; use placeholder address instead of hardcoded
+  - [ ] `send-transaction.luau`: annotate `retryInterval = 5` as default; add f64 precision warning for large balances
+  - [ ] Cross-cutting: standardize module return pattern across all examples
+  - [ ] Cross-cutting: retrofit structured error handling (`:is()`, ErrorCodes) in existing examples
+  - [ ] Cross-cutting: add header comment to each example stating Roblox-only runtime requirement
+
+**Implementation Notes**:
+- The `tonumber(balance.low, 16)` bug was fixed in commit faecee7 — verify the fix is present in current examples before adding it as a task.
+- Each new example should follow the pattern of existing examples: header comment explaining what it demonstrates, `RpcProvider.new()` setup, actual API usage, error handling.
+- `player-onboarding.luau` is the highest-value new example — it demonstrates the most common production use case (PlayerAdded → KeyStore → OnboardingManager → Account).
+- Examples must use Roblox-compatible patterns (HttpService, DataStoreService injection) but should be clear about which parts need a real Roblox server vs. what can be understood conceptually.
 
 ---
 
 ### R.6.6 Add Missing Code-Level Documentation
 
-**Description**: Several design decisions, intentional omissions, and known Luau limitations are undocumented in source code, making the codebase harder to reason about for contributors.
+**Description**: Several design decisions, intentional omissions, architectural patterns, and known Luau limitations are undocumented in source code, making the codebase harder to reason about for contributors. The refactoring phases (R1-R5) introduced new patterns (FieldFactory, PresetFactory, `_executePipeline`, shared/interfaces) that also need inline documentation.
 
 **Requirements**:
 - [ ] Document intentional `sqrt()` omission in `StarkScalarField` — scalar field does not need square roots (ref: 01-crypto.md §StarkScalarField [api])
@@ -753,7 +915,16 @@ Fix inaccurate documentation, fill coverage gaps, and update stale content.
 - [ ] Document `waitForReceipt` 3-layer delegation chain: Account → TransactionBuilder → RpcProvider (ref: 05-tx.md §TransactionBuilder [api], 06-wallet.md §Account [api])
 - [ ] Document `Account.CLASS_HASH_TO_TYPE` keys are manually normalized — implicit contract with `BigInt.toHex()` (ref: 06-wallet.md §Account [type])
 - [ ] Fix `tx/init.luau` module comment — says "V3 INVOKE" but module also handles DEPLOY_ACCOUNT (ref: 05-tx.md §tx/init.luau [doc])
-- [ ] Add class-level doc comment to `Contract.luau` (ref: 07-contract.md §Contract [doc])
+- [ ] Add class-level doc comment to `Contract.luau` explaining ABI-driven dynamic dispatch, `__index` metamethod, view→call vs external→invoke routing (ref: 07-contract.md §Contract [doc])
+- [ ] Document `FieldFactory` pattern — explain why StarkField and StarkScalarField are generated from a shared factory with different moduli (ref: new since R.1.4)
+- [ ] Document `PresetFactory` pattern — explain how ERC20/ERC721 use a shared factory to reduce duplication (ref: new since R.1.12)
+- [ ] Document `_executePipeline` pattern in TransactionBuilder — explain the shared pipeline abstraction for invoke/deploy flows (ref: new since R.1.9)
+- [ ] Document `shared/interfaces.luau` design decision — interface-only types live here, data types stay in owning modules (ref: new since R.2.1)
+
+**Implementation Notes**:
+- These are brief inline comments (1-3 lines each), not doc pages. The goal is to make the "why" obvious to someone reading the source for the first time.
+- For factory patterns (FieldFactory, PresetFactory), a single comment at the top of the factory module explaining the pattern is sufficient — the consuming modules don't need additional comments.
+- The `tx/init.luau` comment fix is trivial: change "V3 INVOKE" to "V3 INVOKE and DEPLOY_ACCOUNT" or similar.
 
 ---
 
