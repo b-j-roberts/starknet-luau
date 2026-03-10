@@ -1,4 +1,4 @@
-.PHONY: test serve build lint fmt check install pesde-install
+.PHONY: test serve build lint fmt check install pesde-install clean test-one build-and-test
 
 install:
 	wally install
@@ -12,10 +12,14 @@ pesde-install:
 test:
 	lune run tests/run
 
+test-one:
+	@if [ -z "$(FILE)" ]; then echo "Usage: make test-one FILE=tests/crypto/BigInt.spec.luau"; exit 1; fi
+	lune run tests/run -- --file $(FILE)
+
 serve:
 	rojo serve dev.project.json
 
-build:
+build: install
 	rojo build default.project.json -o starknet-luau.rbxm
 
 lint:
@@ -25,6 +29,11 @@ fmt:
 	stylua src/
 
 check:
-	$(MAKE) lint
-	stylua --check src/
-	$(MAKE) test
+	selene src/ && stylua --check src/ && lune run tests/run
+
+clean:
+	rm -f starknet-luau.rbxm sourcemap.json roblox.yml
+	rm -rf Packages/ ServerPackages/ DevPackages/
+	rm -rf roblox_packages/ .pesde/
+
+build-and-test: build test
