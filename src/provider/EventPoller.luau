@@ -17,7 +17,11 @@ export type EventPoller = {
 	stop: (self: EventPoller) -> (),
 	isRunning: (self: EventPoller) -> boolean,
 	getLastBlockNumber: (self: EventPoller) -> number?,
+	setLastBlockNumber: (self: EventPoller, blockNumber: number) -> (),
+	getCheckpointKey: (self: EventPoller) -> string?,
 }
+
+local DEFAULT_CHECKPOINT_KEY = "EventPoller_checkpoint"
 
 --------------------------------------------------------------------------------
 -- EventPoller class
@@ -45,6 +49,9 @@ function EventPollerClass.new(config: RpcTypes.EventPollerConfig): EventPoller
 		_interval = config.interval or 10,
 		_onEvents = config.onEvents,
 		_onError = config.onError or function(_err: any) end,
+		_onCheckpoint = config.onCheckpoint,
+		_dataStore = config._dataStore,
+		_checkpointKey = if config._dataStore then (config.checkpointKey or DEFAULT_CHECKPOINT_KEY) else nil,
 		_running = false,
 		_lastBlockNumber = nil :: number?,
 		_sleep = config._sleep or Defaults.sleep,
@@ -54,12 +61,52 @@ function EventPollerClass.new(config: RpcTypes.EventPollerConfig): EventPoller
 	return self :: any
 end
 
+--- Persist the current checkpoint to DataStore and fire the onCheckpoint callback.
+--- DataStore write fires first (if configured), then callback (regardless of DataStore success).
+function EventPollerClass:_checkpoint(blockNumber: number)
+	if self._dataStore then
+		local dsOk, dsErr = pcall(function()
+			self._dataStore:SetAsync(self._checkpointKey, {
+				blockNumber = blockNumber,
+				timestamp = self._clock(),
+			})
+		end)
+		if not dsOk then
+			self._onError(dsErr)
+		end
+	end
+
+	if self._onCheckpoint then
+		self._onCheckpoint(blockNumber)
+	end
+end
+
 --- Start polling for events. Runs in a loop until stop() is called.
 function EventPollerClass:start()
 	if self._running then
 		return
 	end
 	self._running = true
+
+	-- Restore checkpoint from DataStore if configured
+	if self._dataStore and not self._lastBlockNumber then
+		local dsOk, dsResult = pcall(function()
+			return self._dataStore:GetAsync(self._checkpointKey)
+		end)
+		if dsOk and dsResult ~= nil then
+			local restored: number? = nil
+			if type(dsResult) == "number" then
+				restored = dsResult
+			elseif type(dsResult) == "table" and type(dsResult.blockNumber) == "number" then
+				restored = dsResult.blockNumber
+			end
+			if restored then
+				self:setLastBlockNumber(restored)
+			end
+		elseif not dsOk then
+			self._onError(dsResult)
+		end
+	end
 
 	-- Initialize from_block if not set — start from current block
 	local filter: RpcTypes.EventFilter = self._filter
@@ -148,6 +195,8 @@ function EventPollerClass:start()
 						keys = filter.keys,
 						chunk_size = filter.chunk_size,
 					}
+					-- Persist checkpoint
+					self:_checkpoint(maxBlock)
 				end
 			end
 		elseif not ok then
@@ -173,6 +222,24 @@ end
 --- Get the last block number that was polled (nil if no poll has completed yet).
 function EventPollerClass:getLastBlockNumber(): number?
 	return self._lastBlockNumber
+end
+
+--- Set the last block number manually (for restoring state before start()).
+--- Also updates the internal filter's from_block so start() resumes from blockNumber + 1.
+function EventPollerClass:setLastBlockNumber(blockNumber: number)
+	self._lastBlockNumber = blockNumber
+	self._filter = {
+		from_block = { block_number = blockNumber + 1 },
+		to_block = self._filter.to_block,
+		address = self._filter.address,
+		keys = self._filter.keys,
+		chunk_size = self._filter.chunk_size,
+	}
+end
+
+--- Get the configured checkpoint key (nil if no DataStore is configured).
+function EventPollerClass:getCheckpointKey(): string?
+	return self._checkpointKey
 end
 
 return EventPollerClass

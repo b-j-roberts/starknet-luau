@@ -373,6 +373,12 @@ export type ParsedEvent = {
 	raw: EmittedEvent | Event,
 }
 
+--- Structural type for Roblox DataStoreService (mockable in tests)
+export type DataStoreLike = {
+	GetAsync: (self: DataStoreLike, key: string) -> any?,
+	SetAsync: (self: DataStoreLike, key: string, value: any) -> (),
+}
+
 --- Configuration for EventPoller
 export type EventPollerConfig = {
 	provider: Interfaces.ProviderInterface,
@@ -380,6 +386,10 @@ export type EventPollerConfig = {
 	interval: number?, -- polling interval in seconds (default 10)
 	onEvents: ((events: { EmittedEvent }) -> ())?,
 	onError: ((err: any) -> ())?,
+	-- Checkpoint persistence
+	onCheckpoint: ((blockNumber: number) -> ())?, -- fires after each poll cycle that advances _lastBlockNumber
+	_dataStore: DataStoreLike?, -- DataStore for persisting _lastBlockNumber across restarts
+	checkpointKey: string?, -- DataStore key for checkpoint (default "EventPoller_checkpoint")
 	-- Internal overrides for testing
 	_sleep: ((seconds: number) -> ())?,
 	_clock: (() -> number)?,
