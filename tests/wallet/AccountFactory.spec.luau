@@ -5,6 +5,7 @@ local Account = require("../../src/wallet/Account")
 local Constants = require("../../src/constants")
 local StarkSigner = require("../../src/signer/StarkSigner")
 local TestUtils = require("../helpers/TestUtils")
+local ErrorCodes = require("../../src/errors/ErrorCodes")
 local TV = require("../fixtures/test-vectors")
 
 --------------------------------------------------------------------------------
@@ -26,6 +27,10 @@ local EXPECTED_ADDR_3_OZ = TV.Account.addresses[3].addressOZ
 local EXPECTED_ADDR_1_ARGENT = TV.Account.addresses[1].addressArgent
 local EXPECTED_ADDR_2_ARGENT = TV.Account.addresses[2].addressArgent
 local EXPECTED_ADDR_3_ARGENT = TV.Account.addresses[3].addressArgent
+
+local EXPECTED_ADDR_1_BRAAVOS = TV.Account.addresses[1].addressBraavos
+local EXPECTED_ADDR_2_BRAAVOS = TV.Account.addresses[2].addressBraavos
+local EXPECTED_ADDR_3_BRAAVOS = TV.Account.addresses[3].addressBraavos
 
 local EXPECTED_ADDR_1_ARGENT_GUARDIAN = TV.Account.argentGuardianAddress.expected
 
@@ -161,6 +166,59 @@ describe("AccountFactory - AccountType.Argent calldata builder", function()
 end)
 
 --------------------------------------------------------------------------------
+-- AccountType.Braavos - constructor calldata builder
+--------------------------------------------------------------------------------
+
+describe("AccountFactory - AccountType.Braavos calldata builder", function()
+	it("produces [publicKey] for a single public key", function()
+		local calldata = AccountType.Braavos(PUBKEY_1)
+		expect(#calldata):toBe(1)
+		expect(calldata[1]):toBe(PUBKEY_1)
+	end)
+
+	it("produces [publicKey] for generator key", function()
+		local calldata = AccountType.Braavos(PUBKEY_3)
+		expect(#calldata):toBe(1)
+		expect(calldata[1]):toBe(PUBKEY_3)
+	end)
+
+	it("matches Account.getConstructorCalldata for braavos type", function()
+		local fromType = AccountType.Braavos(PUBKEY_1)
+		local fromAccount = Account.getConstructorCalldata("braavos", PUBKEY_1)
+		expect(#fromType):toBe(#fromAccount)
+		for i, v in fromType do
+			expect(v):toBe(fromAccount[i])
+		end
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AccountType.get - registry lookup
+--------------------------------------------------------------------------------
+
+describe("AccountType.get - registry lookup", function()
+	it("returns OZ type for 'oz'", function()
+		local t = AccountType.get("oz")
+		expect(t):toBe(AccountType.OZ)
+	end)
+
+	it("returns Argent type for 'argent'", function()
+		local t = AccountType.get("argent")
+		expect(t):toBe(AccountType.Argent)
+	end)
+
+	it("returns Braavos type for 'braavos'", function()
+		local t = AccountType.get("braavos")
+		expect(t):toBe(AccountType.Braavos)
+	end)
+
+	it("returns nil for unknown type", function()
+		local t = AccountType.get("unknown")
+		expect(t):toBe(nil)
+	end)
+end)
+
+--------------------------------------------------------------------------------
 -- AccountType.custom
 --------------------------------------------------------------------------------
 
@@ -204,6 +262,87 @@ describe("AccountType.custom", function()
 		expect(calldata[1]):toBe(PUBKEY_1)
 		expect(calldata[2]):toBe(PUBKEY_2)
 		expect(calldata[3]):toBe("0x42")
+	end)
+
+	it("errors when config is nil", function()
+		expect(function()
+			AccountType.custom(nil :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.type is missing", function()
+		expect(function()
+			AccountType.custom({
+				classHash = "0xabc",
+				buildCalldata = function(): { string }
+					return {}
+				end,
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.type is not a string", function()
+		expect(function()
+			AccountType.custom({
+				type = 123,
+				classHash = "0xabc",
+				buildCalldata = function(): { string }
+					return {}
+				end,
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.classHash is missing", function()
+		expect(function()
+			AccountType.custom({
+				type = "oz",
+				buildCalldata = function(): { string }
+					return {}
+				end,
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.classHash is not a string", function()
+		expect(function()
+			AccountType.custom({
+				type = "oz",
+				classHash = 42,
+				buildCalldata = function(): { string }
+					return {}
+				end,
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.buildCalldata is missing", function()
+		expect(function()
+			AccountType.custom({
+				type = "oz",
+				classHash = "0xabc",
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("errors when config.buildCalldata is not a function", function()
+		expect(function()
+			AccountType.custom({
+				type = "oz",
+				classHash = "0xabc",
+				buildCalldata = "not_a_function",
+			} :: any)
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("error messages mention the invalid field", function()
+		local ok, err = pcall(function()
+			AccountType.custom({ classHash = "0xabc", buildCalldata = function(): { string }
+				return {}
+			end } :: any)
+		end)
+		expect(ok):toBe(false)
+		expect(tostring(err)):toContain("config.type")
 	end)
 end)
 
@@ -438,6 +577,85 @@ describe("AccountFactory:createAccount - Argent (with guardian)", function()
 			guardian = "0xdeadbeef",
 		})
 		expect(factoryResult.address):toBe(directAccount.address)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- AccountFactory:createAccount - Braavos
+--------------------------------------------------------------------------------
+
+describe("AccountFactory:createAccount - Braavos", function()
+	it("computes correct Braavos address for privkey_1", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_1)
+		local factory = AccountFactory.new(provider, AccountType.Braavos, signer)
+
+		local result = factory:createAccount()
+		expect(result.address):toBe(EXPECTED_ADDR_1_BRAAVOS)
+	end)
+
+	it("computes correct Braavos address for privkey_2", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_2)
+		local factory = AccountFactory.new(provider, AccountType.Braavos, signer)
+
+		local result = factory:createAccount()
+		expect(result.address):toBe(EXPECTED_ADDR_2_BRAAVOS)
+	end)
+
+	it("computes correct Braavos address for privkey_3", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_3)
+		local factory = AccountFactory.new(provider, AccountType.Braavos, signer)
+
+		local result = factory:createAccount()
+		expect(result.address):toBe(EXPECTED_ADDR_3_BRAAVOS)
+	end)
+
+	it("matches Account.fromPrivateKey address", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_1)
+		local factory = AccountFactory.new(provider, AccountType.Braavos, signer)
+
+		local factoryResult = factory:createAccount()
+		local directAccount = Account.fromPrivateKey({
+			privateKey = PRIVKEY_1,
+			provider = provider,
+			accountType = "braavos",
+		})
+		expect(factoryResult.address):toBe(directAccount.address)
+	end)
+
+	it("produces different address than OZ for same key", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_1)
+		local braavosFactory = AccountFactory.new(provider, AccountType.Braavos, signer)
+		local ozFactory = AccountFactory.new(provider, AccountType.OZ, signer)
+
+		local braavosResult = braavosFactory:createAccount()
+		local ozResult = ozFactory:createAccount()
+		expect(braavosResult.address ~= ozResult.address):toBe(true)
+	end)
+
+	it("produces different address than Argent for same key", function()
+		resetHandlers()
+		local provider = createTestProvider()
+		local signer = StarkSigner.new(PRIVKEY_1)
+		local braavosFactory = AccountFactory.new(provider, AccountType.Braavos, signer)
+		local argentFactory = AccountFactory.new(provider, AccountType.Argent, signer)
+
+		local braavosResult = braavosFactory:createAccount()
+		local argentResult = argentFactory:createAccount()
+		expect(braavosResult.address ~= argentResult.address):toBe(true)
+	end)
+
+	it("uses BRAAVOS_BASE_ACCOUNT_CLASS_HASH for address computation", function()
+		expect(AccountType.Braavos.classHash):toBe(Constants.BRAAVOS_BASE_ACCOUNT_CLASS_HASH)
 	end)
 end)
 

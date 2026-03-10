@@ -14,6 +14,8 @@
 --   are deployed, use AccountType.custom() to supply updated class hashes.
 
 local Constants = require("../constants")
+local StarknetError = require("../errors/StarknetError")
+local ErrorCodes = require("../errors/ErrorCodes")
 
 local AccountType = {}
 
@@ -107,6 +109,33 @@ function AccountType.custom(config: {
 	classHash: string,
 	buildCalldata: (...any) -> { string },
 }): any
+	if not config or type(config) ~= "table" then
+		error(StarknetError.validation("AccountType.custom: config is required", ErrorCodes.REQUIRED_FIELD.code))
+	end
+	if not config.type or type(config.type) ~= "string" then
+		error(
+			StarknetError.validation(
+				"AccountType.custom: config.type must be a string",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not config.classHash or type(config.classHash) ~= "string" then
+		error(
+			StarknetError.validation(
+				"AccountType.custom: config.classHash must be a string",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
+	if not config.buildCalldata or type(config.buildCalldata) ~= "function" then
+		error(
+			StarknetError.validation(
+				"AccountType.custom: config.buildCalldata must be a function",
+				ErrorCodes.REQUIRED_FIELD.code
+			)
+		)
+	end
 	return setmetatable({
 		type = config.type,
 		classHash = config.classHash,
