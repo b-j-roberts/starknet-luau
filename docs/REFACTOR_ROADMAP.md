@@ -768,10 +768,10 @@ Build system, project files, and configuration improvements.
 **Description**: `default.project.json` uses DataModel root (development layout), but the Roblox ecosystem convention for Wally packages is that `default.project.json` describes the package's own tree (root = library module).
 
 **Requirements**:
-- [ ] Restructure `default.project.json` to be Wally package descriptor with `$path: "src"` root (ref: 13-config-build.md §default.project.json)
-- [ ] Move current DataModel layout to `dev.project.json` (or new `place.project.json`) (ref: 13-config-build.md §default.project.json)
-- [ ] Update Makefile `serve` target to reference `rojo serve dev.project.json` (ref: 13-config-build.md §Makefile)
-- [ ] Update Makefile `build` target for correct distributable rbxm (ref: 13-config-build.md §Makefile)
+- [x] Restructure `default.project.json` to be Wally package descriptor with `$path: "src"` root (ref: 13-config-build.md §default.project.json)
+- [x] Move current DataModel layout to `dev.project.json` (or new `place.project.json`) (ref: 13-config-build.md §default.project.json)
+- [x] Update Makefile `serve` target to reference `rojo serve dev.project.json` (ref: 13-config-build.md §Makefile)
+- [x] Update Makefile `build` target for correct distributable rbxm (ref: 13-config-build.md §Makefile)
 
 ---
 

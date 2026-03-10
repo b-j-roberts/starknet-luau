@@ -2,7 +2,7 @@
 
 install:
 	wally install
-	rojo sourcemap default.project.json --output sourcemap.json
+	rojo sourcemap dev.project.json --output sourcemap.json
 	mkdir -p Packages
 	wally-package-types --sourcemap sourcemap.json Packages/
 
@@ -13,10 +13,10 @@ test:
 	lune run tests/run
 
 serve:
-	rojo serve
+	rojo serve dev.project.json
 
 build:
-	rojo build -o starknet-luau.rbxm
+	rojo build default.project.json -o starknet-luau.rbxm
 
 lint:
 	selene src/

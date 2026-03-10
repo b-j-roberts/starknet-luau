@@ -18,7 +18,7 @@ jobs:
         run: wally install
 
       - name: Build .rbxm
-        run: rojo build -o starknet-luau.rbxm
+        run: rojo build default.project.json -o starknet-luau.rbxm
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

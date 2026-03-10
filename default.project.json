@@ -1,15 +1,6 @@
 {
   "name": "starknet-luau",
   "tree": {
-    "$className": "DataModel",
-
-    "ReplicatedStorage": {
-      "StarknetLuau": {
-        "$path": "src"
-      },
-      "Packages": {
-        "$path": "Packages"
-      }
-    }
+    "$path": "src"
   }
 }
