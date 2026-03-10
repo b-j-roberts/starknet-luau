@@ -98,6 +98,28 @@ local ERC20_ABI: Contract.Abi = {
 		outputs = { { name = "success", type = "core::bool" } },
 		state_mutability = "external",
 	},
+	-- increase_allowance(spender, added_value) -> bool
+	{
+		type = "function",
+		name = "increase_allowance",
+		inputs = {
+			{ name = "spender", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "added_value", type = "core::integer::u256" },
+		},
+		outputs = { { name = "success", type = "core::bool" } },
+		state_mutability = "external",
+	},
+	-- decrease_allowance(spender, subtracted_value) -> bool
+	{
+		type = "function",
+		name = "decrease_allowance",
+		inputs = {
+			{ name = "spender", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "subtracted_value", type = "core::integer::u256" },
+		},
+		outputs = { { name = "success", type = "core::bool" } },
+		state_mutability = "external",
+	},
 	-- Events
 	-- Transfer(from, to, value)
 	{
@@ -148,6 +170,28 @@ local ERC20_ABI: Contract.Abi = {
 			{ name = "sender", type = "core::starknet::contract_address::ContractAddress" },
 			{ name = "recipient", type = "core::starknet::contract_address::ContractAddress" },
 			{ name = "amount", type = "core::integer::u256" },
+		},
+		outputs = { { name = "success", type = "core::bool" } },
+		state_mutability = "external",
+	},
+	-- increaseAllowance(spender, addedValue) -> bool
+	{
+		type = "function",
+		name = "increaseAllowance",
+		inputs = {
+			{ name = "spender", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "added_value", type = "core::integer::u256" },
+		},
+		outputs = { { name = "success", type = "core::bool" } },
+		state_mutability = "external",
+	},
+	-- decreaseAllowance(spender, subtractedValue) -> bool
+	{
+		type = "function",
+		name = "decreaseAllowance",
+		inputs = {
+			{ name = "spender", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "subtracted_value", type = "core::integer::u256" },
 		},
 		outputs = { { name = "success", type = "core::bool" } },
 		state_mutability = "external",

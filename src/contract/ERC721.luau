@@ -102,6 +102,39 @@ local ERC721_ABI: Contract.Abi = {
 		outputs = {},
 		state_mutability = "external",
 	},
+	-- safe_transfer_from(from, to, token_id, data)
+	{
+		type = "function",
+		name = "safe_transfer_from",
+		inputs = {
+			{ name = "from", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "to", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "token_id", type = "core::integer::u256" },
+			{ name = "data", type = "core::array::Span::<core::felt252>" },
+		},
+		outputs = {},
+		state_mutability = "external",
+	},
+	-- token_uri(token_id) -> ByteArray
+	{
+		type = "function",
+		name = "token_uri",
+		inputs = {
+			{ name = "token_id", type = "core::integer::u256" },
+		},
+		outputs = { { name = "uri", type = "core::byte_array::ByteArray" } },
+		state_mutability = "view",
+	},
+	-- supports_interface(interface_id) -> bool
+	{
+		type = "function",
+		name = "supports_interface",
+		inputs = {
+			{ name = "interface_id", type = "core::felt252" },
+		},
+		outputs = { { name = "supported", type = "core::bool" } },
+		state_mutability = "view",
+	},
 	-- Events
 	-- Transfer(from, to, token_id)
 	{
@@ -200,6 +233,39 @@ local ERC721_ABI: Contract.Abi = {
 		},
 		outputs = {},
 		state_mutability = "external",
+	},
+	-- safeTransferFrom(from, to, tokenId, data)
+	{
+		type = "function",
+		name = "safeTransferFrom",
+		inputs = {
+			{ name = "from", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "to", type = "core::starknet::contract_address::ContractAddress" },
+			{ name = "token_id", type = "core::integer::u256" },
+			{ name = "data", type = "core::array::Span::<core::felt252>" },
+		},
+		outputs = {},
+		state_mutability = "external",
+	},
+	-- tokenURI(token_id) -> ByteArray
+	{
+		type = "function",
+		name = "tokenURI",
+		inputs = {
+			{ name = "token_id", type = "core::integer::u256" },
+		},
+		outputs = { { name = "uri", type = "core::byte_array::ByteArray" } },
+		state_mutability = "view",
+	},
+	-- supportsInterface(interface_id) -> bool
+	{
+		type = "function",
+		name = "supportsInterface",
+		inputs = {
+			{ name = "interface_id", type = "core::felt252" },
+		},
+		outputs = { { name = "supported", type = "core::bool" } },
+		state_mutability = "view",
 	},
 }
 

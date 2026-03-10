@@ -97,6 +97,8 @@ describe("ERC20.getAbi - built-in ABI", function()
 		expect(token:hasFunction("transfer")):toBe(true)
 		expect(token:hasFunction("transfer_from")):toBe(true)
 		expect(token:hasFunction("approve")):toBe(true)
+		expect(token:hasFunction("increase_allowance")):toBe(true)
+		expect(token:hasFunction("decrease_allowance")):toBe(true)
 	end)
 
 	it("contains camelCase aliases", function()
@@ -107,6 +109,8 @@ describe("ERC20.getAbi - built-in ABI", function()
 		expect(token:hasFunction("totalSupply")):toBe(true)
 		expect(token:hasFunction("balanceOf")):toBe(true)
 		expect(token:hasFunction("transferFrom")):toBe(true)
+		expect(token:hasFunction("increaseAllowance")):toBe(true)
+		expect(token:hasFunction("decreaseAllowance")):toBe(true)
 	end)
 end)
 
@@ -423,8 +427,8 @@ describe("ERC20 - inherited Contract methods", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local fns = token:getFunctions()
-		-- 9 snake_case + 3 camelCase = 12
-		expect(#fns):toBe(12)
+		-- 11 snake_case + 5 camelCase = 16
+		expect(#fns):toBe(16)
 	end)
 
 	it("getFunction returns parsed metadata", function()
@@ -445,6 +449,102 @@ describe("ERC20 - inherited Contract methods", function()
 
 		expect(token:hasFunction("mint")):toBe(false)
 		expect(token:hasFunction("burn")):toBe(false)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- increase_allowance / decrease_allowance
+--------------------------------------------------------------------------------
+
+describe("ERC20 - increase_allowance / decrease_allowance", function()
+	it("increase_allowance(spender, addedValue) returns tx hash", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider, account)
+
+		local result = token:increase_allowance(SPENDER_ADDR, "0x3e8"):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("increaseAllowance camelCase alias works", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider, account)
+
+		local result = token:increaseAllowance(SPENDER_ADDR, "0x3e8"):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("decrease_allowance(spender, subtractedValue) returns tx hash", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider, account)
+
+		local result = token:decrease_allowance(SPENDER_ADDR, "0x64"):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("decreaseAllowance camelCase alias works", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider, account)
+
+		local result = token:decreaseAllowance(SPENDER_ADDR, "0x64"):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("populate increase_allowance returns correct Call object", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local call = token:populate("increase_allowance", { SPENDER_ADDR, "0x3e8" })
+		expect(call.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
+		expect(call.entrypoint):toBe("increase_allowance")
+		-- spender (1 felt) + u256 (2 felts) = 3
+		expect(#call.calldata):toBe(3)
+	end)
+
+	it("populate decrease_allowance returns correct Call object", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider)
+
+		local call = token:populate("decrease_allowance", { SPENDER_ADDR, "0x64" })
+		expect(call.contractAddress):toBe(NORMALIZED_TOKEN_ADDR)
+		expect(call.entrypoint):toBe("decrease_allowance")
+		-- spender (1 felt) + u256 (2 felts) = 3
+		expect(#call.calldata):toBe(3)
+	end)
+
+	it("increase_allowance supports dryRun option", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider, account)
+
+		local result = token:increase_allowance(SPENDER_ADDR, "0x3e8", { dryRun = true }):expect()
+		expect(result.transactionHash):toBeTruthy()
+		expect(result.transaction):toBeTruthy()
+		expect(result.signature):toBeTruthy()
+	end)
+
+	it("errors when no account for increase_allowance", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local token = ERC20.new(TOKEN_ADDR, provider) -- no account
+
+		expect(function()
+			token:increase_allowance(SPENDER_ADDR, "0x3e8")
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
 	end)
 end)
 

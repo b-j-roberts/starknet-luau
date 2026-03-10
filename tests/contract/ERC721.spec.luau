@@ -101,6 +101,9 @@ describe("ERC721.getAbi - built-in ABI", function()
 		expect(nft:hasFunction("transfer_from")):toBe(true)
 		expect(nft:hasFunction("approve")):toBe(true)
 		expect(nft:hasFunction("set_approval_for_all")):toBe(true)
+		expect(nft:hasFunction("safe_transfer_from")):toBe(true)
+		expect(nft:hasFunction("token_uri")):toBe(true)
+		expect(nft:hasFunction("supports_interface")):toBe(true)
 	end)
 
 	it("contains camelCase aliases", function()
@@ -114,6 +117,9 @@ describe("ERC721.getAbi - built-in ABI", function()
 		expect(nft:hasFunction("isApprovedForAll")):toBe(true)
 		expect(nft:hasFunction("transferFrom")):toBe(true)
 		expect(nft:hasFunction("setApprovalForAll")):toBe(true)
+		expect(nft:hasFunction("safeTransferFrom")):toBe(true)
+		expect(nft:hasFunction("tokenURI")):toBe(true)
+		expect(nft:hasFunction("supportsInterface")):toBe(true)
 	end)
 end)
 
@@ -473,8 +479,8 @@ describe("ERC721 - inherited Contract methods", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local fns = nft:getFunctions()
-		-- 9 snake_case + 6 camelCase = 15
-		expect(#fns):toBe(15)
+		-- 12 snake_case + 9 camelCase = 21
+		expect(#fns):toBe(21)
 	end)
 
 	it("getFunction returns parsed metadata for owner_of", function()
@@ -507,6 +513,197 @@ describe("ERC721 - inherited Contract methods", function()
 		expect(nft:hasFunction("mint")):toBe(false)
 		expect(nft:hasFunction("burn")):toBe(false)
 		expect(nft:hasFunction("totalSupply")):toBe(false)
+	end)
+end)
+
+--------------------------------------------------------------------------------
+-- safe_transfer_from, token_uri, supports_interface
+--------------------------------------------------------------------------------
+
+describe("ERC721 - safe_transfer_from", function()
+	it("safe_transfer_from(from, to, tokenId, data) returns tx hash", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider, account)
+
+		local result = nft:safe_transfer_from(OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, { "0x0" }):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("safeTransferFrom camelCase alias works", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider, account)
+
+		local result = nft:safeTransferFrom(OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, { "0x0" }):expect()
+		expect(result):toBeTruthy()
+		expect(result.transactionHash):toBeTruthy()
+	end)
+
+	it("safe_transfer_from supports dryRun option", function()
+		rpc.resetHandlers()
+		local account = createTestAccount()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider, account)
+
+		local result =
+			nft:safe_transfer_from(OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, { "0x0" }, { dryRun = true }):expect()
+		expect(result.transactionHash):toBeTruthy()
+		expect(result.transaction):toBeTruthy()
+		expect(result.signature):toBeTruthy()
+	end)
+
+	it("errors when no account for safe_transfer_from", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider) -- no account
+
+		expect(function()
+			nft:safe_transfer_from(OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, { "0x0" })
+		end):toThrowCode(ErrorCodes.REQUIRED_FIELD.code)
+	end)
+
+	it("populate safe_transfer_from returns correct Call object", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local call = nft:populate("safe_transfer_from", { OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, { "0xaa", "0xbb" } })
+		expect(call.contractAddress):toBe(NORMALIZED_NFT_ADDR)
+		expect(call.entrypoint):toBe("safe_transfer_from")
+		-- from (1) + to (1) + u256 token_id (2) + array len (1) + 2 elements = 7
+		expect(#call.calldata):toBe(7)
+	end)
+
+	it("populate safe_transfer_from with empty data", function()
+		rpc.resetHandlers()
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local call = nft:populate("safe_transfer_from", { OWNER_ADDR, RECIPIENT_ADDR, TOKEN_ID_1, {} })
+		expect(call.contractAddress):toBe(NORMALIZED_NFT_ADDR)
+		expect(call.entrypoint):toBe("safe_transfer_from")
+		-- from (1) + to (1) + u256 token_id (2) + array len=0 (1) = 5
+		expect(#call.calldata):toBe(5)
+	end)
+end)
+
+describe("ERC721 - token_uri", function()
+	it("token_uri(tokenId) returns ByteArray", function()
+		rpc.resetHandlers()
+		-- ByteArray: [numChunks=0, pendingWord, pendingLen]
+		-- For a short URI "https://example.com/1" (20 bytes < 31), it fits in pending
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x0", "0x68747470733a2f2f6578616d706c652e636f6d2f31", "0x14" }
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local result = nft:token_uri(TOKEN_ID_1):expect()
+		expect(result):toBeTruthy()
+	end)
+
+	it("tokenURI camelCase alias works", function()
+		rpc.resetHandlers()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x0", "0x68747470733a2f2f6578616d706c652e636f6d2f31", "0x14" }
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local result = nft:tokenURI(TOKEN_ID_1):expect()
+		expect(result):toBeTruthy()
+	end)
+
+	it("token_uri sends correct calldata (u256 token_id)", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x0", "0x0", "0x0" }
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		nft:token_uri(TOKEN_ID_42):expect()
+
+		local found = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_call" then
+				found = true
+				local req = entry.params[1]
+				expect(req.contract_address):toBe(NORMALIZED_NFT_ADDR)
+				-- u256 token_id = 2 felts
+				expect(#req.calldata):toBe(2)
+			end
+		end
+		expect(found):toBe(true)
+	end)
+end)
+
+describe("ERC721 - supports_interface", function()
+	it("supports_interface returns true for supported interface", function()
+		rpc.resetHandlers()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x1" } -- true
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		-- IERC721 interface ID
+		local result = nft:supports_interface("0x80ac58cd"):expect()
+		expect(result):toBe(true)
+	end)
+
+	it("supports_interface returns false for unsupported interface", function()
+		rpc.resetHandlers()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x0" } -- false
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local result = nft:supports_interface("0xdeadbeef"):expect()
+		expect(result):toBe(false)
+	end)
+
+	it("supportsInterface camelCase alias works", function()
+		rpc.resetHandlers()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x1" }
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		local result = nft:supportsInterface("0x80ac58cd"):expect()
+		expect(result):toBe(true)
+	end)
+
+	it("supports_interface sends correct calldata (1 felt)", function()
+		rpc.resetHandlers()
+		rpc.clearRequestLog()
+		mockHandlers["starknet_call"] = function(_params)
+			return { "0x1" }
+		end
+		local provider = rpc.createTestProvider()
+		local nft = ERC721.new(NFT_ADDR, provider)
+
+		nft:supports_interface("0x80ac58cd"):expect()
+
+		local found = false
+		for _, entry in requestLog do
+			if entry.method == "starknet_call" then
+				found = true
+				local req = entry.params[1]
+				expect(req.contract_address):toBe(NORMALIZED_NFT_ADDR)
+				-- felt252 interface_id = 1 felt
+				expect(#req.calldata):toBe(1)
+				expect(req.calldata[1]):toBe("0x80ac58cd")
+			end
+		end
+		expect(found):toBe(true)
 	end)
 end)
 
