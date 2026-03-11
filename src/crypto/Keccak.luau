@@ -1,5 +1,4 @@
 --!strict
---!native
 --!optimize 2
 -- Keccak-256: Ethereum-variant Keccak hash (NOT SHA-3) for Starknet function selectors
 -- Uses bit32 for 32-bit word operations, 64-bit lanes split into {hi, lo} pairs

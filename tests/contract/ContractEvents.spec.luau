@@ -576,7 +576,7 @@ describe("Contract:queryEvents", function()
 		for _, entry in requestLog do
 			if entry.method == "starknet_getEvents" then
 				found = true
-				local filter = entry.params[1].filter
+				local filter = entry.params[1]
 				expect(filter.address):toBe(NORMALIZED_ADDR)
 			end
 		end
@@ -609,7 +609,7 @@ describe("Contract:queryEvents", function()
 		for _, entry in requestLog do
 			if entry.method == "starknet_getEvents" then
 				found = true
-				local filter = entry.params[1].filter
+				local filter = entry.params[1]
 				expect(filter.from_block.block_number):toBe(50)
 				expect(filter.to_block.block_number):toBe(100)
 				expect(filter.chunk_size):toBe(25)
@@ -636,7 +636,7 @@ describe("Contract:queryEvents", function()
 
 		for _, entry in requestLog do
 			if entry.method == "starknet_getEvents" then
-				expect(entry.params[1].filter.chunk_size):toBe(100)
+				expect(entry.params[1].chunk_size):toBe(100)
 			end
 		end
 	end)
@@ -663,7 +663,7 @@ describe("Contract:queryEvents", function()
 
 		for _, entry in requestLog do
 			if entry.method == "starknet_getEvents" then
-				local filter = entry.params[1].filter
+				local filter = entry.params[1]
 				expect(filter.keys[1][1]):toBe(TRANSFER_SELECTOR)
 			end
 		end

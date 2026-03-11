@@ -225,7 +225,11 @@ end
 
 --- Estimate the fee required to deploy a new account.
 --- This is a static method (no signer needed) — uses a dummy signer internally.
---- Returns a Promise resolving to { estimatedFee, gasConsumed, gasPrice, rawEstimate }.
+--- Returns a Promise resolving to { estimatedFee, requiredBalance, gasConsumed, gasPrice, rawEstimate }.
+--- `estimatedFee` is the expected cost (overall_fee * feeMultiplier).
+--- `requiredBalance` is the minimum balance the account needs for the sequencer to accept
+--- the transaction (overall_fee * feeMultiplier^2, because resource bounds apply the multiplier
+--- to both maxAmount and maxPricePerUnit independently).
 function Account.getDeploymentFeeEstimate(config: {
 	classHash: string,
 	constructorCalldata: { string },
@@ -289,17 +293,28 @@ function Account.getDeploymentFeeEstimate(config: {
 		local numerator = math.floor(multiplier * scale + 0.5)
 		local estimated = BigInt.div(BigInt.mul(feeBig, BigInt.fromNumber(numerator)), BigInt.fromNumber(scale))
 
+		-- Compute requiredBalance: the minimum the sequencer validates against.
+		-- Resource bounds apply the multiplier to BOTH maxAmount and maxPricePerUnit,
+		-- so the actual max fee = overall_fee * multiplier^2.
+		local requiredNumerator = numerator * numerator
+		local requiredScale = scale * scale
+		local required =
+			BigInt.div(BigInt.mul(feeBig, BigInt.fromNumber(requiredNumerator)), BigInt.fromNumber(requiredScale))
+
 		resolve({
 			estimatedFee = BigInt.toHex(estimated),
-			gasConsumed = estimate.gas_consumed or "0x0",
-			gasPrice = estimate.gas_price or "0x0",
+			requiredBalance = BigInt.toHex(required),
+			gasConsumed = estimate.l1_gas_consumed or estimate.gas_consumed or "0x0",
+			gasPrice = estimate.l1_gas_price or estimate.gas_price or "0x0",
 			rawEstimate = estimate,
 		})
 	end)
 end
 
 --- Check whether a counterfactual address has sufficient balance for deployment.
---- Returns a Promise resolving to { hasSufficientBalance, balance, estimatedFee, token, deficit? }.
+--- Returns a Promise resolving to { hasSufficientBalance, balance, estimatedFee, requiredBalance, token, deficit? }.
+--- `hasSufficientBalance` compares against `requiredBalance` (the minimum the sequencer validates),
+--- not `estimatedFee` (the expected actual cost).
 function Account.checkDeploymentBalance(config: {
 	address: string,
 	classHash: string,
@@ -381,18 +396,19 @@ function Account.checkDeploymentBalance(config: {
 			return
 		end
 
-		local estimatedFeeBigInt = BigInt.fromHex(feeResult.estimatedFee)
-		local hasSufficient = BigInt.cmp(balanceBigInt, estimatedFeeBigInt) >= 0
+		local requiredBalanceBigInt = BigInt.fromHex(feeResult.requiredBalance)
+		local hasSufficient = BigInt.cmp(balanceBigInt, requiredBalanceBigInt) >= 0
 
 		local result: { [string]: any } = {
 			hasSufficientBalance = hasSufficient,
 			balance = BigInt.toHex(balanceBigInt),
 			estimatedFee = feeResult.estimatedFee,
+			requiredBalance = feeResult.requiredBalance,
 			token = token,
 		}
 
 		if not hasSufficient then
-			local deficit = BigInt.sub(estimatedFeeBigInt, balanceBigInt)
+			local deficit = BigInt.sub(requiredBalanceBigInt, balanceBigInt)
 			result.deficit = BigInt.toHex(deficit)
 		end
 
@@ -402,7 +418,7 @@ end
 
 --- Get all deployment funding info for a new account (the "give this to your backend" method).
 --- Computes the counterfactual address, estimates deployment cost, and returns all info needed to fund.
---- Returns a Promise resolving to { address, estimatedFee, token, tokenAddress, classHash, constructorCalldata, salt }.
+--- Returns a Promise resolving to { address, estimatedFee, requiredBalance, token, tokenAddress, classHash, constructorCalldata, salt }.
 function Account.getDeploymentFundingInfo(config: {
 	publicKey: string,
 	provider: Interfaces.ProviderInterface,
@@ -464,6 +480,7 @@ function Account.getDeploymentFundingInfo(config: {
 		resolve({
 			address = address,
 			estimatedFee = feeResult.estimatedFee,
+			requiredBalance = feeResult.requiredBalance,
 			token = "STRK",
 			tokenAddress = Constants.STRK_TOKEN_ADDRESS,
 			classHash = classHash,

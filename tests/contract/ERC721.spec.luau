@@ -128,7 +128,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("ERC721 - read methods (view)", function()
-	it("name() returns collection name as felt", function()
+	it("name() returns decoded collection name string", function()
 		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x4d794e4654" } -- "MyNFT"
@@ -137,10 +137,10 @@ describe("ERC721 - read methods (view)", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local result = nft:name():expect()
-		expect(result):toBe("0x4d794e4654")
+		expect(result):toBe("MyNFT")
 	end)
 
-	it("symbol() returns collection symbol as felt", function()
+	it("symbol() returns decoded collection symbol string", function()
 		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x4e4654" } -- "NFT"
@@ -149,7 +149,7 @@ describe("ERC721 - read methods (view)", function()
 		local nft = ERC721.new(NFT_ADDR, provider)
 
 		local result = nft:symbol():expect()
-		expect(result):toBe("0x4e4654")
+		expect(result):toBe("NFT")
 	end)
 
 	it("balance_of(owner) returns u256", function()

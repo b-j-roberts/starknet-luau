@@ -79,6 +79,52 @@ describe("HexUtils", function()
 		end)
 	end)
 
+	describe("feltToShortString", function()
+		it("decodes 'Ether' from hex", function()
+			expect(HexUtils.feltToShortString("0x4574686572")):toBe("Ether")
+		end)
+
+		it("decodes 'ETH' from hex", function()
+			expect(HexUtils.feltToShortString("0x455448")):toBe("ETH")
+		end)
+
+		it("decodes 'STRK' from hex", function()
+			expect(HexUtils.feltToShortString("0x5354524b")):toBe("STRK")
+		end)
+
+		it("decodes single character", function()
+			expect(HexUtils.feltToShortString("0x41")):toBe("A")
+		end)
+
+		it("returns empty string for 0x0", function()
+			expect(HexUtils.feltToShortString("0x0")):toBe("")
+		end)
+
+		it("returns empty string for empty input", function()
+			expect(HexUtils.feltToShortString("")):toBe("")
+		end)
+
+		it("handles hex without 0x prefix", function()
+			expect(HexUtils.feltToShortString("455448")):toBe("ETH")
+		end)
+
+		it("handles odd-length hex (leading zero byte)", function()
+			expect(HexUtils.feltToShortString("0x9")):toBe("\t")
+		end)
+
+		it("roundtrips with asciiToHex", function()
+			local original = "StarkNet Message"
+			local hex = HexUtils.asciiToHex(original)
+			expect(HexUtils.feltToShortString(hex)):toBe(original)
+		end)
+
+		it("roundtrips max-length short string", function()
+			local str31 = string.rep("z", 31)
+			local hex = HexUtils.asciiToHex(str31)
+			expect(HexUtils.feltToShortString(hex)):toBe(str31)
+		end)
+	end)
+
 	describe("parseHexToNumber", function()
 		it("parses 0x prefix", function()
 			expect(HexUtils.parseHexToNumber("0x1a")):toBe(26)

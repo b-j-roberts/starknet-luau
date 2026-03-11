@@ -198,4 +198,4 @@ local ERC20_ABI: Contract.Abi = {
 	},
 }
 
-return PresetFactory.create(ERC20_ABI)
+return PresetFactory.create(ERC20_ABI, { "name", "symbol" })

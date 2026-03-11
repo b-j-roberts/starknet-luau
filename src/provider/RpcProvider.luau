@@ -810,7 +810,7 @@ function RpcProviderClass:getEvents(filter: RpcTypes.EventFilter): any
 		filterParam.continuation_token = filter.continuation_token
 	end
 	return self:fetch("starknet_getEvents", {
-		{ filter = filterParam },
+		filterParam,
 	})
 end
 
@@ -836,14 +836,12 @@ function RpcProviderClass:getAllEvents(filter: RpcTypes.EventFilter): any
 			local ok, chunk = pcall(function()
 				return self:fetchSync("starknet_getEvents", {
 					{
-						filter = {
-							from_block = pageFilter.from_block,
-							to_block = pageFilter.to_block,
-							address = pageFilter.address,
-							keys = pageFilter.keys,
-							chunk_size = pageFilter.chunk_size or 100,
-							continuation_token = pageFilter.continuation_token,
-						},
+						from_block = pageFilter.from_block,
+						to_block = pageFilter.to_block,
+						address = pageFilter.address,
+						keys = pageFilter.keys,
+						chunk_size = pageFilter.chunk_size or 100,
+						continuation_token = pageFilter.continuation_token,
 					},
 				})
 			end)

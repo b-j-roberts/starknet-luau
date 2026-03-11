@@ -119,7 +119,7 @@ end)
 --------------------------------------------------------------------------------
 
 describe("ERC20 - read methods (view)", function()
-	it("name() returns token name as felt", function()
+	it("name() returns decoded token name string", function()
 		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x4574686572" } -- "Ether"
@@ -128,10 +128,10 @@ describe("ERC20 - read methods (view)", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local result = token:name():expect()
-		expect(result):toBe("0x4574686572")
+		expect(result):toBe("Ether")
 	end)
 
-	it("symbol() returns token symbol as felt", function()
+	it("symbol() returns decoded token symbol string", function()
 		rpc.resetHandlers()
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x455448" } -- "ETH"
@@ -140,7 +140,7 @@ describe("ERC20 - read methods (view)", function()
 		local token = ERC20.new(TOKEN_ADDR, provider)
 
 		local result = token:symbol():expect()
-		expect(result):toBe("0x455448")
+		expect(result):toBe("ETH")
 	end)
 
 	it("decimals() returns decimals as u8 felt", function()

@@ -32,8 +32,8 @@ local StarknetError = StarknetLuau.errors.StarknetError
 
 local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
--- Contract to monitor for events (ETH token in this example)
-local MONITORED_CONTRACT = Constants.ETH_TOKEN_ADDRESS
+-- Contract to monitor for events (STRK token — more active on Sepolia than ETH)
+local MONITORED_CONTRACT = Constants.STRK_TOKEN_ADDRESS
 
 -- Transfer event key (keccak hash of "Transfer")
 -- You can compute this with: StarknetLuau.crypto.Keccak.starknetKeccak("Transfer")

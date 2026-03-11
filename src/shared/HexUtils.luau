@@ -41,4 +41,30 @@ function HexUtils.parseHexToNumber(hex: string): number
 	return tonumber(hex, 16) or 0
 end
 
+--- Decode a felt252 hex value to a UTF-8 short string.
+--- Inverse of asciiToHex. Returns "" for "0x0" or empty input.
+function HexUtils.feltToShortString(hex: string): string
+	local stripped = hex
+	if HexUtils.hasHexPrefix(stripped) then
+		stripped = string.sub(stripped, 3)
+	end
+	-- Remove leading zeros
+	stripped = string.gsub(stripped, "^0+", "")
+	if stripped == "" then
+		return ""
+	end
+	-- Pad to even length
+	if #stripped % 2 ~= 0 then
+		stripped = "0" .. stripped
+	end
+	local chars = {}
+	for i = 1, #stripped, 2 do
+		local byte = tonumber(string.sub(stripped, i, i + 1), 16)
+		if byte then
+			table.insert(chars, string.char(byte))
+		end
+	end
+	return table.concat(chars)
+end
+
 return HexUtils

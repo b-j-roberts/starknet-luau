@@ -53,9 +53,9 @@ local function resetHandlers()
 		}
 	end
 
-	-- Default balance: 0x200000 (sufficient for deployment)
+	-- Default balance: 0x300000 (sufficient for deployment, exceeds requiredBalance of 0x240000)
 	mockHandlers["starknet_call"] = function(_params)
-		return { "0x200000", "0x0" }
+		return { "0x300000", "0x0" }
 	end
 end
 
@@ -84,6 +84,8 @@ describe("Account.getDeploymentFeeEstimate", function()
 
 		-- overall_fee = 0x100000, multiplied by 1.5 = 0x180000
 		expect(result.estimatedFee):toBe("0x180000")
+		-- requiredBalance = overall_fee * 1.5^2 = 0x100000 * 2.25 = 0x240000
+		expect(result.requiredBalance):toBe("0x240000")
 		expect(result.gasConsumed):toBe("0x1000")
 		expect(result.gasPrice):toBe("0x100")
 		expect(result.rawEstimate).toBeTruthy()
@@ -104,6 +106,8 @@ describe("Account.getDeploymentFeeEstimate", function()
 
 		-- overall_fee = 0x100000, multiplied by 2.0 = 0x200000
 		expect(result.estimatedFee):toBe("0x200000")
+		-- requiredBalance = overall_fee * 2.0^2 = 0x100000 * 4.0 = 0x400000
+		expect(result.requiredBalance):toBe("0x400000")
 	end)
 
 	it("applies 1.0x multiplier (no buffer)", function()
@@ -121,6 +125,8 @@ describe("Account.getDeploymentFeeEstimate", function()
 
 		-- overall_fee = 0x100000, multiplied by 1.0 = 0x100000
 		expect(result.estimatedFee):toBe("0x100000")
+		-- requiredBalance = overall_fee * 1.0^2 = 0x100000
+		expect(result.requiredBalance):toBe("0x100000")
 	end)
 
 	it("sends estimateFee RPC with DEPLOY_ACCOUNT transaction", function()
@@ -266,11 +272,12 @@ end)
 --------------------------------------------------------------------------------
 
 describe("Account.checkDeploymentBalance", function()
-	it("returns hasSufficientBalance=true when balance exceeds fee", function()
+	it("returns hasSufficientBalance=true when balance exceeds requiredBalance", function()
 		resetHandlers()
-		-- Balance: 0x200000 (low), 0x0 (high) = 0x200000
-		-- Fee: 0x100000 * 1.5 = 0x180000
-		-- 0x200000 > 0x180000 -> sufficient
+		-- Balance: 0x300000 (low), 0x0 (high) = 0x300000
+		-- estimatedFee: 0x100000 * 1.5 = 0x180000
+		-- requiredBalance: 0x100000 * 1.5^2 = 0x240000
+		-- 0x300000 > 0x240000 -> sufficient
 		local provider = createTestProvider()
 
 		local result = Account.checkDeploymentBalance({
@@ -282,8 +289,9 @@ describe("Account.checkDeploymentBalance", function()
 		}):expect()
 
 		expect(result.hasSufficientBalance):toBe(true)
-		expect(result.balance):toBe("0x200000")
+		expect(result.balance):toBe("0x300000")
 		expect(result.estimatedFee):toBe("0x180000")
+		expect(result.requiredBalance):toBe("0x240000")
 		expect(result.token):toBe("STRK")
 		expect(result.deficit):toBe(nil)
 	end)
@@ -291,8 +299,8 @@ describe("Account.checkDeploymentBalance", function()
 	it("returns hasSufficientBalance=false with deficit when balance is insufficient", function()
 		resetHandlers()
 		-- Balance: 0x1000 (low), 0x0 (high) = 0x1000
-		-- Fee: 0x100000 * 1.5 = 0x180000
-		-- 0x1000 < 0x180000 -> insufficient
+		-- requiredBalance: 0x100000 * 1.5^2 = 0x240000
+		-- 0x1000 < 0x240000 -> insufficient
 		mockHandlers["starknet_call"] = function(_params)
 			return { "0x1000", "0x0" }
 		end
@@ -309,15 +317,16 @@ describe("Account.checkDeploymentBalance", function()
 		expect(result.hasSufficientBalance):toBe(false)
 		expect(result.balance):toBe("0x1000")
 		expect(result.estimatedFee):toBe("0x180000")
-		-- deficit = 0x180000 - 0x1000 = 0x17f000
-		expect(result.deficit):toBe("0x17f000")
+		expect(result.requiredBalance):toBe("0x240000")
+		-- deficit = 0x240000 - 0x1000 = 0x23f000
+		expect(result.deficit):toBe("0x23f000")
 	end)
 
-	it("returns hasSufficientBalance=true when balance equals fee exactly", function()
+	it("returns hasSufficientBalance=true when balance equals requiredBalance exactly", function()
 		resetHandlers()
-		-- Balance exactly = fee estimate (0x180000)
+		-- Balance exactly = requiredBalance (0x240000)
 		mockHandlers["starknet_call"] = function(_params)
-			return { "0x180000", "0x0" }
+			return { "0x240000", "0x0" }
 		end
 		local provider = createTestProvider()
 
@@ -350,7 +359,7 @@ describe("Account.checkDeploymentBalance", function()
 
 		expect(result.hasSufficientBalance):toBe(false)
 		expect(result.balance):toBe("0x0")
-		expect(result.deficit):toBe("0x180000")
+		expect(result.deficit):toBe("0x240000")
 	end)
 
 	it("converts u256 high word correctly", function()
@@ -465,13 +474,13 @@ describe("Account.checkDeploymentBalance", function()
 
 	it("uses custom fee multiplier", function()
 		resetHandlers()
-		-- Balance: 0x190000 -- between 1.5x (0x180000) and 2x (0x200000)
+		-- Balance: 0x280000 -- between 1.5^2 (0x240000) and 2.0^2 (0x400000)
 		mockHandlers["starknet_call"] = function(_params)
-			return { "0x190000", "0x0" }
+			return { "0x280000", "0x0" }
 		end
 		local provider = createTestProvider()
 
-		-- With default 1.5x: sufficient
+		-- With default 1.5x: requiredBalance = 0x240000, 0x280000 >= 0x240000 -> sufficient
 		local result1 = Account.checkDeploymentBalance({
 			address = EXPECTED_ADDR_1_OZ,
 			classHash = OZ_CLASS_HASH,
@@ -481,7 +490,7 @@ describe("Account.checkDeploymentBalance", function()
 		}):expect()
 		expect(result1.hasSufficientBalance):toBe(true)
 
-		-- With 2.0x: insufficient (0x190000 < 0x200000)
+		-- With 2.0x: requiredBalance = 0x400000, 0x280000 < 0x400000 -> insufficient
 		local result2 = Account.checkDeploymentBalance({
 			address = EXPECTED_ADDR_1_OZ,
 			classHash = OZ_CLASS_HASH,
@@ -492,6 +501,7 @@ describe("Account.checkDeploymentBalance", function()
 		}):expect()
 		expect(result2.hasSufficientBalance):toBe(false)
 		expect(result2.estimatedFee):toBe("0x200000")
+		expect(result2.requiredBalance):toBe("0x400000")
 	end)
 
 	it("throws on missing provider", function()
@@ -707,7 +717,7 @@ describe("Account.getDeploymentFundingInfo", function()
 		expect(result.salt):toBe(PUBKEY_1)
 	end)
 
-	it("includes estimated fee with default multiplier", function()
+	it("includes estimated fee and requiredBalance with default multiplier", function()
 		resetHandlers()
 		local provider = createTestProvider()
 
@@ -718,6 +728,8 @@ describe("Account.getDeploymentFundingInfo", function()
 
 		-- overall_fee 0x100000 * 1.5 = 0x180000
 		expect(result.estimatedFee):toBe("0x180000")
+		-- requiredBalance = overall_fee * 1.5^2 = 0x240000
+		expect(result.requiredBalance):toBe("0x240000")
 	end)
 
 	it("applies custom fee multiplier", function()
@@ -731,6 +743,7 @@ describe("Account.getDeploymentFundingInfo", function()
 		}):expect()
 
 		expect(result.estimatedFee):toBe("0x200000")
+		expect(result.requiredBalance):toBe("0x400000")
 	end)
 
 	it("always returns STRK as token", function()

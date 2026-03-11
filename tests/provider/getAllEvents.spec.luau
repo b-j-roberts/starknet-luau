@@ -91,7 +91,7 @@ describe("RpcProvider:getAllEvents - pagination", function()
 
 		mockHandlers["starknet_getEvents"] = function(params)
 			pageCount += 1
-			local filter = params[1].filter
+			local filter = params[1]
 
 			if not filter.continuation_token then
 				return {
@@ -169,7 +169,7 @@ describe("RpcProvider:getAllEvents - pagination", function()
 
 		expect(#requestLog >= 1):toBe(true)
 		local params = requestLog[1].params
-		local filter = params[1].filter
+		local filter = params[1]
 		expect(filter.address):toBe("0xcontract1")
 		expect(filter.chunk_size):toBe(25)
 		expect(filter.from_block.block_number):toBe(50)
@@ -191,7 +191,7 @@ describe("RpcProvider:getAllEvents - pagination", function()
 			})
 			:expect()
 
-		local filter = requestLog[1].params[1].filter
+		local filter = requestLog[1].params[1]
 		expect(filter.chunk_size):toBe(100)
 	end)
 end)
@@ -253,7 +253,7 @@ describe("RpcProvider:getAllEvents - initial continuation token", function()
 		rpc.clearRequestLog()
 
 		mockHandlers["starknet_getEvents"] = function(params)
-			local filter = params[1].filter
+			local filter = params[1]
 			if filter.continuation_token == "start_here" then
 				return {
 					events = {
@@ -273,7 +273,7 @@ describe("RpcProvider:getAllEvents - initial continuation token", function()
 			:expect()
 
 		expect(#events):toBe(1)
-		local filter = requestLog[1].params[1].filter
+		local filter = requestLog[1].params[1]
 		expect(filter.continuation_token):toBe("start_here")
 	end)
 end)

@@ -22,6 +22,7 @@ local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 
 local RpcProvider = StarknetLuau.provider.RpcProvider
 local Account = StarknetLuau.wallet.Account
+local StarkSigner = StarknetLuau.signer.StarkSigner
 local TypedData = StarknetLuau.wallet.TypedData
 local ECDSA = StarknetLuau.crypto.ECDSA
 local BigInt = StarknetLuau.crypto.BigInt
@@ -36,6 +37,7 @@ local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
 -- WARNING: Never hardcode private keys in production code.
 local PRIVATE_KEY = "0x_YOUR_PRIVATE_KEY_HERE"
+local ACCOUNT_ADDRESS = "0x_YOUR_ACCOUNT_ADDRESS_HERE"
 
 --------------------------------------------------------------------------------
 -- Setup
@@ -45,8 +47,10 @@ local provider = RpcProvider.new({
 	nodeUrl = SEPOLIA_RPC,
 })
 
-local account = Account.fromPrivateKey({
-	privateKey = PRIVATE_KEY,
+local signer = StarkSigner.new(PRIVATE_KEY)
+local account = Account.new({
+	address = ACCOUNT_ADDRESS,
+	signer = signer,
 	provider = provider,
 })
 
@@ -103,11 +107,13 @@ print("[TypedData] Signature r:", signature[1])
 print("[TypedData] Signature s:", signature[2])
 
 -- Verify the signature using ECDSA
-local publicKeyHex = account:getPublicKeyHex()
+-- ECDSA.verify takes (messageHash, publicKeyPoint, signature)
+-- The public key must be an AffinePoint from the signer, not a hex string
+local publicKeyPoint = signer:getPubKey()
 local isValid = ECDSA.verify(
 	BigInt.fromHex(messageHash),
-	{ r = BigInt.fromHex(signature[1]), s = BigInt.fromHex(signature[2]) },
-	BigInt.fromHex(publicKeyHex)
+	publicKeyPoint,
+	{ r = BigInt.fromHex(signature[1]), s = BigInt.fromHex(signature[2]) }
 )
 print("[TypedData] Signature valid:", isValid)
 

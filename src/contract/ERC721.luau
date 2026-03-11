@@ -269,4 +269,4 @@ local ERC721_ABI: Contract.Abi = {
 	},
 }
 
-return PresetFactory.create(ERC721_ABI)
+return PresetFactory.create(ERC721_ABI, { "name", "symbol" })

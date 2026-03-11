@@ -1295,8 +1295,8 @@ describe("Contract:queryEvents - continuation_token", function()
 		rpc.resetHandlers()
 		rpc.clearRequestLog()
 		mockHandlers["starknet_getEvents"] = function(params)
-			-- params[1] = { filter = { ... } } per RPC spec
-			local f = params[1].filter
+			-- params[1] = filter object (flat, no wrapper)
+			local f = params[1]
 			return {
 				events = {},
 				continuation_token = if f.continuation_token then nil else "token123",
@@ -1319,7 +1319,7 @@ describe("Contract:queryEvents - continuation_token", function()
 
 		local lastReq = requestLog[#requestLog]
 		expect(lastReq.method):toBe("starknet_getEvents")
-		local filter = lastReq.params[1].filter
+		local filter = lastReq.params[1]
 		expect(filter.continuation_token):toBe("token123")
 	end)
 
@@ -1339,7 +1339,7 @@ describe("Contract:queryEvents - continuation_token", function()
 		contract:queryEvents({ chunk_size = 50, continuation_token = "ct1" }):expect()
 
 		local lastReq = requestLog[#requestLog]
-		local filter = lastReq.params[1].filter
+		local filter = lastReq.params[1]
 		expect(filter.address):toBe(NORMALIZED_ADDR)
 		expect(filter.chunk_size):toBe(50)
 		expect(filter.continuation_token):toBe("ct1")

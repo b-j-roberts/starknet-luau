@@ -119,7 +119,7 @@ function EventPollerClass:start()
 			self._lastBlockNumber = num
 			filter = {
 				from_block = { block_number = num },
-				to_block = filter.to_block or ({ block_tag = "latest" } :: any),
+				to_block = filter.to_block or "latest",
 				address = filter.address,
 				keys = filter.keys,
 				chunk_size = filter.chunk_size or 100,
@@ -128,7 +128,7 @@ function EventPollerClass:start()
 	end
 
 	-- Build stable filter fields once (from_block is updated after events)
-	local toBlock = filter.to_block or ({ block_tag = "latest" } :: any)
+	local toBlock = filter.to_block or "latest"
 	local filterAddress = filter.address
 	local filterKeys = filter.keys
 	local filterChunkSize = filter.chunk_size or 100
@@ -152,7 +152,7 @@ function EventPollerClass:start()
 				end
 
 				local chunk = self._provider:fetchSync("starknet_getEvents", {
-					{ filter = pageFilter },
+					pageFilter,
 				})
 
 				local events = chunk.events or {}

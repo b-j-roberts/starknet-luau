@@ -1470,8 +1470,8 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 			end
 		end
 		expect(foundTx):toBeTruthy()
-		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
-		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+		expect(foundTx.nonce_data_availability_mode):toBe("L2")
+		expect(foundTx.fee_data_availability_mode):toBe("L2")
 	end)
 
 	it("passes DA modes through to deploy account fee estimation request", function()
@@ -1497,11 +1497,11 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 			end
 		end
 		expect(foundTx):toBeTruthy()
-		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
-		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+		expect(foundTx.nonce_data_availability_mode):toBe("L2")
+		expect(foundTx.fee_data_availability_mode):toBe("L2")
 	end)
 
-	it("defaults DA modes to 0x0 when not specified for deploy account", function()
+	it("defaults DA modes to L1 when not specified for deploy account", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local provider = createTestProvider()
@@ -1514,8 +1514,8 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 		for _, req in requestLog do
 			if req.method == "starknet_addDeployAccountTransaction" then
 				local tx = req.params[1]
-				expect(tx.nonce_data_availability_mode):toBe("0x0")
-				expect(tx.fee_data_availability_mode):toBe("0x0")
+				expect(tx.nonce_data_availability_mode):toBe("L1")
+				expect(tx.fee_data_availability_mode):toBe("L1")
 				break
 			end
 		end
@@ -1538,8 +1538,8 @@ describe("TransactionBuilder - deployAccount DA mode passthrough", function()
 			})
 			:expect()
 
-		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
-		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
+		expect(result.transaction.nonce_data_availability_mode):toBe("L2")
+		expect(result.transaction.fee_data_availability_mode):toBe("L2")
 
 		-- dryRun with default DA modes (same nonce to compare)
 		local defaultResult = builder

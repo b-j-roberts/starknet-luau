@@ -1,6 +1,6 @@
 --!strict
 -- RpcTypes: Type definitions for Starknet JSON-RPC request/response objects
--- Follows the Starknet RPC 0.7+ specification
+-- Follows the Starknet JSON-RPC specification (v0.7 through v0.8+)
 
 local Interfaces = require("../shared/interfaces")
 
@@ -143,13 +143,22 @@ export type BlockId = {
 	block_tag: string?, -- "latest" | "pending"
 }
 
---- Fee estimate result
+--- Fee estimate result (supports both v0.7 and v0.8+ field names)
 export type FeeEstimate = {
-	gas_consumed: string,
-	gas_price: string,
+	-- v0.8+ field names
+	l1_gas_consumed: string?,
+	l1_gas_price: string?,
+	l2_gas_consumed: string?,
+	l2_gas_price: string?,
+	l1_data_gas_consumed: string?,
+	l1_data_gas_price: string?,
+	-- v0.7 field names (legacy fallback)
+	gas_consumed: string?,
+	gas_price: string?,
+	data_gas_consumed: string?,
+	data_gas_price: string?,
+	-- Common fields
 	overall_fee: string,
-	data_gas_consumed: string,
-	data_gas_price: string,
 	unit: string,
 }
 

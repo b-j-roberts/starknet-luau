@@ -104,18 +104,31 @@ local function applyMultiplier(hexValue: string, multiplier: number): string
 end
 
 --- Build resource bounds from a fee estimate with a multiplier buffer.
+--- Supports both v0.7 field names (gas_consumed, gas_price, data_gas_consumed, data_gas_price)
+--- and v0.8+ field names (l1_gas_consumed, l1_gas_price, l2_gas_consumed, l2_gas_price,
+--- l1_data_gas_consumed, l1_data_gas_price).
 local function resourceBoundsFromEstimate(estimate: any, multiplier: number): TransactionHash.ResourceBounds
-	local gasConsumed = estimate.gas_consumed or "0x0"
-	local gasPrice = estimate.gas_price or "0x0"
-	local dataGasConsumed = estimate.data_gas_consumed or "0x0"
-	local dataGasPrice = estimate.data_gas_price or "0x0"
+	-- L1 gas: v0.8 "l1_gas_*" or v0.7 "gas_*"
+	local l1GasConsumed = estimate.l1_gas_consumed or estimate.gas_consumed or "0x0"
+	local l1GasPrice = estimate.l1_gas_price or estimate.gas_price or "0x0"
+
+	-- L2 gas: v0.8 only (v0.7 had no L2 gas in estimates)
+	local l2GasConsumed = estimate.l2_gas_consumed or "0x0"
+	local l2GasPrice = estimate.l2_gas_price or "0x0"
+
+	-- L1 data gas: v0.8 "l1_data_gas_*" or v0.7 "data_gas_*"
+	local dataGasConsumed = estimate.l1_data_gas_consumed or estimate.data_gas_consumed or "0x0"
+	local dataGasPrice = estimate.l1_data_gas_price or estimate.data_gas_price or "0x0"
 
 	return {
 		l1Gas = {
-			maxAmount = applyMultiplier(gasConsumed, multiplier),
-			maxPricePerUnit = applyMultiplier(gasPrice, multiplier),
+			maxAmount = applyMultiplier(l1GasConsumed, multiplier),
+			maxPricePerUnit = applyMultiplier(l1GasPrice, multiplier),
 		},
-		l2Gas = ZERO_RESOURCE_BOUND,
+		l2Gas = {
+			maxAmount = applyMultiplier(l2GasConsumed, multiplier),
+			maxPricePerUnit = applyMultiplier(l2GasPrice, multiplier),
+		},
 		l1DataGas = {
 			maxAmount = applyMultiplier(dataGasConsumed, multiplier),
 			maxPricePerUnit = applyMultiplier(dataGasPrice, multiplier),
@@ -123,11 +136,18 @@ local function resourceBoundsFromEstimate(estimate: any, multiplier: number): Tr
 	}
 end
 
---- Convert TransactionHash.ResourceBounds (camelCase, 3 fields) to RPC format (snake_case, 2 fields).
---- NOTE: TransactionHash uses camelCase keys (l1Gas, l2Gas, l1DataGas) for hash computation,
---- while the Starknet JSON-RPC spec uses snake_case (l1_gas, l2_gas). The RPC wire format
---- only includes l1_gas and l2_gas — l1DataGas is intentionally omitted here because the
---- sequencer does not accept it in the resource_bounds object.
+--- Convert numeric DA mode (0=L1, 1=L2) to the RPC string format required by spec v0.7+.
+local function toRpcDAMode(mode: number?): string
+	if (mode or 0) == 1 then
+		return "L2"
+	end
+	return "L1"
+end
+
+--- Convert TransactionHash.ResourceBounds (camelCase, 3 fields) to RPC format (snake_case, 3 fields).
+--- TransactionHash uses camelCase keys (l1Gas, l2Gas, l1DataGas) for hash computation,
+--- while the Starknet JSON-RPC spec uses snake_case (l1_gas, l2_gas, l1_data_gas).
+--- RPC spec v0.8+ requires all three fields in the resource_bounds object.
 local function toRpcResourceBounds(bounds: TransactionHash.ResourceBounds): any
 	return {
 		l1_gas = {
@@ -137,6 +157,10 @@ local function toRpcResourceBounds(bounds: TransactionHash.ResourceBounds): any
 		l2_gas = {
 			max_amount = bounds.l2Gas.maxAmount,
 			max_price_per_unit = bounds.l2Gas.maxPricePerUnit,
+		},
+		l1_data_gas = {
+			max_amount = bounds.l1DataGas.maxAmount,
+			max_price_per_unit = bounds.l1DataGas.maxPricePerUnit,
 		},
 	}
 end
@@ -172,8 +196,8 @@ local function buildInvokeTransaction(params: {
 		resource_bounds = toRpcResourceBounds(params.resourceBounds),
 		tip = params.tip or "0x0",
 		paymaster_data = params.paymasterData or {},
-		nonce_data_availability_mode = string.format("0x%x", params.nonceDataAvailabilityMode or 0),
-		fee_data_availability_mode = string.format("0x%x", params.feeDataAvailabilityMode or 0),
+		nonce_data_availability_mode = toRpcDAMode(params.nonceDataAvailabilityMode),
+		fee_data_availability_mode = toRpcDAMode(params.feeDataAvailabilityMode),
 		account_deployment_data = params.accountDeploymentData or {},
 	}
 end
@@ -202,8 +226,8 @@ local function buildDeployAccountTransaction(params: {
 		resource_bounds = toRpcResourceBounds(params.resourceBounds),
 		tip = params.tip or "0x0",
 		paymaster_data = params.paymasterData or {},
-		nonce_data_availability_mode = string.format("0x%x", params.nonceDataAvailabilityMode or 0),
-		fee_data_availability_mode = string.format("0x%x", params.feeDataAvailabilityMode or 0),
+		nonce_data_availability_mode = toRpcDAMode(params.nonceDataAvailabilityMode),
+		fee_data_availability_mode = toRpcDAMode(params.feeDataAvailabilityMode),
 	}
 end
 

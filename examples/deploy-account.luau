@@ -96,13 +96,15 @@ end
 --------------------------------------------------------------------------------
 
 -- checkDeploymentBalance queries the account's ETH/STRK balance and compares
--- it against the estimated deployment fee.
+-- it against the required balance for deployment (accounts for resource bounds multiplier).
 print("[Deploy] Checking deployment balance...")
 
 Account.checkDeploymentBalance({
 	provider = provider,
+	address = newAccount.address,
 	classHash = Constants.OZ_ACCOUNT_CLASS_HASH,
-	publicKey = newAccount:getPublicKeyHex(),
+	constructorCalldata = { newAccount:getPublicKeyHex() },
+	salt = newAccount:getPublicKeyHex(),
 })
 	:andThen(function(balanceInfo)
 		print("[Deploy] Account balance:", balanceInfo.balance)
@@ -113,8 +115,8 @@ Account.checkDeploymentBalance({
 		if not balanceInfo.hasSufficientBalance then
 			print("[Deploy] Account needs funding! Deficit:", balanceInfo.deficit)
 
-			-- Fund the account from the funder wallet
-			return fundAccount(newAccount.address, balanceInfo.estimatedFee)
+			-- Fund the account with the full deficit (includes fee multiplier headroom)
+			return fundAccount(newAccount.address, balanceInfo.deficit)
 		end
 
 		return nil

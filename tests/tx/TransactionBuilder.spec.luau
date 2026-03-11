@@ -936,8 +936,8 @@ describe("TransactionBuilder - RPC call sequence", function()
 			end
 		end
 		expect(foundTx):toBeTruthy()
-		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
-		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+		expect(foundTx.nonce_data_availability_mode):toBe("L2")
+		expect(foundTx.fee_data_availability_mode):toBe("L2")
 	end)
 
 	it("passes DA modes through to invoke fee estimation request", function()
@@ -963,11 +963,11 @@ describe("TransactionBuilder - RPC call sequence", function()
 			end
 		end
 		expect(foundTx):toBeTruthy()
-		expect(foundTx.nonce_data_availability_mode):toBe("0x1")
-		expect(foundTx.fee_data_availability_mode):toBe("0x1")
+		expect(foundTx.nonce_data_availability_mode):toBe("L2")
+		expect(foundTx.fee_data_availability_mode):toBe("L2")
 	end)
 
-	it("defaults DA modes to 0x0 when not specified", function()
+	it("defaults DA modes to L1 when not specified", function()
 		rpc.resetHandlers()
 		rpc.clearRequestLog()
 		local provider = rpc.createTestProvider()
@@ -980,8 +980,8 @@ describe("TransactionBuilder - RPC call sequence", function()
 		for _, req in requestLog do
 			if req.method == "starknet_addInvokeTransaction" then
 				local tx = req.params[1]
-				expect(tx.nonce_data_availability_mode):toBe("0x0")
-				expect(tx.fee_data_availability_mode):toBe("0x0")
+				expect(tx.nonce_data_availability_mode):toBe("L1")
+				expect(tx.fee_data_availability_mode):toBe("L1")
 				break
 			end
 		end
@@ -1004,8 +1004,8 @@ describe("TransactionBuilder - RPC call sequence", function()
 			})
 			:expect()
 
-		expect(result.transaction.nonce_data_availability_mode):toBe("0x1")
-		expect(result.transaction.fee_data_availability_mode):toBe("0x1")
+		expect(result.transaction.nonce_data_availability_mode):toBe("L2")
+		expect(result.transaction.fee_data_availability_mode):toBe("L2")
 
 		-- dryRun with default DA modes (same nonce to compare)
 		local defaultResult = builder
@@ -1174,8 +1174,8 @@ end)
 -- toRpcResourceBounds - l1DataGas dropped
 --------------------------------------------------------------------------------
 
-describe("TransactionBuilder - toRpcResourceBounds drops l1DataGas", function()
-	it("RPC transaction only has l1_gas and l2_gas (no l1_data_gas)", function()
+describe("TransactionBuilder - toRpcResourceBounds includes all three gas fields", function()
+	it("RPC transaction has l1_gas, l2_gas, and l1_data_gas in snake_case format", function()
 		rpc.resetHandlers()
 		rpc.clearRequestLog()
 		local provider = rpc.createTestProvider()
@@ -1186,17 +1186,19 @@ describe("TransactionBuilder - toRpcResourceBounds drops l1DataGas", function()
 		local result = builder:execute(account, calls, { dryRun = true }):expect()
 		local tx = result.transaction
 
-		-- Verify only l1_gas and l2_gas in resource_bounds (no l1_data_gas)
+		-- Verify all three fields in resource_bounds (RPC spec v0.8+ requires l1_data_gas)
 		expect(tx.resource_bounds.l1_gas):toBeTruthy()
 		expect(tx.resource_bounds.l2_gas):toBeTruthy()
-		expect(tx.resource_bounds.l1_data_gas):toBeNil()
+		expect(tx.resource_bounds.l1_data_gas):toBeTruthy()
 		expect(tx.resource_bounds.l1DataGas):toBeNil()
 
-		-- Verify the snake_case format
+		-- Verify the snake_case format on all three
 		expect(tx.resource_bounds.l1_gas.max_amount):toBeTruthy()
 		expect(tx.resource_bounds.l1_gas.max_price_per_unit):toBeTruthy()
 		expect(tx.resource_bounds.l2_gas.max_amount):toBeTruthy()
 		expect(tx.resource_bounds.l2_gas.max_price_per_unit):toBeTruthy()
+		expect(tx.resource_bounds.l1_data_gas.max_amount):toBeTruthy()
+		expect(tx.resource_bounds.l1_data_gas.max_price_per_unit):toBeTruthy()
 	end)
 end)
 

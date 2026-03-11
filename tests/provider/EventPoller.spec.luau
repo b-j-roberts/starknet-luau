@@ -416,7 +416,7 @@ describe("EventPoller - pagination within poll cycle", function()
 
 		mockHandlers["starknet_getEvents"] = function(params)
 			pageRequests += 1
-			local filter = params[1].filter
+			local filter = params[1]
 			if not filter.continuation_token then
 				return {
 					events = {
@@ -562,7 +562,7 @@ describe("EventPoller - checkpoint persistence", function()
 
 		local capturedFromBlock: any = nil
 		mockHandlers["starknet_getEvents"] = function(params)
-			capturedFromBlock = params[1].filter.from_block
+			capturedFromBlock = params[1].from_block
 			return { events = {} }
 		end
 
@@ -1063,7 +1063,7 @@ describe("EventPoller - setLastBlockNumber", function()
 		local capturedFromBlock: any = nil
 
 		mockHandlers["starknet_getEvents"] = function(params)
-			capturedFromBlock = params[1].filter.from_block
+			capturedFromBlock = params[1].from_block
 			return { events = {} }
 		end
 
@@ -1090,7 +1090,7 @@ describe("EventPoller - setLastBlockNumber", function()
 		local capturedFilter: any = nil
 
 		mockHandlers["starknet_getEvents"] = function(params)
-			capturedFilter = params[1].filter
+			capturedFilter = params[1]
 			return { events = {} }
 		end
 
