@@ -8,7 +8,7 @@
 --   3. Optionally verify ownership of a specific token ID
 --   4. Grant or deny access based on the result
 --
--- Usage: Place this Script under ServerScriptService (requires HttpService enabled).
+-- Roblox-only: This script requires HttpService enabled and runs in ServerScriptService.
 --        Create a RemoteFunction named "GetStarknetAddress" in ReplicatedStorage
 --        so that players can submit their address from a client UI.
 
@@ -19,6 +19,8 @@ local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 
 local RpcProvider = StarknetLuau.provider.RpcProvider
 local ERC721 = StarknetLuau.contract.ERC721
+local StarknetError = StarknetLuau.errors.StarknetError
+local ErrorCodes = StarknetLuau.errors.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -27,7 +29,7 @@ local ERC721 = StarknetLuau.contract.ERC721
 local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
 -- Replace with your NFT collection contract address on Starknet
-local NFT_CONTRACT_ADDRESS = "0x07606a2c55c090e27b3940e2e898e18bea30998c2bfacff643a34f452fac2200"
+local NFT_CONTRACT_ADDRESS = "0x_YOUR_NFT_COLLECTION_ADDRESS_HERE"
 
 -- Minimum number of NFTs required to access gated content
 local REQUIRED_NFT_COUNT = 1
@@ -75,7 +77,11 @@ local function checkSpecificNFT(playerAddress: string, tokenId: string): any
 		end)
 		:catch(function(err)
 			-- Token may not exist or call may fail
-			warn(`[NFT Gate] Failed to check token {tokenId}:`, tostring(err))
+			if StarknetError.isStarknetError(err) and err.code == ErrorCodes.RPC_ERROR.code then
+				warn(`[NFT Gate] RPC error checking token {tokenId}: {err.message}`)
+			else
+				warn(`[NFT Gate] Failed to check token {tokenId}:`, tostring(err))
+			end
 			return false
 		end)
 end
@@ -99,7 +105,9 @@ getAddress.OnServerInvoke = function(player: Player, address: string): boolean
 
 	print(`[NFT Gate] Verifying NFT ownership for {player.Name} at {address}`)
 
-	-- Check balance-based ownership
+	-- Check balance-based ownership.
+	-- :expect() blocks the current thread until the Promise resolves.
+	-- This is safe here because OnServerInvoke runs in its own coroutine.
 	local hasNFT = checkNFTOwnership(address, REQUIRED_NFT_COUNT)
 		:catch(function(err)
 			warn(`[NFT Gate] Verification failed for {player.Name}:`, tostring(err))

@@ -10,7 +10,7 @@
 --
 -- Multicall saves gas and ensures atomicity: either all calls succeed or all revert.
 --
--- Usage: Place this Script under ServerScriptService (requires HttpService enabled).
+-- Roblox-only: This script requires HttpService enabled and runs in ServerScriptService.
 --        Replace PRIVATE_KEY with your account's private key.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +21,8 @@ local RpcProvider = StarknetLuau.provider.RpcProvider
 local Account = StarknetLuau.wallet.Account
 local ERC20 = StarknetLuau.contract.ERC20
 local Constants = StarknetLuau.constants
+local StarknetError = StarknetLuau.errors.StarknetError
+local ErrorCodes = StarknetLuau.errors.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -29,7 +31,7 @@ local Constants = StarknetLuau.constants
 local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
 -- WARNING: Never hardcode private keys in production code.
--- Use secure storage (DataStoreService, environment config, etc.)
+-- Use secure storage (DataStoreService, KeyStore, environment config, etc.)
 local PRIVATE_KEY = "0x_YOUR_PRIVATE_KEY_HERE"
 
 -- Recipients for the batch transfer
@@ -81,8 +83,10 @@ print(`[Multicall] Batching {#calls} transfers into one transaction...`)
 -- The TransactionBuilder handles: nonce → fee estimation → hash → sign → submit
 account
 	:execute(calls, {
-		-- Optional: adjust the fee safety margin (default 1.5x estimated fee)
-		feeMultiplier = 1.5,
+		-- Fee safety margin: multiplied against the estimated fee.
+		-- 1.5 is the default — use a higher value for volatile fee periods.
+		-- Set to 1.0 to use the exact estimated fee (risky if fees spike).
+		feeMultiplier = 2.0,
 	})
 	:andThen(function(result)
 		print("[Multicall] Transaction submitted!")
@@ -97,5 +101,17 @@ account
 		print("[Multicall] Block:", receipt.block_number)
 	end)
 	:catch(function(err)
-		warn("[Multicall] Transaction failed:", tostring(err))
+		if StarknetError.isStarknetError(err) then
+			if err.code == ErrorCodes.TRANSACTION_REVERTED.code then
+				warn("[Multicall] Transaction reverted:", err.revertReason or err.message)
+			elseif err.code == ErrorCodes.FEE_ESTIMATION_FAILED.code then
+				warn("[Multicall] Fee estimation failed — check balances")
+			else
+				warn("[Multicall] Starknet error:", tostring(err))
+			end
+		else
+			warn("[Multicall] Transaction failed:", tostring(err))
+		end
 	end)
+
+return {}

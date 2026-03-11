@@ -9,7 +9,7 @@
 --   4. Wait for the transaction to be confirmed
 --   5. Check the balance after transfer
 --
--- Usage: Place this Script under ServerScriptService (requires HttpService enabled).
+-- Roblox-only: This script requires HttpService enabled and runs in ServerScriptService.
 --        Replace PRIVATE_KEY with your account's private key.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +20,8 @@ local RpcProvider = StarknetLuau.provider.RpcProvider
 local Account = StarknetLuau.wallet.Account
 local ERC20 = StarknetLuau.contract.ERC20
 local Constants = StarknetLuau.constants
+local StarknetError = StarknetLuau.errors.StarknetError
+local ErrorCodes = StarknetLuau.errors.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -28,7 +30,7 @@ local Constants = StarknetLuau.constants
 local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 
 -- WARNING: Never hardcode private keys in production code.
--- Use secure storage (DataStoreService, environment config, etc.)
+-- Use secure storage (DataStoreService, KeyStore, environment config, etc.)
 local PRIVATE_KEY = "0x_YOUR_PRIVATE_KEY_HERE"
 
 -- Destination address for the transfer
@@ -70,7 +72,9 @@ ethToken
 	:andThen(function(balance)
 		print("[Send] Current ETH balance (low):", balance.low)
 
-		-- Verify we have enough balance
+		-- Verify we have enough balance.
+		-- WARNING: Lua numbers are f64 — precision loss occurs above 2^53 (~9e15 wei).
+		-- For balances above ~9000 ETH, use BigInt string comparisons instead.
 		local balanceNum = tonumber(balance.low) or 0
 		local transferNum = tonumber(TRANSFER_AMOUNT) or 0
 		if balanceNum < transferNum then
@@ -101,9 +105,10 @@ ethToken
 		-- Wait for confirmation
 		--------------------------------------------------------------------------------
 
-		-- Step 5: Poll the node until the transaction is included in a block
+		-- Step 5: Poll the node until the transaction is included in a block.
+		-- retryInterval: seconds between polls (5 is the default)
 		return account:waitForReceipt(result.transactionHash, {
-			retryInterval = 5, -- poll every 5 seconds
+			retryInterval = 5,
 		})
 	end)
 	:andThen(function(receipt)
@@ -122,5 +127,17 @@ ethToken
 		print("[Send] Transfer complete!")
 	end)
 	:catch(function(err)
-		warn("[Send] Error:", tostring(err))
+		if StarknetError.isStarknetError(err) then
+			if err.code == ErrorCodes.TRANSACTION_REVERTED.code then
+				warn("[Send] Transaction reverted:", err.revertReason or err.message)
+			elseif err.code == ErrorCodes.FEE_ESTIMATION_FAILED.code then
+				warn("[Send] Fee estimation failed — insufficient balance or invalid call")
+			else
+				warn("[Send] Starknet error:", tostring(err))
+			end
+		else
+			warn("[Send] Error:", tostring(err))
+		end
 	end)
+
+return {}

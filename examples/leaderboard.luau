@@ -14,7 +14,15 @@
 --   - get_high_score() -> u128
 --   - submit_score(player: ContractAddress, score: u128)
 --
--- Usage: Place this Script under ServerScriptService (requires HttpService enabled).
+-- NOTE: A single Contract instance with an account can handle both reads (view) and
+-- writes (external). Two instances are shown here for clarity, but in production you
+-- can use one instance for both.
+--
+-- WARNING: Scores are u128 on-chain but Lua numbers are f64, which loses precision
+-- above 2^53 (~9e15). If your game scores can exceed this, use hex string comparisons
+-- or BigInt for arithmetic.
+--
+-- Roblox-only: This script requires HttpService enabled and runs in ServerScriptService.
 --        Deploy a compatible leaderboard contract and set its address below.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,6 +32,8 @@ local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 local RpcProvider = StarknetLuau.provider.RpcProvider
 local Account = StarknetLuau.wallet.Account
 local Contract = StarknetLuau.contract.Contract
+local StarknetError = StarknetLuau.errors.StarknetError
+local ErrorCodes = StarknetLuau.errors.ErrorCodes
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -35,7 +45,8 @@ local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 local LEADERBOARD_ADDRESS = "0x_YOUR_LEADERBOARD_CONTRACT_ADDRESS"
 
 -- Server-side private key for submitting scores (game operator account)
--- WARNING: Never hardcode private keys in production code
+-- WARNING: Never hardcode private keys in production code.
+-- Use secure storage (DataStoreService, KeyStore, environment config, etc.)
 local SERVER_PRIVATE_KEY = "0x_YOUR_SERVER_PRIVATE_KEY"
 
 --------------------------------------------------------------------------------
@@ -134,7 +145,11 @@ local function getPlayerScore(playerAddress: string)
 			print(`[Leaderboard] Score for {playerAddress}: {numericScore}`)
 		end)
 		:catch(function(err)
-			warn("[Leaderboard] Failed to read score:", tostring(err))
+			if StarknetError.isStarknetError(err) and err.code == ErrorCodes.RPC_ERROR.code then
+				warn("[Leaderboard] RPC error reading score:", err.message)
+			else
+				warn("[Leaderboard] Failed to read score:", tostring(err))
+			end
 		end)
 end
 
@@ -187,7 +202,15 @@ local function submitScore(playerAddress: string, score: number)
 			print("[Leaderboard] Confirmed in block:", receipt.block_number)
 		end)
 		:catch(function(err)
-			warn("[Leaderboard] Failed to submit score:", tostring(err))
+			if StarknetError.isStarknetError(err) then
+				if err.code == ErrorCodes.TRANSACTION_REVERTED.code then
+					warn("[Leaderboard] Score submission reverted:", err.revertReason or err.message)
+				else
+					warn("[Leaderboard] Starknet error:", tostring(err))
+				end
+			else
+				warn("[Leaderboard] Failed to submit score:", tostring(err))
+			end
 		end)
 end
 
@@ -214,7 +237,11 @@ local function submitScoresBatch(entries: { { address: string, score: number } }
 			print("[Leaderboard] Batch confirmed in block:", receipt.block_number)
 		end)
 		:catch(function(err)
-			warn("[Leaderboard] Batch submission failed:", tostring(err))
+			if StarknetError.isStarknetError(err) then
+				warn("[Leaderboard] Batch error:", tostring(err))
+			else
+				warn("[Leaderboard] Batch submission failed:", tostring(err))
+			end
 		end)
 end
 
