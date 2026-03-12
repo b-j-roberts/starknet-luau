@@ -4,7 +4,11 @@
 [![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/b-j-roberts/starknet-luau/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Pure Luau SDK for interacting with the Starknet blockchain from Roblox games. Provides cryptographic primitives, account management, transaction building/signing, contract interaction, paymaster-sponsored transactions, and RPC connectivity -- all implemented in Luau with no external native dependencies.
+Pure Luau SDK for interacting with the Starknet blockchain from Roblox games.
+
+Starknet is a Layer-2 Blockchain built on zero-knowledge proofs, designed for modern use cases like gaming! It lets your game write tamper-proof data (player-owned items, verifiable leaderboards, cross-game economies) to a public blockchain in a way that is completely abstracted from your users. They simply play your game, and unlock true ownership of their in-game assets.
+
+This SDK provides account management, player onboarding, transaction building/signing, paymaster-sponsored transactions, and RPC connectivity -- all implemented in Luau with no external servers needed.
 
 ## Features
 
@@ -49,18 +53,41 @@ Download the latest `.rbxm` from [Releases](../../releases) and drop it into you
 ```luau
 local Starknet = require(game.ReplicatedStorage.Packages.StarknetLuau)
 
--- Create a provider
-local provider = Starknet.provider.RpcProvider.new("https://api.zan.top/public/starknet-sepolia")
+-- Create a provider connected to Starknet Sepolia testnet
+local provider = Starknet.provider.RpcProvider.new({
+    nodeUrl = "https://api.zan.top/public/starknet-sepolia",
+})
 
--- Get the latest block number
+-- Read the latest block number
 provider:getBlockNumber():andThen(function(blockNumber)
     print("Current block:", blockNumber)
 end)
 
--- Read from a contract
-local contract = Starknet.contract.Contract.new(provider, contractAddress, abi)
-contract:call("balanceOf", { accountAddress }):andThen(function(balance)
+-- Read a token balance
+local eth = Starknet.contract.ERC20.new(Starknet.constants.ETH_TOKEN_ADDRESS, provider)
+eth:balanceOf(accountAddress):andThen(function(balance)
     print("Balance:", balance)
+end)
+```
+
+**Sending a transaction:**
+
+```luau
+-- Create an account from a private key
+local account = Starknet.wallet.Account.fromPrivateKey({
+    privateKey = privateKey,
+    provider = provider,
+})
+
+-- Transfer tokens (builds, signs, and submits in one call)
+account:execute({
+    {
+        contractAddress = Starknet.constants.ETH_TOKEN_ADDRESS,
+        entrypoint = "transfer",
+        calldata = { recipientAddress, "0x38D7EA4C68000", "0x0" }, -- 0.001 ETH
+    },
+}):andThen(function(result)
+    print("Transaction hash:", result.transaction_hash)
 end)
 ```
 
@@ -170,6 +197,11 @@ make check          # Run lint + fmt check + test
 2. Run `rokit install` to set up the toolchain
 3. Run `make install` to install dependencies
 4. Run `make check` before submitting a PR
+
+## Inspirations
+
+- [starknet.js](https://github.com/starknet-io/starknet.js) -- The JavaScript SDK for Starknet, used as the primary reference for API design and test vectors
+- [rbx-cryptography](https://github.com/daily3014/rbx-cryptography) -- Pure Luau cryptographic primitives for Roblox
 
 ## License
 
