@@ -156,7 +156,7 @@ Recommended guide set for the starknet-luau SDK, derived from the public API sur
 
 **Key Topics:**
 - **KeyStore**: encrypted private key persistence via Roblox DataStore
-  - `KeyStore.new({ dataStore, secret, accountType? })` -- server secret for AES encryption
+  - `KeyStore.new({ serverSecret, dataStoreName?, accountType? })` -- server secret for HMAC-SHA256 encryption
   - `:generateAndStore(playerId, provider)` -> `{ account, address }`
   - `:loadAccount(playerId, provider)` -> Account or nil
   - `:getOrCreate(playerId, provider)` -> `{ account, isNew }`
@@ -197,7 +197,7 @@ Recommended guide set for the starknet-luau SDK, derived from the public API sur
   - `PaymasterRpc.new({ nodeUrl, accountAddress, dappName })` -- generic SNIP-29 client
   - `:isAvailable()`, `:getSupportedTokens()`, `:buildTypedData()`, `:executeTransaction()`
 - **AvnuPaymaster**: AVNU-specific wrapper (recommended for Sepolia/Mainnet)
-  - `AvnuPaymaster.new({ network, accountAddress, dappName })` -- auto-resolves endpoint
+  - `AvnuPaymaster.new({ network, apiKey? })` -- auto-resolves endpoint
   - Pre-loaded known tokens, `getTokenAddress("STRK")`, network endpoint resolution
 - **Account integration**: `account:executePaymaster(calls, paymasterDetails)`
   - Also: `account:estimatePaymasterFee()`, `account:deployWithPaymaster()`
@@ -232,9 +232,9 @@ Recommended guide set for the starknet-luau SDK, derived from the public API sur
 - **One-shot event queries**: `provider:getEvents(filter)` with pagination, `provider:getAllEvents(filter)` auto-paginated
 - **Contract event helpers**: `contract:parseEvents(receipt)` for transaction receipts, `contract:queryEvents(filter)` for historical
 - **EventPoller**: continuous background polling
-  - `EventPoller.new({ provider, pollInterval, dataStore, onCheckpoint })` -- configurable
-  - `:startPolling(filter, callback)` -- blocking, use `task.spawn`
-  - `:stopPolling()` -- graceful shutdown via `game:BindToClose`
+  - `EventPoller.new({ provider, filter, onEvents, onCheckpoint, interval, _dataStore })` -- configurable
+  - `:start()` -- blocking poll loop, use `task.spawn`
+  - `:stop()` -- graceful shutdown via `game:BindToClose`
 - **DataStore checkpoint persistence**: survive server restarts
   - `onCheckpoint` callback saves block number to DataStore
   - On restart, poller resumes from last checkpoint

@@ -1,221 +1,277 @@
 # Getting Started
 
-This guide walks you through installing starknet-luau and making your first Starknet calls from a Roblox game.
+Get a working RpcProvider connected to Starknet and reading chain data in under 5 minutes.
 
 ## Prerequisites
 
-- [Roblox Studio](https://www.roblox.com/create) installed
-- A Roblox game project (or a new baseplate)
-- Basic familiarity with Luau scripting
+- A Roblox game project using [Rojo](https://rojo.space/) for file sync
+- [Wally](https://wally.run/) or [pesde](https://pesde.dev/) for package management
+- HttpService enabled in Game Settings (Security tab)
 
-## Installation
+## Install the SDK
 
-### Option 1: Pesde (Recommended)
-
-Add to your `pesde.toml`:
-
-```toml
-[dependencies]
-starknet_luau = { name = "magic/starknet_luau", version = "^0.1.0" }
-```
-
-Then run:
-
-```bash
-pesde install
-```
-
-### Option 2: Wally
+### Option A: Wally
 
 Add to your `wally.toml`:
 
 ```toml
 [dependencies]
-starknet-luau = "b-j-roberts/starknet-luau@0.1.0"
+StarknetLuau = "b-j-roberts/starknet-luau@0.2.0"
 ```
 
-Then run:
+Then install:
 
 ```bash
 wally install
 ```
 
-### Option 3: Manual (.rbxm)
+### Option B: pesde
 
-1. Download the latest `.rbxm` from the [Releases](https://github.com/b-j-roberts/starknet-luau/releases) page
-2. In Roblox Studio, right-click `ReplicatedStorage` > Insert from File
-3. Select the downloaded `.rbxm` file
-
-## Enable HttpService
-
-starknet-luau communicates with Starknet RPC nodes over HTTP. You must enable HttpService in your game:
-
-1. In Roblox Studio, open **Game Settings** (Home tab > Game Settings)
-2. Go to the **Security** tab
-3. Enable **Allow HTTP Requests**
-
-Or via the command bar:
-
-```luau
-game:GetService("HttpService").HttpEnabled = true
+```bash
+pesde add magic/starknet_luau@0.2.0
 ```
 
-> **Note:** HttpService is only available in server-side scripts (Script, not LocalScript). All Starknet operations must run on the server.
+### After installing
+
+Generate the Rojo sourcemap and apply type exports:
+
+```bash
+rojo sourcemap default.project.json -o sourcemap.json
+wally-package-types --sourcemap sourcemap.json Packages/
+```
 
 ## Project Setup
 
-After installing, require the SDK from a server Script:
+Your Rojo project file needs to map the SDK into `ReplicatedStorage` so both server and client code can reference the modules. Add a `StarknetLuau` entry pointing to the installed package:
+
+```json
+{
+  "name": "my-game",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "StarknetLuau": {
+        "$path": "Packages/StarknetLuau"
+      },
+      "Packages": {
+        "$path": "Packages"
+      }
+    },
+    "ServerScriptService": {
+      "Scripts": {
+        "$path": "src/server"
+      }
+    }
+  }
+}
+```
+
+## Requiring the SDK
+
+All SDK usage starts with a single `require`. The SDK exports nine namespaces:
 
 ```luau
+--!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Starknet = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
+local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
+
+-- Available namespaces:
+local crypto    = StarknetLuau.crypto     -- BigInt, hash functions, curve ops
+local signer    = StarknetLuau.signer     -- Stark ECDSA signing
+local provider  = StarknetLuau.provider   -- RpcProvider, EventPoller
+local tx        = StarknetLuau.tx         -- TransactionBuilder, TransactionHash
+local wallet    = StarknetLuau.wallet     -- Account, KeyStore, OnboardingManager
+local contract  = StarknetLuau.contract   -- Contract, ERC20, ERC721, AbiCodec
+local paymaster = StarknetLuau.paymaster  -- PaymasterRpc, SponsoredExecutor
+local errors    = StarknetLuau.errors     -- StarknetError, ErrorCodes
+local constants = StarknetLuau.constants  -- Chain IDs, token addresses, class hashes
 ```
 
-The `Starknet` table exposes all modules:
+You only need to import the namespaces you actually use. Most scripts start with `provider` and `constants`.
+
+## Creating a Provider
+
+`RpcProvider` is the single entry point for all blockchain communication. Create one by passing a `nodeUrl` pointing to a Starknet JSON-RPC endpoint:
 
 ```luau
-Starknet.crypto     -- Cryptographic primitives (BigInt, StarkField, StarkCurve, Poseidon, Pedersen, Keccak, SHA256, ECDSA, FieldFactory)
-Starknet.signer     -- Transaction signing (StarkSigner)
-Starknet.provider   -- RPC client (RpcProvider, EventPoller, RequestQueue, ResponseCache, NonceManager, RpcTypes)
-Starknet.tx         -- Transaction building (TransactionBuilder, TransactionHash, CallData)
-Starknet.wallet     -- Account management (Account, TypedData, AccountType, AccountFactory, OutsideExecution, KeyStore, OnboardingManager)
-Starknet.contract   -- Contract interaction + presets (Contract, AbiCodec, ERC20, ERC721, PresetFactory)
-Starknet.paymaster  -- Sponsored transactions (PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor)
-Starknet.constants  -- Chain IDs, token addresses, class hashes
-Starknet.errors     -- Structured error types (StarknetError, ErrorCodes)
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
+
+local RpcProvider = StarknetLuau.provider.RpcProvider
+
+-- Public Sepolia testnet endpoint (replace with your own for production)
+local provider = RpcProvider.new({
+	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
+})
 ```
 
-## Create a Provider
+That's it. The provider handles JSON-RPC framing, rate limiting (default 450 requests/minute), and retry with exponential backoff internally.
 
-The provider is your connection to a Starknet node. All network operations go through it.
+## Your First Calls
+
+Every RpcProvider method returns a **Promise** (from [evaera/promise](https://eryn.io/roblox-lua-promise/)). Use `:andThen()` for the success path and `:catch()` for errors:
 
 ```luau
-local RpcProvider = Starknet.provider.RpcProvider
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
+
+local RpcProvider = StarknetLuau.provider.RpcProvider
 
 local provider = RpcProvider.new({
-    nodeUrl = "https://api.zan.top/public/starknet-sepolia",
-})
-```
-
-### Free RPC Endpoints
-
-| Network | URL |
-|---------|-----|
-| Sepolia (testnet) | `https://api.zan.top/public/starknet-sepolia` |
-| Sepolia (testnet) | `https://free-rpc.nethermind.io/sepolia-juno/` |
-| Mainnet | `https://free-rpc.nethermind.io/mainnet-juno/` |
-
-For production use, consider a dedicated RPC provider like [Alchemy](https://www.alchemy.com/starknet), [Infura](https://www.infura.io/), or [Blast](https://blastapi.io/).
-
-## Your First Read: Get Block Number
-
-The simplest call -- fetch the current block number:
-
-```luau
-provider:getBlockNumber():andThen(function(blockNumber)
-    print("Current Starknet block:", blockNumber)
-end):catch(function(err)
-    warn("Failed to get block number:", tostring(err))
-end)
-```
-
-All network operations return **Promises** (via [roblox-lua-promise](https://eryn.io/roblox-lua-promise/)). Use `:andThen()` to handle the result and `:catch()` to handle errors.
-
-## Read a Token Balance
-
-Use the built-in ERC-20 preset to read token balances without writing any ABI:
-
-```luau
-local ERC20 = Starknet.contract.ERC20
-local Constants = Starknet.constants
-
--- Create an ERC-20 instance for the STRK token
-local strkToken = ERC20.new(Constants.STRK_TOKEN_ADDRESS, provider)
-
--- Read a balance (returns { low: string, high: string } for u256)
-local walletAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-
-strkToken:balance_of(walletAddress):andThen(function(balance)
-    print("STRK Balance:", balance.low)
-end):catch(function(err)
-    warn("Failed to read balance:", tostring(err))
-end)
-```
-
-## Send Your First Transaction
-
-To write onchain, you need an **Account** (which holds a private key for signing):
-
-```luau
-local Account = Starknet.wallet.Account
-local ERC20 = Starknet.contract.ERC20
-local Constants = Starknet.constants
-
--- Create an account from a private key
--- WARNING: Never hardcode private keys in production (see Roblox guide)
-local account = Account.fromPrivateKey({
-    privateKey = "0xYOUR_PRIVATE_KEY",
-    provider = provider,
+	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
 })
 
-print("Account address:", account.address)
+-- Read the current block number
+provider
+	:getBlockNumber()
+	:andThen(function(blockNumber)
+		print("Current block:", blockNumber) -- e.g. 123456
+	end)
+	:catch(function(err)
+		warn("Failed to get block number:", tostring(err))
+	end)
 
--- Create an ERC-20 instance with the account for write access
-local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider, account)
+-- Read the chain ID (returns a hex-encoded felt)
+provider
+	:getChainId()
+	:andThen(function(chainId)
+		print("Chain ID:", chainId) -- "0x534e5f5345504f4c4941" for Sepolia
+	end)
+	:catch(function(err)
+		warn("Failed to get chain ID:", tostring(err))
+	end)
 
--- Transfer 0.001 ETH (1e15 wei)
-ethToken:transfer("0xRECIPIENT_ADDRESS", "0x38D7EA4C68000")
-    :andThen(function(result)
-        print("Transaction submitted:", result.transactionHash)
-        -- Wait for confirmation
-        return account:waitForReceipt(result.transactionHash)
-    end)
-    :andThen(function(receipt)
-        print("Confirmed in block:", receipt.block_number)
-    end)
-    :catch(function(err)
-        warn("Transfer failed:", tostring(err))
-    end)
+-- Read the RPC spec version
+provider
+	:getSpecVersion()
+	:andThen(function(version)
+		print("RPC spec version:", version) -- e.g. "0.7.1"
+	end)
+	:catch(function(err)
+		warn("Failed to get spec version:", tostring(err))
+	end)
 ```
 
-Under the hood, this:
+## Working with Promises
 
-1. Fetches the current nonce from the network
-2. Encodes the calldata based on the ERC-20 ABI
-3. Estimates the transaction fee with a dummy signature
-4. Computes the V3 INVOKE transaction hash (Poseidon)
-5. Signs with ECDSA (RFC 6979 deterministic k)
-6. Submits the signed transaction to the RPC node
+The SDK uses Promises everywhere because Roblox's HttpService is asynchronous. Here are the three patterns you'll use most:
 
-## Understanding Promises
+### Chain dependent calls with `:andThen()`
 
-starknet-luau uses Promises for all async operations. Here's a quick reference:
+When one call depends on the result of another, chain them:
 
 ```luau
--- Chain operations
-provider:getChainId()
-    :andThen(function(chainId)
-        print("Chain:", chainId)
-        return provider:getBlockNumber()
-    end)
-    :andThen(function(blockNumber)
-        print("Block:", blockNumber)
-    end)
-    :catch(function(err)
-        warn("Error:", tostring(err))
-    end)
+provider
+	:getBlockNumber()
+	:andThen(function(blockNumber)
+		-- Use the block number to fetch that block's details
+		return provider:getBlockWithTxHashes(tostring(blockNumber))
+	end)
+	:andThen(function(block)
+		print("Block timestamp:", block.timestamp)
+		print("Transaction count:", #block.transactions)
+	end)
+	:catch(function(err)
+		warn("Error:", tostring(err))
+	end)
+```
 
--- Wait synchronously (blocks the thread -- use sparingly)
+### Handle errors with `:catch()`
+
+Always attach a `:catch()` handler. Unhandled Promise rejections produce warnings in the Roblox output but won't tell you what went wrong:
+
+```luau
+provider
+	:getBlockNumber()
+	:andThen(function(blockNumber)
+		print("Block:", blockNumber)
+	end)
+	:catch(function(err)
+		warn("Something went wrong:", tostring(err))
+	end)
+```
+
+### Block with `:expect()` (testing only)
+
+`:expect()` blocks the current thread until the Promise resolves and returns the value directly. This is useful in test scripts but **should not be used in production game code** because it freezes the server thread:
+
+```luau
+-- Blocks until resolved. Throws on rejection.
 local blockNumber = provider:getBlockNumber():expect()
+print("Block:", blockNumber)
 ```
 
-For more on Promises, see the [roblox-lua-promise documentation](https://eryn.io/roblox-lua-promise/).
+## Verifying Your Connection
 
-## Next Steps
+Here is a complete script you can drop into `ServerScriptService` to verify everything is wired up correctly:
 
-- [Contract Interaction Guide](contracts.md) -- Reading state, writing transactions, multicall
-- [Account Management Guide](accounts.md) -- Key generation, address derivation, account types
-- [Common Patterns Guide](patterns.md) -- NFT gating, token rewards, leaderboards
-- [Roblox Considerations Guide](roblox.md) -- Rate limits, security, server-side patterns
-- [Crypto Deep Dive](crypto.md) -- Understanding the cryptographic primitives
-- [API Reference](api-reference.md) -- Complete API documentation for all modules
+```luau
+--!strict
+-- ServerScriptService/VerifyStarknet.server.luau
+-- Drop this into ServerScriptService to test your SDK installation.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
+
+local RpcProvider = StarknetLuau.provider.RpcProvider
+local Constants = StarknetLuau.constants
+
+local provider = RpcProvider.new({
+	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
+})
+
+print("=== starknet-luau connection test ===")
+print("SDK version:", Constants.SDK_VERSION)
+
+provider
+	:getChainId()
+	:andThen(function(chainId)
+		if chainId == Constants.SN_SEPOLIA then
+			print("Connected to Sepolia testnet")
+		elseif chainId == Constants.SN_MAIN then
+			print("Connected to Mainnet")
+		else
+			print("Connected to chain:", chainId)
+		end
+		return provider:getBlockNumber()
+	end)
+	:andThen(function(blockNumber)
+		print("Latest block:", blockNumber)
+		return provider:getSpecVersion()
+	end)
+	:andThen(function(specVersion)
+		print("RPC spec version:", specVersion)
+		print("=== connection test passed ===")
+	end)
+	:catch(function(err)
+		warn("=== connection test FAILED ===")
+		warn(tostring(err))
+	end)
+```
+
+If you see `=== connection test passed ===` in the Output window, the SDK is installed and your provider can reach the network.
+
+## Server-Only Constraint
+
+All network operations go through Roblox's `HttpService`, which is **only available in server Scripts** (inside `ServerScriptService` or `ServerStorage`). LocalScripts and ModuleScripts running on the client cannot make HTTP requests.
+
+The typical architecture is:
+
+1. **Server**: SDK lives here. Reads blockchain data, submits transactions, manages wallets.
+2. **Client**: Sends requests to the server via `RemoteEvents` or `RemoteFunctions`. Never touches the SDK directly.
+
+## Common Mistakes
+
+**HttpService not enabled**: You'll get a permissions error if HttpService isn't turned on. Go to Game Settings > Security > Allow HTTP Requests and enable it.
+
+**Requiring from a LocalScript**: `HttpService:RequestAsync` is server-only. If you try to use the provider from a LocalScript, the request will fail at runtime. Keep all SDK usage on the server.
+
+**Missing `:catch()` handlers**: If a Promise rejects without a `:catch()`, Roblox prints a generic warning that's hard to debug. Always attach error handlers so you can see the actual error message.
+
+**Using `:expect()` in production**: `:expect()` blocks the entire server thread while waiting for the network response. Use `:andThen()` chains in any code that runs during gameplay.
+
+## What's Next
+
+Now that you have a working provider, [Guide 2: Reading Blockchain Data](reading-blockchain-data.md) shows how to query token balances, NFT ownership, and contract state without any signing or accounts.
