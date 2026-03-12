@@ -145,12 +145,22 @@ local function toTypedDataCalls(outsideCalls: { { [string]: any } }): { { [strin
 	return result
 end
 
---- Encode a number-or-string value as a hex string for calldata.
+--- Encode a number-or-string value as a hex felt string for calldata.
+--- Handles Lua numbers, hex strings (0x-prefixed), and decimal number strings.
 local function toHexFelt(value: any): string
 	if type(value) == "number" then
 		return string.format("0x%x", value)
 	end
-	return tostring(value)
+	local str = tostring(value)
+	if string.sub(str, 1, 2) == "0x" or string.sub(str, 1, 2) == "0X" then
+		return normalizeHex(str)
+	end
+	-- Decimal number string: convert to hex via tonumber
+	local num = tonumber(str)
+	if num then
+		return string.format("0x%x", num)
+	end
+	return str
 end
 
 --------------------------------------------------------------------------------

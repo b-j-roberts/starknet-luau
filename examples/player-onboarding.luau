@@ -1,17 +1,19 @@
 --!strict
 -- player-onboarding.luau
--- Full player lifecycle using KeyStore + OnboardingManager.
+-- Full player lifecycle using KeyStore + OnboardingManager + Paymaster.
 --
 -- This example shows how to:
 --   1. Configure KeyStore for encrypted private key persistence via DataStoreService
---   2. Configure OnboardingManager for one-call player setup
---   3. Handle PlayerAdded: create or load a wallet with getOrCreate → ensureDeployed
---   4. Query player status for UI display (hasAccount, isDeployed, address)
---   5. Clean up on PlayerRemoving
+--   2. Configure AvnuPaymaster for gasless account deployment (SNIP-29)
+--   3. Configure OnboardingManager for one-call player setup with sponsored deploy
+--   4. Handle PlayerAdded: create or load a wallet with getOrCreate → deploy via paymaster
+--   5. Query player status for UI display (hasAccount, isDeployed, address)
+--   6. Clean up on PlayerRemoving
 --
--- This is the recommended production pattern for Roblox games that need
--- per-player Starknet accounts. The server custodies encrypted keys;
--- players never see their private key.
+-- Players pay zero gas — the paymaster sponsors account deployment.
+-- No prefunding required. This is the recommended production pattern for
+-- Roblox games that need per-player Starknet accounts. The server custodies
+-- encrypted keys; players never see their private key.
 --
 -- Roblox-only: This script requires HttpService and DataStoreService enabled.
 -- Runs in ServerScriptService. DataStoreService requires a published place.
@@ -24,6 +26,7 @@ local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 local RpcProvider = StarknetLuau.provider.RpcProvider
 local KeyStore = StarknetLuau.wallet.KeyStore
 local OnboardingManager = StarknetLuau.wallet.OnboardingManager
+local AvnuPaymaster = StarknetLuau.paymaster.AvnuPaymaster
 local StarknetError = StarknetLuau.errors.StarknetError
 local ErrorCodes = StarknetLuau.errors.ErrorCodes
 
@@ -38,6 +41,10 @@ local SEPOLIA_RPC = "https://api.zan.top/public/starknet-sepolia"
 -- In production, load this from a secure environment variable or config.
 -- WARNING: If you lose this secret, all encrypted keys become unrecoverable.
 local SERVER_SECRET = "0xaabbccdd00112233445566778899aabbccddeeff00112233445566778899aabb"
+
+-- AVNU paymaster API key for sponsored (gasless) account deployment.
+-- Get one from avnu.fi — enables zero-gas onboarding for players.
+local AVNU_API_KEY = "YOUR_AVNU_API_KEY"
 
 --------------------------------------------------------------------------------
 -- Setup
@@ -55,12 +62,24 @@ local keyStore = KeyStore.new({
 	accountType = "oz", -- OpenZeppelin accounts (default)
 })
 
+-- AvnuPaymaster wraps the generic PaymasterRpc with AVNU-specific endpoints.
+-- Providing an apiKey enables sponsored (gasless) mode — players pay zero gas.
+local paymaster = AvnuPaymaster.new({
+	network = "sepolia",
+	apiKey = AVNU_API_KEY,
+})
+
 -- OnboardingManager wraps KeyStore + deployment into a single call.
--- On first join: generates key → encrypts → stores → deploys account.
+-- With paymasterDetails: deploys via paymaster (no prefunding needed).
+-- On first join: generates key → encrypts → stores → deploys via paymaster.
 -- On subsequent joins: loads key → verifies deployment status.
 local onboarding = OnboardingManager.new({
 	keyStore = keyStore,
 	provider = provider,
+	paymasterDetails = {
+		paymaster = paymaster,
+		feeMode = { mode = "sponsored" },
+	},
 	-- Set to false to skip waiting for deploy confirmation (faster join times)
 	waitForConfirmation = false,
 })
@@ -74,11 +93,11 @@ local activeAccounts: { [number]: any } = {}
 
 --- Called when a player joins the game server.
 local function onPlayerAdded(player: Player)
-	local playerId = tostring(player.UserId)
+	local playerId = player.UserId
 	print(`[Onboard] Player {player.Name} (ID: {playerId}) joined`)
 
 	-- onboard() is the primary API — handles both new and returning players:
-	--   New player: generate key → encrypt → store → compute address → deploy
+	--   New player: generate key → encrypt → store → deploy via paymaster
 	--   Returning player: decrypt key → load account → check deployment
 	local ok, result = pcall(function()
 		return onboarding:onboard(playerId)
@@ -105,6 +124,9 @@ local function onPlayerAdded(player: Player)
 	print(`  New account: {result.isNew}`)
 	print(`  Was deployed: {result.wasDeployed}`)
 	print(`  Already deployed: {result.alreadyDeployed}`)
+	if result.trackingId and result.trackingId ~= "0x0" then
+		print(`  Tracking ID: {result.trackingId}`)
+	end
 end
 
 --- Called when a player leaves the game server.
@@ -117,13 +139,13 @@ local function onPlayerRemoving(player: Player)
 	-- removePlayer delegates to keyStore:deleteKey() — only call this
 	-- if you want to wipe the player's key entirely (e.g., GDPR request).
 	-- For normal departures, just clear the in-memory reference.
-	-- onboarding:removePlayer(tostring(player.UserId))
+	-- onboarding:removePlayer(player.UserId)
 end
 
 --- Query a player's onboarding status (no RPC calls, no decryption).
 --- Useful for UI display: show "Wallet Ready" vs "Setting Up...".
 local function getPlayerStatus(player: Player)
-	local playerId = tostring(player.UserId)
+	local playerId = player.UserId
 	local status = onboarding:getStatus(playerId)
 
 	print(`[Onboard] Status for {player.Name}:`)
@@ -136,10 +158,10 @@ local function getPlayerStatus(player: Player)
 	return status
 end
 
---- Ensure a player's account is deployed (call after funding if needed).
+--- Ensure a player's account is deployed (retries via paymaster if needed).
 --- Errors if the player has no KeyStore record — call onboard() first.
 local function ensurePlayerDeployed(player: Player)
-	local playerId = tostring(player.UserId)
+	local playerId = player.UserId
 	print(`[Onboard] Ensuring account is deployed for {player.Name}...`)
 
 	local ok, result = pcall(function()

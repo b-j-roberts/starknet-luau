@@ -838,25 +838,31 @@ function Account:deployWithPaymaster(
 		end
 
 		local typedData = buildResult.typedData
+		local signature: { string } = {}
 
-		-- Step 3: Validate returned calls match submitted calls (if any)
-		if #calls > 0 then
-			local valOk, valErr = pcall(function()
-				validatePaymasterCalls(calls, typedData)
+		-- Steps 3-4 only apply when typedData is returned (deploy_and_invoke).
+		-- For deploy-only (no calls), the paymaster returns no typedData — no signing needed.
+		if typedData then
+			-- Step 3: Validate returned calls match submitted calls (if any)
+			if #calls > 0 then
+				local valOk, valErr = pcall(function()
+					validatePaymasterCalls(calls, typedData)
+				end)
+				if not valOk then
+					reject(valErr)
+					return
+				end
+			end
+
+			-- Step 4: Sign the typed data
+			local signOk, sig = pcall(function()
+				return self:signMessage(typedData)
 			end)
-			if not valOk then
-				reject(valErr)
+			if not signOk then
+				reject(sig)
 				return
 			end
-		end
-
-		-- Step 4: Sign the typed data
-		local signOk, signature = pcall(function()
-			return self:signMessage(typedData)
-		end)
-		if not signOk then
-			reject(signature)
-			return
+			signature = sig
 		end
 
 		-- Step 5: Execute via paymaster

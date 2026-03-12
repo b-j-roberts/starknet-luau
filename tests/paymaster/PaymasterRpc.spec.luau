@@ -37,12 +37,21 @@ local function resetHandlers()
 		}
 	end
 
-	mockHandlers["paymaster_buildTypedData"] = function(params: any)
-		local transaction = params[1]
-		local _parameters = params[2]
-		local userAddr = if transaction.invoke
-			then transaction.invoke.user_address
-			else transaction.deploy_and_invoke.user_address
+	mockHandlers["paymaster_buildTransaction"] = function(params: any)
+		local transaction = params.transaction
+
+		-- deploy-only: no typed_data, just fee
+		if transaction.type == "deploy" then
+			return {
+				fee = {
+					gas_token_price_in_strk = "0x3e8",
+					estimated_fee_in_strk = "0x2710",
+					estimated_fee_in_gas_token = "0x9c40",
+					suggested_max_fee_in_strk = "0x3a98",
+					suggested_max_fee_in_gas_token = "0xea60",
+				},
+			}
+		end
 
 		return {
 			typed_data = {
@@ -81,8 +90,8 @@ local function resetHandlers()
 					Calls = {},
 				},
 			},
-			fee_estimate = {
-				gas_token_price = "0x3e8",
+			fee = {
+				gas_token_price_in_strk = "0x3e8",
 				estimated_fee_in_strk = "0x2710",
 				estimated_fee_in_gas_token = "0x9c40",
 				suggested_max_fee_in_strk = "0x3a98",
@@ -352,7 +361,7 @@ describe("PaymasterRpc - buildTypedData", function()
 		local pm = createTestPaymaster()
 		pm:buildTypedData("0xuser123", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x049d")
 			:expect()
-		expect(requestLog[#requestLog].method):toBe("paymaster_buildTypedData")
+		expect(requestLog[#requestLog].method):toBe("paymaster_buildTransaction")
 	end)
 
 	it("formats calls correctly in request params", function()
@@ -373,14 +382,16 @@ describe("PaymasterRpc - buildTypedData", function()
 		}, "0x049d"):expect()
 
 		local params = requestLog[#requestLog].params
-		local transaction = params[1]
-		expect(transaction.type):toBe("INVOKE")
+		local transaction = params.transaction
+		expect(transaction.type):toBe("invoke")
 		local calls = transaction.invoke.calls
 		expect(#calls):toBe(2)
-		expect(calls[1].contract_address):toBe("0xcontract1")
-		expect(calls[1].entry_point):toBe("transfer")
-		expect(calls[2].contract_address):toBe("0xcontract2")
-		expect(calls[2].entry_point):toBe("approve")
+		expect(calls[1].to):toBe("0xcontract1")
+		expect(type(calls[1].selector)):toBe("string")
+		expect(calls[1].selector:sub(1, 2)):toBe("0x") -- selector is hex hash
+		expect(calls[2].to):toBe("0xcontract2")
+		expect(type(calls[2].selector)):toBe("string")
+		expect(calls[2].selector:sub(1, 2)):toBe("0x")
 	end)
 
 	it("sets default fee mode for non-zero gas token", function()
@@ -391,7 +402,7 @@ describe("PaymasterRpc - buildTypedData", function()
 			:expect()
 
 		local params = requestLog[#requestLog].params
-		local parameters = params[2]
+		local parameters = params.parameters
 		expect(parameters.fee_mode.mode):toBe("default")
 		expect(parameters.fee_mode.gas_token):toBe("0x049d")
 	end)
@@ -403,7 +414,7 @@ describe("PaymasterRpc - buildTypedData", function()
 		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, "0x0"):expect()
 
 		local params = requestLog[#requestLog].params
-		local parameters = params[2]
+		local parameters = params.parameters
 		expect(parameters.fee_mode.mode):toBe("sponsored")
 	end)
 
@@ -414,7 +425,7 @@ describe("PaymasterRpc - buildTypedData", function()
 		pm:buildTypedData("0xuser", { { contractAddress = "0xc", entrypoint = "fn", calldata = {} } }, ""):expect()
 
 		local params = requestLog[#requestLog].params
-		local parameters = params[2]
+		local parameters = params.parameters
 		expect(parameters.fee_mode.mode):toBe("sponsored")
 	end)
 
@@ -427,17 +438,16 @@ describe("PaymasterRpc - buildTypedData", function()
 				classHash = "0xclass1",
 				calldata = { "0xpubkey" },
 				salt = "0xsalt1",
-				unique = true,
 			},
 		}):expect()
 
 		local params = requestLog[#requestLog].params
-		local transaction = params[1]
-		expect(transaction.type):toBe("DEPLOY_AND_INVOKE")
-		local dd = transaction.deploy_and_invoke.deployment_data
+		local transaction = params.transaction
+		expect(transaction.type):toBe("deploy_and_invoke")
+		local dd = transaction.deployment
 		expect(dd.class_hash):toBe("0xclass1")
 		expect(dd.salt):toBe("0xsalt1")
-		expect(dd.unique):toBe(true)
+		expect(dd.address):toBe("0xuser")
 		expect(dd.version):toBe(1)
 	end)
 
@@ -453,8 +463,8 @@ describe("PaymasterRpc - buildTypedData", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		local transaction = params[1]
-		expect(transaction.type):toBe("INVOKE")
+		local transaction = params.transaction
+		expect(transaction.type):toBe("invoke")
 		expect(transaction.invoke.account_class_hash):toBe("0xclass123")
 	end)
 
@@ -480,7 +490,7 @@ describe("PaymasterRpc - buildTypedData", function()
 			:expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[2].version):toBe("0x1")
+		expect(params.parameters.version):toBe("0x1")
 	end)
 
 	it("handles nil options gracefully", function()
@@ -530,8 +540,8 @@ describe("PaymasterRpc - executeTransaction", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		local transaction = params[1]
-		expect(transaction.type):toBe("INVOKE")
+		local transaction = params.transaction
+		expect(transaction.type):toBe("invoke")
 		expect(transaction.invoke.user_address):toBe("0xuser456")
 		expect(transaction.invoke.signature[1]):toBe("0xsigR")
 		expect(transaction.invoke.signature[2]):toBe("0xsigS")
@@ -545,7 +555,7 @@ describe("PaymasterRpc - executeTransaction", function()
 		pm:executeTransaction("0xuser", typedData, { "0xr", "0xs" }):expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[1].invoke.typed_data.primaryType):toBe("Foo")
+		expect(params.transaction.invoke.typed_data.primaryType):toBe("Foo")
 	end)
 
 	it("includes deployment data for deploy-via-paymaster", function()
@@ -562,17 +572,17 @@ describe("PaymasterRpc - executeTransaction", function()
 					classHash = "0xclass99",
 					calldata = { "0xpk" },
 					salt = "0xsalt99",
-					unique = false,
 				},
 			}
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		local transaction = params[1]
-		expect(transaction.type):toBe("DEPLOY_AND_INVOKE")
-		local dd = transaction.deploy_and_invoke.deployment_data
+		local transaction = params.transaction
+		expect(transaction.type):toBe("deploy_and_invoke")
+		local dd = transaction.deployment
 		expect(dd.class_hash):toBe("0xclass99")
 		expect(dd.salt):toBe("0xsalt99")
+		expect(dd.address):toBe("0xuser")
 	end)
 
 	it("sets sponsored fee mode when gasTokenAddress is nil", function()
@@ -583,7 +593,7 @@ describe("PaymasterRpc - executeTransaction", function()
 			:expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[2].fee_mode.mode):toBe("sponsored")
+		expect(params.parameters.fee_mode.mode):toBe("sponsored")
 	end)
 
 	it("sets sponsored fee mode when gasTokenAddress is 0x0", function()
@@ -598,7 +608,7 @@ describe("PaymasterRpc - executeTransaction", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[2].fee_mode.mode):toBe("sponsored")
+		expect(params.parameters.fee_mode.mode):toBe("sponsored")
 	end)
 
 	it("sets default fee mode with gas token when gasTokenAddress is provided", function()
@@ -613,8 +623,8 @@ describe("PaymasterRpc - executeTransaction", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[2].fee_mode.mode):toBe("default")
-		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+		expect(params.parameters.fee_mode.mode):toBe("default")
+		expect(params.parameters.fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 
 	it("passes gasTokenAddress with deployment data options", function()
@@ -636,9 +646,9 @@ describe("PaymasterRpc - executeTransaction", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
-		expect(params[2].fee_mode.mode):toBe("default")
-		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+		expect(params.transaction.type):toBe("deploy_and_invoke")
+		expect(params.parameters.fee_mode.mode):toBe("default")
+		expect(params.parameters.fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 end)
 
@@ -692,7 +702,7 @@ end)
 describe("PaymasterRpc - error handling", function()
 	it("maps INVALID_ADDRESS (150) to PAYMASTER_INVALID_ADDRESS", function()
 		resetHandlers()
-		mockHandlers["paymaster_buildTypedData"] = function(_params)
+		mockHandlers["paymaster_buildTransaction"] = function(_params)
 			error("should not reach here")
 		end
 		local pm = createTestPaymaster({
@@ -1125,12 +1135,12 @@ describe("PaymasterRpc - deployment data details", function()
 		}):expect()
 
 		local params = requestLog[#requestLog].params
-		local dd = params[1].deploy_and_invoke.deployment_data
+		local dd = params.transaction.deployment
 		expect(dd.sigdata[1]):toBe("0xsig1")
 		expect(dd.sigdata[2]):toBe("0xsig2")
 	end)
 
-	it("defaults unique to false", function()
+	it("includes address in deployment data", function()
 		resetHandlers()
 		rpc.clearRequestLog()
 		local pm = createTestPaymaster()
@@ -1143,8 +1153,8 @@ describe("PaymasterRpc - deployment data details", function()
 		}):expect()
 
 		local params = requestLog[#requestLog].params
-		local dd = params[1].deploy_and_invoke.deployment_data
-		expect(dd.unique):toBe(false)
+		local dd = params.transaction.deployment
+		expect(dd.address):toBe("0xuser")
 	end)
 
 	it("defaults version to 1", function()
@@ -1160,7 +1170,7 @@ describe("PaymasterRpc - deployment data details", function()
 		}):expect()
 
 		local params = requestLog[#requestLog].params
-		local dd = params[1].deploy_and_invoke.deployment_data
+		local dd = params.transaction.deployment
 		expect(dd.version):toBe(1)
 	end)
 
@@ -1178,7 +1188,7 @@ describe("PaymasterRpc - deployment data details", function()
 		}):expect()
 
 		local params = requestLog[#requestLog].params
-		local dd = params[1].deploy_and_invoke.deployment_data
+		local dd = params.transaction.deployment
 		expect(dd.version):toBe(2)
 	end)
 
@@ -1202,7 +1212,7 @@ describe("PaymasterRpc - deployment data details", function()
 		):expect()
 
 		local params = requestLog[#requestLog].params
-		local dd = params[1].deploy_and_invoke.deployment_data
+		local dd = params.transaction.deployment
 		expect(dd.sigdata[1]):toBe("0xsd")
 	end)
 end)
@@ -1210,7 +1220,7 @@ end)
 describe("PaymasterRpc - response normalization", function()
 	it("handles camelCase typed_data response", function()
 		resetHandlers()
-		mockHandlers["paymaster_buildTypedData"] = function(_params)
+		mockHandlers["paymaster_buildTransaction"] = function(_params)
 			return {
 				typedData = { primaryType = "OutsideExecution", types = {}, domain = {}, message = {} },
 				feeEstimate = {
@@ -1233,7 +1243,7 @@ describe("PaymasterRpc - response normalization", function()
 
 	it("handles missing fee estimate gracefully", function()
 		resetHandlers()
-		mockHandlers["paymaster_buildTypedData"] = function(_params)
+		mockHandlers["paymaster_buildTransaction"] = function(_params)
 			return {
 				typed_data = { primaryType = "OutsideExecution", types = {}, domain = {}, message = {} },
 			}

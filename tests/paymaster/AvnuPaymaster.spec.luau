@@ -43,11 +43,21 @@ local function resetPaymasterHandlers()
 		}
 	end
 
-	mockHandlers["paymaster_buildTypedData"] = function(params: any)
-		local transaction = params[1]
-		local _userAddr = if transaction.invoke
-			then transaction.invoke.user_address
-			else transaction.deploy_and_invoke.user_address
+	mockHandlers["paymaster_buildTransaction"] = function(params: any)
+		local transaction = params.transaction
+
+		-- deploy-only: no typed_data, just fee
+		if transaction.type == "deploy" then
+			return {
+				fee = {
+					gas_token_price_in_strk = "0x3e8",
+					estimated_fee_in_strk = "0x2710",
+					estimated_fee_in_gas_token = "0x9c40",
+					suggested_max_fee_in_strk = "0x3a98",
+					suggested_max_fee_in_gas_token = "0xea60",
+				},
+			}
+		end
 
 		return {
 			typed_data = {
@@ -81,8 +91,8 @@ local function resetPaymasterHandlers()
 					Calls = {},
 				},
 			},
-			fee_estimate = {
-				gas_token_price = "0x3e8",
+			fee = {
+				gas_token_price_in_strk = "0x3e8",
 				estimated_fee_in_strk = "0x2710",
 				estimated_fee_in_gas_token = "0x9c40",
 				suggested_max_fee_in_strk = "0x3a98",
@@ -516,8 +526,8 @@ describe("AvnuPaymaster - delegated methods", function()
 		}):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
-		expect(params[1].deploy_and_invoke.deployment_data.class_hash):toBe("0xclass")
+		expect(params.transaction.type):toBe("deploy_and_invoke")
+		expect(params.transaction.deployment.class_hash):toBe("0xclass")
 	end)
 
 	it("executeTransaction passes deployment data through", function()
@@ -539,7 +549,7 @@ describe("AvnuPaymaster - delegated methods", function()
 		):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[1].type):toBe("DEPLOY_AND_INVOKE")
+		expect(params.transaction.type):toBe("deploy_and_invoke")
 	end)
 
 	it("executeTransaction passes gasTokenAddress through for default fee mode", function()
@@ -554,8 +564,8 @@ describe("AvnuPaymaster - delegated methods", function()
 		):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[2].fee_mode.mode):toBe("default")
-		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+		expect(params.parameters.fee_mode.mode):toBe("default")
+		expect(params.parameters.fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 end)
 
@@ -899,7 +909,7 @@ describe("AvnuPaymaster - integration with fee modes", function()
 		):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[2].fee_mode.mode):toBe("sponsored")
+		expect(params.parameters.fee_mode.mode):toBe("sponsored")
 	end)
 
 	it("gasless mode without apiKey uses token address", function()
@@ -916,8 +926,8 @@ describe("AvnuPaymaster - integration with fee modes", function()
 			:expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[2].fee_mode.mode):toBe("default")
-		expect(params[2].fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+		expect(params.parameters.fee_mode.mode):toBe("default")
+		expect(params.parameters.fee_mode.gas_token):toBe("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
 	end)
 
 	it("can use getTokenAddress to resolve symbol for buildTypedData", function()
@@ -934,7 +944,7 @@ describe("AvnuPaymaster - integration with fee modes", function()
 		):expect()
 
 		local params = rpc.requestLog[#rpc.requestLog].params
-		expect(params[2].fee_mode.mode):toBe("default")
-		expect(params[2].fee_mode.gas_token):toBe("0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8")
+		expect(params.parameters.fee_mode.mode):toBe("default")
+		expect(params.parameters.fee_mode.gas_token):toBe("0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8")
 	end)
 end)

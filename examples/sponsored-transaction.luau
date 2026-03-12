@@ -142,7 +142,7 @@ local executor = SponsoredExecutor.new({
 			end
 		end,
 		onTransactionConfirmed = function(info)
-			print("[Sponsored] Tx confirmed in block:", info.receipt.block_number)
+			print("[Sponsored] Tx confirmed! Hash:", info.transactionHash)
 		end,
 		onTransactionFailed = function(info)
 			warn("[Sponsored] Tx failed:", tostring(info.error))

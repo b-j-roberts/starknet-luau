@@ -8,6 +8,8 @@
 local RpcTypes = require("../provider/RpcTypes")
 local JsonRpcClient = require("../provider/JsonRpcClient")
 local CallData = require("../tx/CallData")
+local Keccak = require("../crypto/Keccak")
+local StarkField = require("../crypto/StarkField")
 local StarknetError = require("../errors/StarknetError")
 local ErrorCodes = StarknetError.ErrorCodes
 
@@ -132,13 +134,15 @@ export type PaymasterRpc = {
 -- Helpers: shared construction & normalization
 --------------------------------------------------------------------------------
 
---- Convert SDK DeploymentData into the SNIP-29 wire format.
-local function formatDeploymentData(dd: DeploymentData): any
+--- Convert SDK DeploymentData into the SNIP-29 ACCOUNT_DEPLOYMENT_DATA wire format.
+--- @param dd -- SDK deployment data
+--- @param address -- the contract address being deployed
+local function formatDeploymentData(dd: DeploymentData, address: string): any
 	local deployData: any = {
+		address = address,
 		class_hash = dd.classHash,
-		constructor_calldata = dd.calldata,
+		calldata = dd.calldata,
 		salt = dd.salt,
-		unique = if dd.unique ~= nil then dd.unique else false,
 		version = dd.version or 1,
 	}
 	if dd.sigdata then
@@ -147,21 +151,41 @@ local function formatDeploymentData(dd: DeploymentData): any
 	return deployData
 end
 
---- Wrap an invoke body in an INVOKE or DEPLOY_AND_INVOKE envelope.
---- If opts.deploymentData is present, converts to DEPLOY_AND_INVOKE.
-local function wrapWithDeployment(invokeBody: any, opts: BuildTypedDataOptions?): any
+--- Wrap an invoke body in a SNIP-29 transaction envelope.
+--- Three variants per the spec: "invoke", "deploy", or "deploy_and_invoke".
+--- If opts.deploymentData is present and calls exist, uses "deploy_and_invoke".
+--- If opts.deploymentData is present and no calls, uses "deploy" (deploy-only).
+--- Otherwise uses "invoke".
+local function wrapWithDeployment(invokeBody: any, opts: BuildTypedDataOptions?, userAddress: string): any
 	local o = opts or {}
 	if o.deploymentData then
-		invokeBody.deployment_data = formatDeploymentData(o.deploymentData)
-		return {
-			type = "DEPLOY_AND_INVOKE",
-			deploy_and_invoke = invokeBody,
-		}
+		local deployment = formatDeploymentData(o.deploymentData, userAddress)
+		-- deploy_and_invoke when calls (buildTypedData) or typed_data (executeTransaction) present
+		if (invokeBody.calls and #invokeBody.calls > 0) or invokeBody.typed_data then
+			return {
+				type = "deploy_and_invoke",
+				deployment = deployment,
+				invoke = invokeBody,
+			}
+		else
+			return {
+				type = "deploy",
+				deployment = deployment,
+			}
+		end
 	end
 	return {
-		type = "INVOKE",
+		type = "invoke",
 		invoke = invokeBody,
 	}
+end
+
+--- Convert a function name to a hex selector, or pass through if already hex.
+local function toSelector(entrypoint: string): string
+	if entrypoint:sub(1, 2) == "0x" then
+		return entrypoint
+	end
+	return StarkField.toHex(Keccak.getSelectorFromName(entrypoint))
 end
 
 --- Build SNIP-29 fee parameters.
@@ -188,13 +212,13 @@ end
 
 -- Response normalization key maps
 local FEE_ESTIMATE_KEYS = {
-	gasTokenPrice = "gas_token_price",
+	gasTokenPrice = "gas_token_price_in_strk",
 	estimatedFeeInStrk = "estimated_fee_in_strk",
 	estimatedFeeInGasToken = "estimated_fee_in_gas_token",
 	suggestedMaxFeeInStrk = "suggested_max_fee_in_strk",
 	suggestedMaxFeeInGasToken = "suggested_max_fee_in_gas_token",
 }
-local BUILD_RESULT_KEYS = { typedData = "typed_data", deploymentData = "deployment_data" }
+local BUILD_RESULT_KEYS = { typedData = "typed_data", deploymentData = "deployment" }
 local EXECUTE_RESULT_KEYS = { trackingId = "tracking_id", transactionHash = "transaction_hash" }
 local TRACKING_RESULT_KEYS = { transactionHash = "transaction_hash", status = "status" }
 
@@ -369,8 +393,8 @@ function PaymasterRpcClass:buildTypedData(
 	local formattedCalls = {}
 	for _, call in calls do
 		table.insert(formattedCalls, {
-			contract_address = call.contractAddress,
-			entry_point = call.entrypoint,
+			to = call.contractAddress,
+			selector = toSelector(call.entrypoint),
 			calldata = call.calldata,
 		})
 	end
@@ -382,15 +406,15 @@ function PaymasterRpcClass:buildTypedData(
 	end
 
 	local rpcParams = {
-		wrapWithDeployment(invokeBody, opts),
-		buildParameters(gasTokenAddress),
+		transaction = wrapWithDeployment(invokeBody, opts, userAddress),
+		parameters = buildParameters(gasTokenAddress),
 	}
 
-	return self:fetch("paymaster_buildTypedData", rpcParams):andThen(function(result: any)
+	return self:fetch("paymaster_buildTransaction", rpcParams):andThen(function(result: any)
 		local buildResult: BuildTypedDataResult = normalizeKeys(result, BUILD_RESULT_KEYS) :: any
 		buildResult.feeEstimate = nil
 
-		local rawFee = result.fee_estimate or result.feeEstimate
+		local rawFee = result.fee or result.fee_estimate or result.feeEstimate
 		if rawFee then
 			buildResult.feeEstimate = normalizeKeys(rawFee, FEE_ESTIMATE_KEYS) :: FeeEstimate
 		end
@@ -420,8 +444,8 @@ function PaymasterRpcClass:executeTransaction(
 	}
 
 	local rpcParams = {
-		wrapWithDeployment(invokeBody, options),
-		buildParameters(gasTokenAddress),
+		transaction = wrapWithDeployment(invokeBody, options, userAddress),
+		parameters = buildParameters(gasTokenAddress),
 	}
 
 	return self:fetch("paymaster_executeTransaction", rpcParams):andThen(function(result: any)

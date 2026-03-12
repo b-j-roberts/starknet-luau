@@ -115,8 +115,8 @@ local typedData = OutsideExecution.getTypedData({
 	-- Unique nonce to prevent replay (use a counter or random value)
 	nonce = tostring(now), -- using timestamp as a simple unique nonce
 
-	-- The calls to execute
-	calls = { outsideCall },
+	-- The calls to execute (pass raw Call objects; getTypedData converts internally)
+	calls = { transferCall },
 
 	-- SNIP-9 version (V2 is recommended for newer accounts)
 	version = OutsideExecution.VERSION_V2,
