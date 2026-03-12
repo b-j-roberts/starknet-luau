@@ -13,7 +13,10 @@ local PresetFactory = {}
 --- Returns a table with .new(address, provider, account?) and .getAbi().
 --- shortStringMethods: optional list of view method names whose felt252 results
 --- should be auto-decoded to UTF-8 strings (e.g. {"name", "symbol"}).
-function PresetFactory.create(abi: Contract.Abi, shortStringMethods: { string }?): {
+function PresetFactory.create(
+	abi: Contract.Abi,
+	shortStringMethods: { string }?
+): {
 	new: (string, Interfaces.ProviderInterface, Interfaces.AccountInterface?) -> any,
 	getAbi: () -> Contract.Abi,
 }

@@ -268,7 +268,7 @@ describe("Barrel Export - constants namespace", function()
 	end)
 
 	it("contains SDK_VERSION", function()
-		expect(StarknetLuau.constants.SDK_VERSION):toBe("0.1.0")
+		expect(StarknetLuau.constants.SDK_VERSION):toBe("0.2.0")
 	end)
 end)
 
