@@ -1,6 +1,6 @@
 # Contract Interaction Guide
 
-This guide covers how to interact with Starknet smart contracts: reading state, writing transactions, using presets, building custom ABIs, and batching operations with multicall.
+This guide covers how to interact with Starknet smart contracts: reading state, writing transactions, using presets, building custom ABIs, batching operations with multicall, querying events, and using the ABI codec.
 
 ## Overview
 
@@ -53,6 +53,8 @@ strkToken:total_supply():andThen(function(supply)
 end)
 ```
 
+Both snake_case and camelCase method names work: `balance_of` / `balanceOf`, `total_supply` / `totalSupply`, `transfer_from` / `transferFrom`.
+
 ### Writing (Account Required)
 
 ```luau
@@ -79,6 +81,12 @@ strkToken:approve("0xSpender...", "0xFFFFFFFF")
     end)
 ```
 
+### Getting the ABI
+
+```luau
+local abi = ERC20.getAbi()  -- returns the full Cairo ABI table
+```
+
 ## ERC-721 NFT Interaction
 
 The `ERC721` preset works the same way for NFT contracts.
@@ -92,7 +100,7 @@ local nft = ERC721.new("0xNFT_CONTRACT_ADDRESS", provider)
 
 -- Check how many NFTs an address owns
 nft:balance_of("0xOwner..."):andThen(function(balance)
-    local count = tonumber(balance.low, 16) or 0
+    local count = tonumber(balance.low) or 0
     print("NFTs owned:", count)
 end)
 
@@ -107,6 +115,8 @@ nft:get_approved("0x1"):andThen(function(approved)
 end)
 ```
 
+Both snake_case and camelCase: `owner_of` / `ownerOf`, `get_approved` / `getApproved`, `is_approved_for_all` / `isApprovedForAll`, `transfer_from` / `transferFrom`, `set_approval_for_all` / `setApprovalForAll`.
+
 ### Writing
 
 ```luau
@@ -117,6 +127,28 @@ nft:transfer_from("0xFrom...", "0xTo...", "0x1")
     :andThen(function(result)
         print("Transfer tx:", result.transactionHash)
     end)
+```
+
+### Getting the ABI
+
+```luau
+local abi = ERC721.getAbi()
+```
+
+## PresetFactory
+
+Create your own presets from any ABI:
+
+```luau
+local PresetFactory = Starknet.contract.PresetFactory
+
+local MyToken = PresetFactory.create(MY_TOKEN_ABI, { "name", "symbol" })
+-- The second argument lists methods whose return values should be decoded as short strings
+
+local token = MyToken.new("0xCONTRACT_ADDRESS", provider, account)
+token:name():andThen(function(name) print(name) end)
+
+local abi = MyToken.getAbi()
 ```
 
 ## Custom Contracts
@@ -151,6 +183,16 @@ local GAME_ABI = {
         },
         outputs = {},
         state_mutability = "external",
+    },
+    -- Event definition (for parsing transaction receipts)
+    {
+        type = "event",
+        name = "ScoreSubmitted",
+        kind = "struct",
+        members = {
+            { name = "player", type = "core::starknet::contract_address::ContractAddress", kind = "key" },
+            { name = "score", type = "core::integer::u128", kind = "data" },
+        },
     },
 }
 ```
@@ -197,8 +239,8 @@ end)
 You can also call methods explicitly:
 
 ```luau
--- Explicit call (view)
-gameReader:call("get_player_score", { "0xPlayer..." })
+-- Explicit call (view), with optional blockId
+gameReader:call("get_player_score", { "0xPlayer..." }, "latest")
     :andThen(function(result)
         print("Raw result:", result)
     end)
@@ -208,6 +250,30 @@ gameWriter:invoke("submit_score", { "0xPlayer...", "0x2A" })
     :andThen(function(result)
         print("Tx:", result.transactionHash)
     end)
+```
+
+### Contract Introspection
+
+```luau
+-- List all functions in the ABI
+local functions = contract:getFunctions()  -- { "get_player_score", "submit_score" }
+
+-- Get metadata for a specific function
+local fn = contract:getFunction("get_player_score")
+-- { name, inputs, outputs, stateMutability }
+
+-- Check if a function exists
+if contract:hasFunction("submit_score") then
+    -- ...
+end
+
+-- List all events
+local events = contract:getEvents()  -- { "ScoreSubmitted" }
+
+-- Check if an event exists
+if contract:hasEvent("ScoreSubmitted") then
+    -- ...
+end
 ```
 
 ## Cairo Type Mapping
@@ -318,13 +384,135 @@ account:estimateFee(calls):andThen(function(estimate)
 end)
 ```
 
-## Attach to a Different Address
+## Event Parsing
 
-Reuse the same ABI with a different contract address:
+Parse events from transaction receipts using the contract's ABI:
 
 ```luau
-local token1 = ERC20.new("0xTOKEN_A", provider)
-local token2 = token1:attach("0xTOKEN_B")  -- same ABI, different address
+-- After a transaction is confirmed
+account:execute(calls)
+    :andThen(function(result)
+        return account:waitForReceipt(result.transactionHash)
+    end)
+    :andThen(function(receipt)
+        local parsed = contract:parseEvents(receipt)
+        for _, event in parsed.events do
+            print("Event:", event)
+        end
+        -- In strict mode, errors are surfaced:
+        -- local parsed = contract:parseEvents(receipt, { strict = true })
+        -- parsed.errors contains { { event, error } } for events that failed to decode
+    end)
+```
+
+### Querying Events from the Chain
+
+```luau
+-- Query events matching the contract's ABI
+contract:queryEvents({
+    from_block = { block_number = 100000 },
+    to_block = { block_tag = "latest" },
+    chunk_size = 100,
+}):andThen(function(events)
+    for _, event in events do
+        print("Event:", event)
+    end
+end)
+```
+
+## Event Polling
+
+Use `EventPoller` for continuous event monitoring:
+
+```luau
+local EventPoller = Starknet.provider.EventPoller
+local Keccak = Starknet.crypto.Keccak
+local StarkField = Starknet.crypto.StarkField
+
+local selectorHex = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
+
+local poller = EventPoller.new({
+    provider = provider,
+    filter = {
+        address = "0xCONTRACT",
+        keys = { { selectorHex } },
+    },
+    interval = 10,  -- poll every 10 seconds
+    onEvents = function(events)
+        for _, event in events do
+            handleGameEvent(event)
+        end
+    end,
+    onError = function(err)
+        warn("Poller error:", tostring(err))
+    end,
+})
+
+poller:start()
+-- Later: poller:stop()
+```
+
+### DataStore Persistence
+
+For production, persist the last processed block number so you don't re-process events after a server restart:
+
+```luau
+local poller = EventPoller.new({
+    provider = provider,
+    filter = { address = "0xCONTRACT", keys = { { selectorHex } } },
+    interval = 10,
+    onEvents = function(events) processEvents(events) end,
+    -- DataStore persistence
+    _dataStore = DataStoreService:GetDataStore("EventPollerState"),
+    checkpointKey = "MyGame_TransferEvents",  -- unique key per poller
+    onCheckpoint = function(blockNumber)
+        print("Checkpointed at block:", blockNumber)
+    end,
+})
+
+-- The poller restores its last block number from DataStore on start
+poller:start()
+
+-- Manual control
+poller:setLastBlockNumber(150000)  -- override starting block
+local lastBlock = poller:getLastBlockNumber()
+local key = poller:getCheckpointKey()
+```
+
+## AbiCodec (Public API)
+
+The `AbiCodec` is exported publicly for advanced use cases like manual encoding/decoding:
+
+```luau
+local AbiCodec = Starknet.contract.AbiCodec
+
+-- Build a type map from an ABI
+local typeMap = AbiCodec.buildTypeMap(myAbi)
+
+-- Resolve a type definition
+local typeDef = AbiCodec.resolveType("core::integer::u256", typeMap)
+-- { kind = "u256" }
+
+-- Encode a value
+local felts = AbiCodec.encode("0x1000", "core::integer::u128", typeMap)
+-- { "0x1000" }
+
+-- Decode from calldata
+local value, consumed = AbiCodec.decode({ "0x1000", "0x0" }, 1, "core::integer::u256", typeMap)
+-- value = { low = "0x1000", high = "0x0" }, consumed = 2
+
+-- Encode function inputs
+local calldata = AbiCodec.encodeInputs(args, functionDef.inputs, typeMap)
+
+-- Decode function outputs
+local result = AbiCodec.decodeOutputs(resultFelts, functionDef.outputs, typeMap)
+
+-- Decode an event
+local eventData = AbiCodec.decodeEvent(keys, data, eventDef, typeMap)
+
+-- ByteArray helpers (re-exported)
+local felts = AbiCodec.encodeByteArray("Hello, World!")
+local str, consumed = AbiCodec.decodeByteArray(felts, 1)
 ```
 
 ## Interface-Based ABIs
@@ -395,4 +583,4 @@ contract:some_function("0xArg")
 
 - [Account Management](accounts.md) -- Setting up accounts for write operations
 - [Common Patterns](patterns.md) -- NFT gating, leaderboards, token rewards
-- [API Reference](api-reference.md) -- Complete Contract, ERC20, ERC721, AbiCodec API
+- [API Reference](api-reference.md) -- Complete Contract, ERC20, ERC721, AbiCodec, PresetFactory, EventPoller API

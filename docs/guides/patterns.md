@@ -1,6 +1,6 @@
 # Common Patterns Guide
 
-This guide covers practical patterns for integrating Starknet into Roblox games: NFT gating, token rewards, onchain leaderboards, and more.
+This guide covers practical patterns for integrating Starknet into Roblox games: NFT gating, token rewards, onchain leaderboards, sponsored transactions, account deployment, error handling, and more.
 
 ## NFT Gating
 
@@ -10,12 +10,13 @@ Gate access to game content based on NFT ownership.
 
 ```luau
 local ERC721 = Starknet.contract.ERC721
+local BigInt = Starknet.crypto.BigInt
 
 local nftContract = ERC721.new("0xNFT_CONTRACT_ADDRESS", provider)
 
 local function checkNFTAccess(playerAddress: string): any
     return nftContract:balance_of(playerAddress):andThen(function(balance)
-        local count = tonumber(balance.low, 16) or 0
+        local count = tonumber(balance.low) or 0
         return count > 0
     end)
 end
@@ -39,7 +40,8 @@ Verify ownership of a particular token:
 ```luau
 local function ownsSpecificNFT(playerAddress: string, tokenId: string): any
     return nftContract:owner_of(tokenId):andThen(function(owner)
-        return string.lower(owner) == string.lower(playerAddress)
+        -- Normalize addresses through BigInt for consistent comparison
+        return BigInt.toHex(BigInt.fromHex(owner)) == BigInt.toHex(BigInt.fromHex(playerAddress))
     end):catch(function()
         return false  -- token may not exist
     end)
@@ -66,7 +68,7 @@ local function getPlayerTier(playerAddress: string): any
         local nft = ERC721.new(col.address, provider)
 
         return nft:balance_of(playerAddress):andThen(function(balance)
-            if (tonumber(balance.low, 16) or 0) > 0 then
+            if (tonumber(balance.low) or 0) > 0 then
                 return col.tier
             end
             return checkNext(index + 1)
@@ -92,7 +94,7 @@ local function checkNFTCached(playerAddress: string): any
     end
 
     return nftContract:balance_of(playerAddress):andThen(function(balance)
-        local hasNFT = (tonumber(balance.low, 16) or 0) > 0
+        local hasNFT = (tonumber(balance.low) or 0) > 0
         nftCache[playerAddress] = { hasNFT = hasNFT, checkedAt = os.clock() }
         return hasNFT
     end)
@@ -250,7 +252,7 @@ local leaderboard = Contract.new({
 
 -- Read a player's score
 leaderboard:get_score("0xPlayer"):andThen(function(score)
-    local numericScore = tonumber(score, 16) or 0
+    local numericScore = tonumber(score) or 0
     print("Score:", numericScore)
 end)
 ```
@@ -278,91 +280,23 @@ local function submitScore(playerAddress: string, score: number)
 end
 ```
 
-### Batch Score Submission
-
-```luau
-local function submitScoresBatch(entries: { { address: string, score: number } })
-    local calls = {}
-    for _, entry in entries do
-        local scoreHex = string.format("0x%x", entry.score)
-        table.insert(calls, leaderboardWriter:populate("submit_score", {
-            entry.address,
-            scoreHex,
-        }))
-    end
-
-    serverAccount:execute(calls)
-        :andThen(function(result)
-            print("Batch scores submitted:", result.transactionHash)
-        end)
-end
-```
-
-## Onchain Game State
-
-Store verifiable game state on Starknet.
-
-### Reading Game State
-
-```luau
-local GAME_ABI = {
-    {
-        type = "function",
-        name = "get_player_data",
-        inputs = {
-            { name = "player", type = "core::starknet::contract_address::ContractAddress" },
-        },
-        outputs = {
-            { name = "level", type = "core::integer::u32" },
-            { name = "experience", type = "core::integer::u64" },
-            { name = "guild_id", type = "core::felt252" },
-        },
-        state_mutability = "view",
-    },
-}
-
-local gameState = Contract.new({
-    abi = GAME_ABI,
-    address = "0xGAME_STATE_CONTRACT",
-    provider = provider,
-})
-
--- Multiple outputs are returned as a table keyed by parameter name
-gameState:get_player_data("0xPlayer"):andThen(function(data)
-    print("Level:", data.level)
-    print("Experience:", data.experience)
-    print("Guild:", data.guild_id)
-end)
-```
-
-### Writing Game State
-
-```luau
-local gameWriter = Contract.new({
-    abi = GAME_ABI,
-    address = "0xGAME_STATE_CONTRACT",
-    provider = provider,
-    account = serverAccount,
-})
-
--- Update player progress
-gameWriter:update_player("0xPlayer", "0xA", "0x1000", "0x1")
-    :andThen(function(result)
-        print("State updated:", result.transactionHash)
-    end)
-```
-
 ## Event Querying
 
 Listen for onchain events to sync game state:
 
 ```luau
+local Keccak = Starknet.crypto.Keccak
+local StarkField = Starknet.crypto.StarkField
+
+-- Compute the selector and convert buffer→hex
+local selectorHex = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
+
 -- Query transfer events from an ERC-20 contract
 provider:getEvents({
     from_block = { block_number = 100000 },
-    to_block = "latest",
+    to_block = { block_tag = "latest" },
     address = Constants.STRK_TOKEN_ADDRESS,
-    keys = { { Keccak.getSelectorFromName("Transfer") } },
+    keys = { { selectorHex } },
     chunk_size = 100,
 }):andThen(function(result)
     for _, event in result.events do
@@ -405,6 +339,214 @@ poller:start()
 -- Later: poller:stop()
 ```
 
+## Sponsored Transactions (Paymaster)
+
+Use a paymaster to let players transact without paying gas fees:
+
+### Using SponsoredExecutor
+
+```luau
+local SponsoredExecutor = Starknet.paymaster.SponsoredExecutor
+local AvnuPaymaster = Starknet.paymaster.AvnuPaymaster
+local PaymasterPolicy = Starknet.paymaster.PaymasterPolicy
+local PaymasterBudget = Starknet.paymaster.PaymasterBudget
+
+-- Set up the paymaster client
+local paymaster = AvnuPaymaster.new({
+    network = "sepolia",
+    apiKey = "YOUR_AVNU_API_KEY",
+})
+
+-- Optional: policy to restrict sponsorship
+local policy = PaymasterPolicy.new({
+    allowedContracts = { { address = "0xGAME_CONTRACT" } },
+    maxTxPerPlayer = 100,
+    timeWindow = 3600,  -- per hour
+})
+
+-- Optional: budget to track per-player token allowance
+local budget = PaymasterBudget.new({
+    defaultTokenBalance = 100,
+    costPerTransaction = 1,
+})
+
+-- Create the executor
+local executor = SponsoredExecutor.new({
+    account = serverAccount,
+    paymaster = paymaster,
+    feeMode = { mode = "sponsored" },
+    policy = policy,
+    budget = budget,
+    callbacks = {
+        onTransactionSubmitted = function(info)
+            print("Tx submitted for player", info.playerId, ":", info.transactionHash)
+        end,
+        onTransactionFailed = function(info)
+            warn("Tx failed for player", info.playerId, ":", tostring(info.error))
+        end,
+    },
+})
+
+-- Execute a sponsored transaction for a player
+executor:execute(player.UserId, {
+    { contractAddress = "0xGAME", entrypoint = "claim_reward", calldata = { "0x100" } },
+}):andThen(function(result)
+    print("Sponsored tx:", result.transactionHash)
+    print("Tokens cost:", result.tokensCost)
+end)
+```
+
+### Direct Account Paymaster Methods
+
+For simpler cases without policy/budget:
+
+```luau
+-- Estimate paymaster fees
+account:estimatePaymasterFee(calls, {
+    paymaster = paymaster,
+    feeMode = { mode = "sponsored" },
+}):andThen(function(result)
+    print("Fee estimate:", result.feeEstimate)
+end)
+
+-- Execute with paymaster
+account:executePaymaster(calls, {
+    paymaster = paymaster,
+    feeMode = { mode = "sponsored" },
+}):andThen(function(result)
+    print("Tx:", result.transactionHash)
+end)
+```
+
+## Account Deployment & Onboarding
+
+### Using KeyStore + OnboardingManager
+
+The recommended pattern for Roblox games -- generates, encrypts, and deploys player wallets automatically:
+
+```luau
+local KeyStore = Starknet.wallet.KeyStore
+local OnboardingManager = Starknet.wallet.OnboardingManager
+
+-- Set up encrypted key storage
+local keyStore = KeyStore.new({
+    serverSecret = "your-32-char-server-secret-here!",
+})
+
+-- Set up onboarding with optional paymaster for gasless deployment
+local manager = OnboardingManager.new({
+    keyStore = keyStore,
+    provider = provider,
+    paymasterDetails = {
+        paymaster = paymaster,
+        feeMode = { mode = "sponsored" },
+    },
+})
+
+-- Player join handler
+Players.PlayerAdded:Connect(function(player)
+    local result = manager:onboard(player.UserId)
+    print("Player wallet:", result.address)
+    if result.isNew then
+        print("New wallet created and deployed")
+    end
+end)
+
+-- Player leave handler
+Players.PlayerRemoving:Connect(function(player)
+    -- Optional: clean up in-memory state
+end)
+```
+
+### Manual Deployment with Pre-funding
+
+For more control over the deployment process:
+
+```luau
+local Account = Starknet.wallet.Account
+
+-- 1. Get funding info
+local info = Account.getDeploymentFundingInfo({
+    publicKey = publicKeyHex,
+    provider = provider,
+}):expect()
+
+-- 2. Fund the address (your backend sends STRK)
+-- ...
+
+-- 3. Check balance
+local check = Account.checkDeploymentBalance({
+    address = info.address,
+    classHash = info.classHash,
+    constructorCalldata = info.constructorCalldata,
+    salt = info.salt,
+    provider = provider,
+}):expect()
+
+-- 4. Deploy
+if check.hasSufficientBalance then
+    account:deployAccount():andThen(function(result)
+        print("Deployed:", result.transactionHash)
+    end)
+end
+```
+
+## Structured Error Handling
+
+Use the structured error system for clear error recovery:
+
+```luau
+local StarknetError = Starknet.errors.StarknetError
+local ErrorCodes = Starknet.errors.ErrorCodes
+
+account:execute(calls)
+    :catch(function(err)
+        if not StarknetError.isStarknetError(err) then
+            warn("Unknown error:", tostring(err))
+            return
+        end
+
+        if err:is("RpcError") then
+            -- Network/RPC issue
+            if ErrorCodes.isTransient(err.code) then
+                -- Safe to retry: NETWORK_ERROR, RATE_LIMIT, PAYMASTER_UNAVAILABLE
+                warn("Transient error, will retry:", err.message)
+            else
+                warn("Permanent RPC error:", err.message, "code:", err.code)
+            end
+        elseif err:is("TransactionError") then
+            warn("Transaction failed:", err.revertReason)
+        elseif err:is("ValidationError") then
+            warn("Bad input:", err.message, "hint:", err.hint)
+        elseif err:is("AbiError") then
+            warn("ABI encoding issue:", err.message)
+        elseif err:is("SigningError") then
+            warn("Signing failed:", err.message)
+        end
+    end)
+```
+
+## NonceManager for Parallel Transactions
+
+When sending many transactions in parallel, enable the NonceManager to avoid nonce conflicts:
+
+```luau
+local provider = RpcProvider.new({
+    nodeUrl = "https://api.zan.top/public/starknet-sepolia",
+    enableNonceManager = true,
+})
+
+-- Parallel transactions automatically get sequential nonces
+local results = {}
+for i = 1, 10 do
+    results[i] = account:execute({
+        { contractAddress = "0xGAME", entrypoint = "action", calldata = { string.format("0x%x", i) } },
+    })
+end
+
+-- All 10 transactions are submitted with nonces 0-9 without waiting for each other
+```
+
 ## Wallet Linking
 
 Link a player's Roblox account to their Starknet wallet.
@@ -424,7 +566,8 @@ end
 -- 2. Player signs the challenge with their wallet (off-game, e.g., via web)
 -- 3. Server verifies the signature
 local ECDSA = Starknet.crypto.ECDSA
-local StarkField = Starknet.crypto.StarkField
+local StarkCurve = Starknet.crypto.StarkCurve
+local BigInt = Starknet.crypto.BigInt
 
 local function verifyWalletLink(
     player: Player,
@@ -438,14 +581,15 @@ local function verifyWalletLink(
         return false
     end
 
-    local messageHash = StarkField.fromHex(challenge)
-    local publicKey = {
-        x = StarkField.fromHex(publicKeyHex),
-        y = StarkField.fromHex("0x0"),  -- need full point
-    }
+    local messageHash = BigInt.fromHex(challenge)
+    -- Public key must be the full AffinePoint (both x and y coordinates)
+    local publicKey = StarkCurve.getPublicKey(BigInt.fromHex(publicKeyHex))
+    -- If you only have the x-coordinate, you need point decompression
+    -- (compute y from the curve equation y^2 = x^3 + x + beta)
+
     local sig = {
-        r = StarkField.fromHex(signatureR),
-        s = StarkField.fromHex(signatureS),
+        r = BigInt.fromHex(signatureR),
+        s = BigInt.fromHex(signatureS),
     }
 
     local valid = ECDSA.verify(messageHash, publicKey, sig)
@@ -461,9 +605,12 @@ end
 2. **Batch operations** -- Use multicall to combine multiple contract calls into one transaction.
 3. **Queue writes** -- For high-throughput reward distribution, queue and batch-submit periodically.
 4. **Server-side only** -- All Starknet operations must run on the server (HttpService limitation).
-5. **Handle failures gracefully** -- Network calls can fail. Always use `:catch()` and show appropriate UI.
+5. **Handle failures gracefully** -- Use `StarknetError.isStarknetError()` and `err:is()` for structured error handling.
 6. **Fee estimation** -- Use `estimateFee` before large transactions to avoid overpaying.
-7. **Use the right account type** -- Match the class hash to whatever wallet the player uses.
+7. **Use the right account type** -- Use `accountType` parameter (not just `classHash`) for correct constructor calldata.
+8. **Use NonceManager** -- Enable it on the provider for parallel transaction scenarios.
+9. **Use paymaster for players** -- SponsoredExecutor + PaymasterPolicy + PaymasterBudget for gasless player transactions.
+10. **Normalize addresses** -- Use `BigInt.toHex(BigInt.fromHex(addr))` for consistent address comparison.
 
 ## Next Steps
 

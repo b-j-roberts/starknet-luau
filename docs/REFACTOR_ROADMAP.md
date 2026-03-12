@@ -773,9 +773,9 @@ Overhaul all documentation to reflect the current codebase (57 source files, 9 m
 **Description**: Every guide has inaccuracies ranging from nonexistent methods to broken code examples. Since the original audit (11-docs.md), additional modules have been added (KeyStore, OnboardingManager, PresetFactory, EventPoller persistence, shared/) that need guide coverage, and the AbiCodec public/private contradiction has been resolved (now exported).
 
 **Requirements**:
-- [ ] **getting-started.md**: Add `paymaster` and `shared` modules to module listing; add `wallet.KeyStore`, `wallet.OnboardingManager` to wallet module description (ref: 11-docs.md §getting-started)
-- [ ] **crypto.md**: Fix StarkCurve `pointAdd`/`pointDouble` (actual: `jacobianAdd`/`jacobianDouble`), fix `scalarMul` param order `(p, k)`, fix ECDSA return type `{ r: buffer, s: buffer }`, document FieldFactory, document missing BigInt/StarkField/StarkScalarField/StarkCurve functions (ref: 11-docs.md §crypto.md)
-- [ ] **accounts.md**:
+- [x] **getting-started.md**: Add `paymaster` and `shared` modules to module listing; add `wallet.KeyStore`, `wallet.OnboardingManager` to wallet module description (ref: 11-docs.md §getting-started)
+- [x] **crypto.md**: Fix StarkCurve `pointAdd`/`pointDouble` (actual: `jacobianAdd`/`jacobianDouble`), fix `scalarMul` param order `(p, k)`, fix ECDSA return type `{ r: buffer, s: buffer }`, document FieldFactory, document missing BigInt/StarkField/StarkScalarField/StarkCurve functions (ref: 11-docs.md §crypto.md)
+- [x] **accounts.md**:
   - Fix `classHash` vs `accountType` usage and Braavos example
   - Fix `computeAddress` required params (classHash is required)
   - Fix `signMessage` return type
@@ -785,7 +785,7 @@ Overhaul all documentation to reflect the current codebase (57 source files, 9 m
   - Add OnboardingManager documentation (onboard, ensureDeployed, getStatus, removePlayer)
   - Add 10+ missing Account methods (deployAccount, estimateDeployAccountFee, getDeploymentData, deployWithPaymaster, estimatePaymasterFee, executePaymaster, hashMessage, signMessage, waitForReceipt, getPublicKeyHex, static: detectAccountType, getConstructorCalldata, getDeploymentFeeEstimate, checkDeploymentBalance, getDeploymentFundingInfo)
   - (ref: 11-docs.md §accounts.md)
-- [ ] **contracts.md**:
+- [x] **contracts.md**:
   - Remove nonexistent `Contract:attach()`
   - Add 7 missing Contract methods (getFunctions, getFunction, hasFunction, parseEvents, queryEvents, getEvents, hasEvent)
   - Add event ABI examples and document camelCase aliases
@@ -794,7 +794,7 @@ Overhaul all documentation to reflect the current codebase (57 source files, 9 m
   - Add PresetFactory documentation
   - Add preset `getAbi()` static methods
   - (ref: 11-docs.md §contracts.md)
-- [ ] **patterns.md**:
+- [x] **patterns.md**:
   - Verify `tonumber(balance.low, 16)` bug (may be fixed by commit faecee7 "Fix Example tonumber Bug")
   - Fix `Keccak.getSelectorFromName()` buffer→hex conversion (needs `StarkField.toHex()`)
   - Fix `getEvents` filter BlockId format (`{ block_tag = "latest" }` not `"latest"`)
@@ -806,7 +806,7 @@ Overhaul all documentation to reflect the current codebase (57 source files, 9 m
   - Add structured error handling pattern (StarknetError `:is()`, error codes, recovery)
   - Add NonceManager pattern for parallel transactions
   - (ref: 11-docs.md §patterns.md)
-- [ ] **roblox.md**:
+- [x] **roblox.md**:
   - Fix config nesting (`maxQueueDepth`→`queueConfig.maxQueueDepth`, `maxCacheEntries`→`cacheConfig.maxEntries`)
   - Complete cache TTL table (add `getClass`/`getClassAt` indefinite, `getBlockWithTxs`/`getBlockWithReceipts` 10s, list never-cached methods)
   - Fix `signRaw` parameter type (buffer, not hex string)
@@ -817,7 +817,7 @@ Overhaul all documentation to reflect the current codebase (57 source files, 9 m
   - Add EventPoller persistence guidance (DataStore checkpointing)
   - Verify `tonumber` bugs are fixed (commit faecee7)
   - (ref: 11-docs.md §roblox.md)
-- [ ] **api-reference.md**:
+- [x] **api-reference.md**:
   - Add 13+ missing modules: AccountType, AccountFactory, OutsideExecution, KeyStore, OnboardingManager, PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor, PresetFactory, JsonRpcClient, shared/* (HexUtils, BufferUtils, ByteArray, interfaces)
   - Fix TypedData section (wrong function names: actual is `getMessageHash`, `encodeType`, not `hash`/`hashLegacy`/`hashActive`/`encodeValue`)
   - Fix TransactionHash identifiers (`calculateInvokeTransactionHash` not `computeInvokeV3Hash`; add `calculateDeployAccountTransactionHash`)

@@ -92,7 +92,9 @@ For heavy workloads, enable the request queue for automatic batching and priorit
 local provider = Starknet.provider.RpcProvider.new({
     nodeUrl = "https://...",
     enableQueue = true,
-    maxQueueDepth = 100,  -- max pending requests before rejecting
+    queueConfig = {
+        maxQueueDepth = 100,  -- max pending requests before rejecting
+    },
 })
 ```
 
@@ -109,7 +111,9 @@ Enable caching to reduce redundant RPC calls:
 local provider = Starknet.provider.RpcProvider.new({
     nodeUrl = "https://...",
     enableCache = true,
-    maxCacheEntries = 256,  -- LRU cache size (default)
+    cacheConfig = {
+        maxEntries = 256,  -- LRU cache size (default)
+    },
 })
 ```
 
@@ -120,15 +124,40 @@ Caching behavior by method:
 | `starknet_chainId` | Indefinite | Never changes |
 | `starknet_specVersion` | Indefinite | Rarely changes |
 | `starknet_getClassHashAt` | Indefinite | Immutable once deployed |
+| `starknet_getClass` | Indefinite | Immutable |
+| `starknet_getClassAt` | Indefinite | Immutable |
 | `starknet_blockNumber` | 10 seconds | Changes per block |
 | `starknet_getBlockWithTxHashes` | 10 seconds | |
+| `starknet_getBlockWithTxs` | 10 seconds | |
+| `starknet_getBlockWithReceipts` | 10 seconds | |
 | `starknet_getStorageAt` | 30 seconds | |
 | `starknet_call` | 30 seconds | |
 | `starknet_estimateFee` | Never cached | Must be fresh |
 | `starknet_addInvokeTransaction` | Never cached | Side-effecting |
+| `starknet_addDeployAccountTransaction` | Never cached | Side-effecting |
 | `starknet_getNonce` | Never cached | Must be current |
+| `starknet_getTransactionReceipt` | Never cached | Status changes |
+| `starknet_getTransactionStatus` | Never cached | Status changes |
+| `starknet_getTransactionByHash` | Never cached | |
+| `starknet_getEvents` | Never cached | Range-based |
+| `starknet_estimateMessageFee` | Never cached | Must be fresh |
+| `starknet_syncing` | Never cached | Status changes |
 
-The cache automatically invalidates storage/call/block entries when a new block is detected.
+The cache automatically invalidates storage/call/block entries when a new block is detected. Use `provider:flushCache()` to force-clear all cached data.
+
+### NonceManager for Concurrent Requests
+
+When your server sends multiple transactions for different players simultaneously, enable the NonceManager to avoid nonce conflicts:
+
+```luau
+local provider = Starknet.provider.RpcProvider.new({
+    nodeUrl = "https://...",
+    enableNonceManager = true,
+})
+
+-- Now parallel execute() calls for the same account get sequential nonces
+-- without extra RPC round-trips
+```
 
 ## Security Best Practices
 
@@ -144,9 +173,26 @@ local PRIVATE_KEY = "0x..." -- Client can see this!
 
 ### Secure Key Storage Options
 
-**Option 1: Environment-style configuration (simplest)**
+**Option 1: KeyStore (Recommended for player wallets)**
 
-Store the private key in a `StringValue` inside `ServerStorage` (clients cannot access ServerStorage):
+Use the built-in encrypted KeyStore for automatic per-player key management:
+
+```luau
+local KeyStore = Starknet.wallet.KeyStore
+
+local keyStore = KeyStore.new({
+    serverSecret = "your-32-char-server-secret-here!",
+    dataStoreName = "PlayerKeys",
+})
+
+-- Keys are encrypted at rest in DataStore
+local result = keyStore:getOrCreate(player.UserId, provider)
+local account = result.account
+```
+
+**Option 2: Environment-style configuration (for server keys)**
+
+Store the server private key in a `StringValue` inside `ServerStorage` (clients cannot access ServerStorage):
 
 ```luau
 -- ServerStorage/StarknetConfig/PrivateKey (StringValue)
@@ -154,7 +200,7 @@ local config = game:GetService("ServerStorage"):FindFirstChild("StarknetConfig")
 local privateKey = config:FindFirstChild("PrivateKey").Value
 ```
 
-**Option 2: DataStoreService**
+**Option 3: DataStoreService**
 
 ```luau
 local DataStoreService = game:GetService("DataStoreService")
@@ -167,7 +213,7 @@ local configStore = DataStoreService:GetDataStore("StarknetConfig")
 local privateKey = configStore:GetAsync("privateKey")
 ```
 
-**Option 3: External secrets service**
+**Option 4: External secrets service**
 
 For production games, fetch keys from an external service:
 
@@ -235,7 +281,7 @@ end
 
 ### Crypto Operations
 
-All cryptographic operations (hashing, signing, key derivation) are **synchronous** and CPU-bound. They use `--!native` and `--!optimize 2` for JIT compilation.
+All cryptographic operations (hashing, signing, key derivation) are **synchronous** and CPU-bound. They use `--!native` and `--!optimize 2` for native code generation (ahead-of-time compilation to machine code).
 
 Typical performance on a Roblox server:
 
@@ -255,7 +301,8 @@ For operations that might take a while (signing, multiple Pedersen hashes), cons
 
 ```luau
 task.spawn(function()
-    local signature = signer:signRaw(messageHash)
+    -- signRaw takes a buffer (BigInt), not a hex string
+    local signature = signer:signRaw(msgHashBuffer)
     -- Continue with the signed result
 end)
 ```
@@ -268,10 +315,90 @@ Each RPC call is an HTTP request. Minimize them by:
 2. **Using multicall** -- Batch multiple writes into one transaction
 3. **Caching locally** -- Store results in Luau tables for the session
 4. **Using the request queue** -- Batches multiple reads into one HTTP request
+5. **Using NonceManager** -- Avoids extra getNonce() calls for parallel transactions
 
 ### Memory
 
 The crypto modules use `buffer` objects for field arithmetic. Each BigInt is ~88 bytes (11 limbs x 8 bytes). This is efficient, but be aware of memory if you're creating thousands of BigInt values in a tight loop. Let them be garbage-collected by not holding references.
+
+## Paymaster Integration for Gasless Player Transactions
+
+For player-facing games, use a paymaster so players don't need STRK for gas:
+
+```luau
+local AvnuPaymaster = Starknet.paymaster.AvnuPaymaster
+local SponsoredExecutor = Starknet.paymaster.SponsoredExecutor
+
+local paymaster = AvnuPaymaster.new({
+    network = "sepolia",
+    apiKey = "YOUR_API_KEY",
+})
+
+local executor = SponsoredExecutor.new({
+    account = serverAccount,
+    paymaster = paymaster,
+    feeMode = { mode = "sponsored" },
+})
+
+-- Player actions are gas-free
+executor:execute(player.UserId, calls):andThen(function(result)
+    print("Gasless tx:", result.transactionHash)
+end)
+```
+
+See [Common Patterns](patterns.md#sponsored-transactions-paymaster) for full paymaster setup with policy and budget.
+
+## Player Wallet Setup with KeyStore + OnboardingManager
+
+The recommended pattern for player wallet management:
+
+```luau
+local KeyStore = Starknet.wallet.KeyStore
+local OnboardingManager = Starknet.wallet.OnboardingManager
+
+local keyStore = KeyStore.new({
+    serverSecret = "your-secret-key",
+})
+
+local manager = OnboardingManager.new({
+    keyStore = keyStore,
+    provider = provider,
+    paymasterDetails = {
+        paymaster = paymaster,
+        feeMode = { mode = "sponsored" },
+    },
+})
+
+Players.PlayerAdded:Connect(function(player)
+    local result = manager:onboard(player.UserId)
+    -- Player now has an encrypted wallet, deployed on-chain
+end)
+```
+
+See [Account Management](accounts.md#encrypted-key-store-keystore) for full KeyStore and OnboardingManager documentation.
+
+## EventPoller Persistence with DataStore
+
+For production event listeners, persist the last processed block to avoid re-processing after server restarts:
+
+```luau
+local EventPoller = Starknet.provider.EventPoller
+local DataStoreService = game:GetService("DataStoreService")
+
+local poller = EventPoller.new({
+    provider = provider,
+    filter = { address = "0xCONTRACT", keys = { { selectorHex } } },
+    interval = 15,
+    onEvents = function(events) processEvents(events) end,
+    _dataStore = DataStoreService:GetDataStore("EventPollerState"),
+    checkpointKey = "MyGame_Events",
+    onCheckpoint = function(blockNumber)
+        -- Called after each successful poll with the latest block number
+    end,
+})
+
+poller:start()
+```
 
 ## Promise Patterns for Roblox
 
@@ -349,25 +476,26 @@ Use the structured error system for clear error messages:
 
 ```luau
 local StarknetError = Starknet.errors.StarknetError
+local ErrorCodes = Starknet.errors.ErrorCodes
 
 account:execute(calls)
     :catch(function(err)
         if StarknetError.isStarknetError(err) then
             if err:is("RpcError") then
-                -- Network/RPC issue -- maybe retry later
-                warn("RPC error:", err.message)
+                if ErrorCodes.isTransient(err.code) then
+                    -- Transient error (network, rate limit) -- safe to retry
+                    warn("Transient error, retrying:", err.message)
+                else
+                    warn("RPC error:", err.message)
+                end
             elseif err:is("TransactionError") then
-                -- Transaction was submitted but reverted
                 warn("Reverted:", err.revertReason)
             elseif err:is("SigningError") then
-                -- Key/signature issue
                 warn("Signing failed:", err.message)
             elseif err:is("ValidationError") then
-                -- Bad input
-                warn("Invalid input:", err.message)
+                warn("Invalid input:", err.message, "hint:", err.hint)
             end
         else
-            -- Unknown error
             warn("Unexpected error:", tostring(err))
         end
     end)
@@ -378,13 +506,16 @@ account:execute(calls)
 Before publishing your game:
 
 - [ ] HttpService is enabled in Game Settings > Security
-- [ ] Private keys are stored securely (not in client-accessible locations)
+- [ ] Private keys are stored securely (KeyStore for player keys, ServerStorage for server keys)
 - [ ] Client input is validated on the server
 - [ ] Per-player rate limiting is implemented
 - [ ] HttpService rate limit is configured (leaving headroom for other HTTP calls)
 - [ ] Response caching is enabled for read-heavy workloads
-- [ ] Error handling covers network failures gracefully
+- [ ] NonceManager is enabled if sending parallel transactions
+- [ ] Error handling covers network failures gracefully using `StarknetError`
 - [ ] RPC endpoint is reliable (consider a paid provider for production)
+- [ ] EventPoller uses DataStore persistence (if applicable)
+- [ ] Paymaster is configured for player-facing transactions (if applicable)
 
 ## Next Steps
 

@@ -74,14 +74,15 @@ local Starknet = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 The `Starknet` table exposes all modules:
 
 ```luau
-Starknet.crypto     -- Cryptographic primitives
-Starknet.signer     -- Transaction signing
-Starknet.provider   -- RPC client
-Starknet.tx         -- Transaction building
-Starknet.wallet     -- Account management
-Starknet.contract   -- Contract interaction + presets
+Starknet.crypto     -- Cryptographic primitives (BigInt, StarkField, StarkCurve, Poseidon, Pedersen, Keccak, SHA256, ECDSA, FieldFactory)
+Starknet.signer     -- Transaction signing (StarkSigner)
+Starknet.provider   -- RPC client (RpcProvider, EventPoller, RequestQueue, ResponseCache, NonceManager, RpcTypes)
+Starknet.tx         -- Transaction building (TransactionBuilder, TransactionHash, CallData)
+Starknet.wallet     -- Account management (Account, TypedData, AccountType, AccountFactory, OutsideExecution, KeyStore, OnboardingManager)
+Starknet.contract   -- Contract interaction + presets (Contract, AbiCodec, ERC20, ERC721, PresetFactory)
+Starknet.paymaster  -- Sponsored transactions (PaymasterRpc, AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor)
 Starknet.constants  -- Chain IDs, token addresses, class hashes
-Starknet.errors     -- Structured error types
+Starknet.errors     -- Structured error types (StarknetError, ErrorCodes)
 ```
 
 ## Create a Provider

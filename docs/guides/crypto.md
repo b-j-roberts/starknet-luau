@@ -34,7 +34,7 @@ BigInt is the lowest-level primitive. It provides arbitrary-precision integer ar
 - **Representation**: 11 limbs of 24 bits each (264 bits total), stored in a Luau `buffer`
 - **Limb size**: 24 bits per limb keeps products under 2^53 (f64 precision limit)
 - **Carry propagation**: Uses the IEEE 754 rounding trick for fast carries
-- **Performance**: Uses `--!native` and `--!optimize 2` pragmas for JIT compilation
+- **Performance**: Uses `--!native` and `--!optimize 2` pragmas for native code generation
 
 ### Creating BigInts
 
@@ -166,22 +166,40 @@ y^2 = x^3 + x + beta    (short Weierstrass form, alpha = 1)
 
 ### Points
 
-A point on the curve has `{x, y}` coordinates (both field elements):
+Points on the curve come in two representations:
+
+- **AffinePoint**: `{ x: Felt, y: Felt }` -- used for input/output
+- **JacobianPoint**: `{ x: Felt, y: Felt, z: Felt }` -- used internally to avoid expensive field inversions
 
 ```luau
 local StarkCurve = Starknet.crypto.StarkCurve
 
--- The generator point
-local G = StarkCurve.G   -- { x: Felt, y: Felt }
+-- Constants
+local G = StarkCurve.G        -- AffinePoint (generator)
+local N = StarkCurve.N        -- buffer (curve order)
+local ALPHA = StarkCurve.ALPHA -- Felt (= 1)
+local BETA = StarkCurve.BETA  -- Felt
 
--- Point operations
-local sum = StarkCurve.pointAdd(p1, p2)
-local doubled = StarkCurve.pointDouble(p)
-local result = StarkCurve.scalarMul(k, p)  -- k * P
+-- Jacobian point operations (used internally, exposed for advanced use)
+local jP = StarkCurve.jacobianFromAffine(affinePoint)
+local sum = StarkCurve.jacobianAdd(jP1, jP2)
+local doubled = StarkCurve.jacobianDouble(jP)
+local affine = StarkCurve.affineFromJacobian(jP)
+
+-- Scalar multiplication (affine interface)
+local result = StarkCurve.scalarMul(point, scalar)  -- point * scalar (point first, scalar second)
+
+-- Shamir's trick for multi-scalar multiplication (used in ECDSA verify)
+local result = StarkCurve.shamirMul(p1, k1, p2, k2) -- k1*p1 + k2*p2
 
 -- Verification
-local valid = StarkCurve.isOnCurve(point)
-local isInf = StarkCurve.isInfinity(point)
+local valid = StarkCurve.isOnCurve(affinePoint)        -- checks affine point
+local isInf = StarkCurve.isInfinity(jacobianPoint)      -- checks jacobian point
+local isInfA = StarkCurve.isInfinityAffine(affinePoint) -- checks affine point
+
+-- Affine point utilities
+local eq = StarkCurve.affineEq(a, b)
+local neg = StarkCurve.affineNeg(p)
 ```
 
 ### Key Derivation
@@ -280,12 +298,13 @@ ECDSA implements Starknet-flavored ECDSA signing with RFC 6979 deterministic non
 ```luau
 local ECDSA = Starknet.crypto.ECDSA
 
--- Sign a message hash with a private key
+-- Sign a message hash with a private key (both are buffers)
 local sig = ECDSA.sign(messageHash, privateKey)
--- sig = { r: Felt, s: Felt }
+-- sig = { r: buffer, s: buffer }  (scalars mod N, not field elements mod P)
 
--- Verify a signature
+-- Verify a signature against a public key (AffinePoint)
 local valid = ECDSA.verify(messageHash, publicKey, sig)
+-- publicKey must be an AffinePoint { x: Felt, y: Felt }
 -- valid = true | false
 ```
 
@@ -298,6 +317,25 @@ Starknet's ECDSA has custom `bits2int` and `bits2int_modN` functions that differ
 
 This ensures Starknet field elements (249-252 bits) are used directly without truncation in the signing equation.
 
+## FieldFactory -- Custom Field Construction
+
+FieldFactory is the shared infrastructure that both StarkField and StarkScalarField are built on. You rarely need it directly, but it's useful if you need arithmetic over a custom modulus.
+
+```luau
+local FieldFactory = Starknet.crypto.FieldFactory
+
+-- Create a custom field with a given modulus
+local myField = FieldFactory.createField(modulus, modulusMinus2, barrettCtx, "MyField")
+
+-- The returned field has the same API as StarkField:
+-- myField.zero(), myField.one(), myField.fromHex(), myField.fromNumber()
+-- myField.add(), myField.sub(), myField.mul(), myField.square()
+-- myField.neg(), myField.inv(), myField.toHex(), myField.toBigInt()
+-- myField.eq(), myField.isZero(), myField.powmod()
+```
+
+StarkField and StarkScalarField are both created via `FieldFactory.createField()` with their respective primes and pre-computed Barrett reduction contexts.
+
 ## Performance Notes
 
 All crypto modules use these Luau pragmas for maximum performance:
@@ -307,7 +345,7 @@ All crypto modules use these Luau pragmas for maximum performance:
 --!optimize 2
 ```
 
-- `--!native` enables the Luau JIT compiler for the module
+- `--!native` enables Luau native code generation for the module (ahead-of-time compilation to machine code)
 - `--!optimize 2` enables aggressive optimizations
 
 The buffer-based arithmetic avoids table allocations and uses direct memory access, which is significantly faster than table-based implementations in Luau.
