@@ -5,7 +5,7 @@ Tune the SDK for production: request batching, response caching, nonce managemen
 ## Prerequisites
 
 - Completed [Guide 3: Accounts & Transactions](accounts-and-transactions.md)
-- A working RpcProvider connected to Starknet Sepolia or Mainnet
+- A working RpcProvider connected to Starknet Sepolia or Mainnet (see [Guide 1: Getting Started](getting-started.md) for RPC endpoint setup)
 
 ## The Three Opt-In Systems
 
@@ -163,7 +163,7 @@ provider
 
 ## Response Cache
 
-The ResponseCache is an LRU cache that stores RPC responses with per-method TTLs. Cache hits return instantly from memory with zero HTTP, zero queue, and zero rate-limit cost.
+The ResponseCache is an LRU (Least Recently Used) cache that stores RPC responses with per-method TTLs (Time To Live -- how long a cached result is considered valid before it must be re-fetched). Cache hits return instantly from memory with zero HTTP, zero queue, and zero rate-limit cost.
 
 ### Default TTL Policy
 
@@ -224,13 +224,15 @@ provider:flushCache()
 
 ## Nonce Manager
 
+A **nonce** (number used once) is a sequential counter that the network uses to order transactions from the same account. Each transaction must have a unique, incrementing nonce -- if two transactions use the same nonce, only one can succeed.
+
 Without a nonce manager, two concurrent `account:execute()` calls both fetch the same nonce from the chain. One succeeds; the other fails with `INVALID_NONCE`. The NonceManager solves this by tracking nonces locally using a reserve-confirm-reject pattern.
 
 ### How It Works
 
-1. **Reserve**: Before sending a transaction, the manager reserves the next nonce locally. The first call per address fetches the on-chain nonce; subsequent calls increment from the local counter.
-2. **Confirm**: After the sequencer accepts the transaction, the reserved nonce is confirmed and released from the pending set.
-3. **Reject**: If the transaction fails, the nonce is rejected. If `autoResyncOnError` is enabled, the manager re-fetches the on-chain nonce before the next reservation.
+1. **Reserve**: Before sending a transaction, the manager reserves the next nonce locally. The first call per address fetches the current nonce from the network; subsequent calls increment from the local counter.
+2. **Confirm**: After the network accepts the transaction, the reserved nonce is confirmed and released from the pending set.
+3. **Reject**: If the transaction fails, the nonce is rejected. If `autoResyncOnError` is enabled, the manager re-fetches the network nonce before the next reservation.
 
 This is transparent when using `account:execute()` -- the Account class handles reserve/confirm/reject internally.
 
@@ -301,7 +303,7 @@ local provider = RpcProvider.new({
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `maxPendingNonces` | `number` | 10 | Maximum outstanding nonces per address |
-| `autoResyncOnError` | `boolean` | true | Re-fetch on-chain nonce after a rejection |
+| `autoResyncOnError` | `boolean` | true | Re-fetch nonce from the network after a rejection |
 
 ## Error Handling
 
@@ -318,6 +320,17 @@ StarknetError
 ├── TransactionError  -- Reverts, fee estimation, nonce exhaustion
 └── PaymasterError    -- Paymaster-specific failures
 ```
+
+Each error type can carry additional fields beyond `message` and `code`:
+
+| Type | Extra Fields |
+|------|-------------|
+| `RpcError` | -- |
+| `ValidationError` | `hint` (optional suggestion for fixing the input) |
+| `SigningError` | -- |
+| `AbiError` | -- |
+| `TransactionError` | `revertReason` (optional on-chain revert message) |
+| `PaymasterError` | -- |
 
 Use `:is()` to check where an error falls in the hierarchy. It walks up the parent chain, so an `RpcError` also `:is("StarknetError")`:
 

@@ -26,10 +26,10 @@ local provider = RpcProvider.new({
 	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
 })
 
--- Create ERC-20 instances for ETH and STRK using well-known addresses
+-- Create an ERC-20 instance for ETH using its well-known address
 local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider)
-local strkToken = ERC20.new(Constants.STRK_TOKEN_ADDRESS, provider)
 
+-- Any Starknet address works here -- this is the ETH token contract on Sepolia
 local TARGET_ADDRESS = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
 -- Read token metadata
@@ -85,11 +85,14 @@ ethToken
 
 Both snake_case (`balance_of`) and camelCase (`balanceOf`) method names work.
 
+> **Terminology:** A "felt" (field element) is Starknet's basic data type -- an integer up to 252 bits, always represented as a `"0x"`-prefixed hex string in this SDK. You'll see "felt252" in ABIs and docs; it just means "one felt."
+
 ## Understanding u256 Return Values
 
 Starknet represents `u256` as two 128-bit felts. Every method that returns a `u256` gives you a table with `low` and `high` fields, both hex strings:
 
 ```luau
+-- (using ethToken and TARGET_ADDRESS from the example above)
 ethToken
 	:balance_of(TARGET_ADDRESS)
 	:andThen(function(balance)
@@ -108,6 +111,8 @@ ethToken
 ```
 
 For most game use cases, `balance.high` will be `"0x0"` and you can work with `balance.low` alone. If you need to handle values above 2^128 (extremely rare), combine both fields.
+
+Other types return a single hex string: `u128`, `u64`, `bool` (as `"0x0"` or `"0x1"`), `ContractAddress`, and `felt252` all resolve to one hex value. Only `u256` is split into `{ low, high }`.
 
 ## NFT Ownership with ERC721
 
@@ -181,7 +186,7 @@ nftContract
 
 ## Custom Contract Reads
 
-For contracts that aren't ERC-20 or ERC-721, use `Contract.new()` with a custom ABI. Define only the functions you need:
+For contracts that aren't ERC-20 or ERC-721, use `Contract.new()` with a custom ABI. You can find a contract's ABI on block explorers like [Starkscan](https://starkscan.co) or [Voyager](https://voyager.online) -- look for the "Code" or "ABI" tab on any verified contract page. You only need to include the functions you plan to call:
 
 ```luau
 --!strict
@@ -197,7 +202,10 @@ local provider = RpcProvider.new({
 	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
 })
 
--- Define the ABI for the functions you want to call
+-- Define the ABI for the functions you want to call.
+-- The `type` field uses Cairo's fully-qualified type paths. Common types:
+--   "core::felt252", "core::integer::u128", "core::integer::u256",
+--   "core::bool", "core::starknet::contract_address::ContractAddress"
 local LEADERBOARD_ABI = {
 	{
 		type = "function",
@@ -310,13 +318,13 @@ provider
 
 ### Raw `provider:call()`
 
-For direct low-level contract calls without ABI decoding:
+For direct low-level contract calls without ABI decoding. Every Starknet function has a "selector" -- a numeric identifier derived from its name. The `Contract` class computes these automatically, but at this level you do it yourself:
 
 ```luau
 local Keccak = StarknetLuau.crypto.Keccak
 local StarkField = StarknetLuau.crypto.StarkField
 
--- Compute the function selector from its name
+-- Compute the function selector: a Keccak hash of the function name, as a hex string
 local selector = StarkField.toHex(Keccak.getSelectorFromName("get_score"))
 
 provider
@@ -336,7 +344,7 @@ provider
 
 ### Identify a Contract
 
-`getClassHashAt` returns the class hash deployed at an address, useful for identifying what type of contract lives at an address:
+`getClassHashAt` returns the class hash deployed at an address. A class hash is the unique identifier for a contract's code -- different contracts with the same code share the same class hash. This is useful for identifying what type of contract lives at an address:
 
 ```luau
 provider
@@ -383,7 +391,7 @@ provider
 		warn("Failed to get block:", tostring(err))
 	end)
 
--- Get a specific block by number (pass as string)
+-- Get a specific block by number (pass as a decimal string)
 provider
 	:getBlockWithTxHashes("100000")
 	:andThen(function(block)
@@ -416,7 +424,7 @@ provider
 | `getBlockWithTxs(blockId?)` | Block with full transaction objects |
 | `getBlockWithReceipts(blockId?)` | Block with transactions and their receipts |
 
-All block methods accept an optional `blockId` string. Omit it for `"latest"`, or pass a block number as a string.
+All block methods accept an optional `blockId` string. Omit it for `"latest"`, or pass a block number as a decimal string (e.g., `"100000"`).
 
 ## Constants
 

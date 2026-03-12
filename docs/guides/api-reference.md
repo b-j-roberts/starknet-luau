@@ -24,6 +24,120 @@ StarknetLuau.constants   -- Chain IDs, token addresses, class hashes
 
 ---
 
+## Common Types
+
+Types referenced across multiple modules. All hex strings are `"0x"`-prefixed.
+
+### blockId
+
+Many RpcProvider methods accept an optional `blockId` parameter:
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `"latest"` | `"latest"` | Most recent accepted block (default when omitted) |
+| `"pending"` | `"pending"` | Pending block |
+| `"0x<hash>"` | `"0x04b..."` | Block by hash |
+| Decimal string | `"12345"` | Block by number |
+
+### RPC Types
+
+```luau
+type CallRequest = {
+    contract_address: string,
+    entry_point_selector: string,
+    calldata: { string },
+}
+
+type EventFilter = {
+    from_block: blockId?,
+    to_block: blockId?,
+    address: string?,
+    keys: { { string } }?,       -- nested array: outer = position, inner = OR-matched keys
+    chunk_size: number?,
+    continuation_token: string?,
+}
+
+type EventsChunk = {
+    events: { EmittedEvent },
+    continuation_token: string?,
+}
+
+type EmittedEvent = {
+    from_address: string,
+    keys: { string },
+    data: { string },
+    block_hash: string?,
+    block_number: number?,
+    transaction_hash: string?,
+}
+
+type FeeEstimate = {
+    overall_fee: string,
+    unit: string,                  -- "WEI" or "FRI"
+    l1_gas_consumed: string?,
+    l1_gas_price: string?,
+    l2_gas_consumed: string?,
+    l2_gas_price: string?,
+    l1_data_gas_consumed: string?,
+    l1_data_gas_price: string?,
+    -- v0.7 legacy fields
+    gas_consumed: string?,
+    gas_price: string?,
+    data_gas_consumed: string?,
+    data_gas_price: string?,
+}
+
+type TransactionReceipt = {
+    transaction_hash: string,
+    actual_fee: { amount: string, unit: string },
+    execution_status: string,      -- "SUCCEEDED" or "REVERTED"
+    finality_status: string,       -- "ACCEPTED_ON_L2" or "ACCEPTED_ON_L1"
+    block_hash: string?,
+    block_number: number?,
+    events: { Event },
+    revert_reason: string?,
+    type: string?,
+}
+
+type InvokeResult = {
+    transaction_hash: string,
+}
+
+type DeployAccountResult = {
+    transaction_hash: string,
+    contract_address: string,
+}
+
+type MessageFromL1 = {
+    from_address: string,          -- L1 Ethereum address
+    to_address: string,            -- L2 Starknet contract address
+    entry_point_selector: string,
+    payload: { string },
+}
+```
+
+### Signer & Account Types
+
+```luau
+type SignerInterface = {
+    signHash: (self: SignerInterface, hash: buffer) -> { string },
+    getPublicKeyHex: (self: SignerInterface) -> string,
+    signRaw: (self: SignerInterface, msgHash: buffer) -> any,
+    getPubKey: (self: SignerInterface) -> any,
+}
+
+type DeploymentData = {
+    classHash: string,
+    calldata: { string },
+    salt: string,
+    unique: boolean?,
+    sigdata: { string }?,
+    version: number?,
+}
+```
+
+---
+
 ## crypto.BigInt
 
 Buffer-based arbitrary precision arithmetic. All cryptographic values (keys, hashes, field elements) are `BigInt` buffers internally.
@@ -157,7 +271,7 @@ Factory for creating custom modular arithmetic fields.
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `FieldFactory.createField(modulus, modulusMinus2, barrettCtx, name)` | `Field` | Create a field with all arithmetic operations |
+| `FieldFactory.createField(modulus: buffer, modulusMinus2: buffer, barrettCtx: BarrettCtx, name: string)` | `Field` | Create a field with all arithmetic operations |
 
 The returned `Field` has the same API as StarkField (without `sqrt`).
 
@@ -338,10 +452,10 @@ All methods return `Promise<T>`.
 | `:getTransactionByHash(txHash)` | `Transaction` | Full transaction details |
 | `:getTransactionReceipt(txHash)` | `TransactionReceipt` | Transaction receipt |
 | `:getTransactionStatus(txHash)` | `TransactionStatus` | Finality and execution status |
-| `:estimateFee(transactions, simulationFlags?)` | `{ FeeEstimate }` | Fee estimation |
-| `:estimateMessageFee(message: MessageFromL1, blockId?)` | `FeeEstimate` | L1-to-L2 message fee |
-| `:addInvokeTransaction(invokeTx)` | `InvokeResult` | Submit signed invoke tx |
-| `:addDeployAccountTransaction(deployTx)` | `DeployAccountResult` | Submit signed deploy account tx |
+| `:estimateFee(transactions: { InvokeTransactionV3 }, simulationFlags?: { string })` | `{ FeeEstimate }` | Fee estimation |
+| `:estimateMessageFee(message: MessageFromL1, blockId?: string)` | `FeeEstimate` | L1-to-L2 message fee |
+| `:addInvokeTransaction(invokeTx: InvokeTransactionV3)` | `InvokeResult` | Submit signed invoke tx |
+| `:addDeployAccountTransaction(deployTx: DeployAccountTransactionV3)` | `DeployAccountResult` | Submit signed deploy account tx |
 | `:waitForTransaction(txHash, options?)` | `TransactionReceipt` | Poll until confirmed/rejected |
 
 **WaitOptions:** `{ retryInterval: number?, maxAttempts: number? }`
@@ -544,7 +658,7 @@ TransactionBuilder.new(provider) -> TransactionBuilder
 | `dryRun` | `boolean?` | `false` | Build + sign without submitting |
 | `waitForConfirmation` | `boolean?` | `false` | Poll for receipt after submission |
 
-**DeployAccountParams:** `{ classHash, constructorCalldata, addressSalt, contractAddress }`
+**DeployAccountParams:** `{ classHash: string, constructorCalldata: { string }, addressSalt: string, contractAddress: string }`
 
 ---
 
@@ -614,6 +728,8 @@ Account.fromPrivateKey(config: {
 }) -> Account
 ```
 
+`fromPrivateKey` auto-computes the contract address from the private key, account type, and class hash via `Account.computeAddress()`.
+
 ### Instance Methods
 
 | Method | Returns | Description |
@@ -625,7 +741,7 @@ Account.fromPrivateKey(config: {
 | `:getProvider()` | `RpcProvider` | Get the provider |
 | `:getPublicKeyHex()` | `string` | Public key as `"0x..."` |
 | `:hashMessage(typedData)` | `string` | SNIP-12 message hash |
-| `:signMessage(typedData)` | `{ string }` | Sign SNIP-12 message, returns `{ r_hex, s_hex }` |
+| `:signMessage(typedData)` | `{ string }` | Sign SNIP-12 message, returns `{ "0x<r>", "0x<s>" }` (two-element array) |
 
 ### Deploy Methods
 
@@ -686,8 +802,10 @@ Batch account creation and deployment for game launches.
 ### Constructor
 
 ```luau
-AccountFactory.new(provider, accountType, signer) -> AccountFactory
+AccountFactory.new(provider: RpcProvider, accountType: AccountTypeConfig, signer: StarkSigner) -> AccountFactory
 ```
+
+`accountType` must have `type: string` and `classHash: string` fields. Use `AccountType.OZ`, `AccountType.Argent`, `AccountType.Braavos`, or `AccountType.custom()`.
 
 ### Methods
 
@@ -741,7 +859,15 @@ Unified player lifecycle management: create/load keys, deploy accounts, track st
 OnboardingManager.new(config: OnboardingConfig) -> OnboardingManager
 ```
 
-**OnboardingConfig:** `{ keyStore, provider, paymasterDetails?, waitForConfirmation?, dryRun? }`
+**OnboardingConfig:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `keyStore` | `KeyStore` | KeyStore instance for key persistence |
+| `provider` | `RpcProvider` | Provider for RPC calls |
+| `paymasterDetails` | `{ paymaster: PaymasterRpc, feeMode: { mode: string, gasToken: string? }, deploymentData: DeploymentData? }?` | Paymaster for gasless deploys |
+| `waitForConfirmation` | `boolean?` | Wait for deploy tx confirmation |
+| `dryRun` | `boolean?` | Build without submitting |
 
 ### Methods
 
@@ -1030,7 +1156,18 @@ Per-player token budget tracking with DataStore persistence.
 PaymasterBudget.new(config: BudgetConfig?) -> PaymasterBudget
 ```
 
-**BudgetConfig:** `{ defaultBalance?, costPerTransaction?, dataStore?: DataStoreLike, autoFlush?, _clock? }`
+**BudgetConfig:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dataStoreName` | `string?` | DataStore name for persistence |
+| `defaultTokenBalance` | `number?` | Starting token balance for new players |
+| `costPerTransaction` | `number?` | Token cost per sponsored transaction |
+| `costPerGasUnit` | `number?` | Token cost per gas unit |
+| `flushInterval` | `number?` | Auto-flush interval in seconds |
+| `maxDirtyEntries` | `number?` | Max dirty entries before auto-flush |
+| `_dataStore` | `DataStoreLike?` | DataStore injection (testing) |
+| `_clock` | `(() -> number)?` | Clock injection (testing) |
 
 ### Methods
 
@@ -1301,7 +1438,7 @@ These pitfalls apply across multiple modules:
 
 3. **Private key range**: Must be in `[1, N-1]`. Throws `KEY_OUT_OF_RANGE` (3003) otherwise.
 
-4. **Buffer vs hex string**: `StarkSigner:signHash()` expects a buffer (BigInt), not a hex string. Convert with `BigInt.fromHex()`.
+4. **Buffer vs hex string**: `StarkSigner:signHash()` expects a `buffer` (BigInt), not a hex string. Convert with `BigInt.fromHex("0x...")`.
 
 5. **Resource bounds formats**: camelCase internally (TransactionHash), snake_case on the wire (RPC). TransactionBuilder handles conversion.
 

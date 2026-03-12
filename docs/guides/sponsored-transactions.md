@@ -11,7 +11,7 @@ Let players transact without holding gas tokens. A paymaster service pays fees o
 
 ## How Paymasters Work
 
-On Starknet, every transaction requires gas fees paid in STRK or ETH. A **paymaster** is a third-party service that pays those fees for you, using the SNIP-29 standard. The flow looks like this:
+On Starknet, every transaction requires gas fees paid in STRK or ETH. A **paymaster** is a third-party service that pays those fees for you, using the SNIP-29 standard (SNIP = Starknet Improvement Proposal -- protocol-level specs, like RFCs for the Starknet network). The flow looks like this:
 
 1. Your server builds the calls the player wants to execute.
 2. The paymaster wraps those calls in an OutsideExecution (SNIP-9) and returns typed data for signing.
@@ -65,9 +65,9 @@ local executor = SponsoredExecutor.new({
 	feeMode = { mode = "sponsored" },
 })
 
--- Build the call
-local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider, account)
-local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" })
+-- Build the call (account arg is optional for populate -- only needed for call/invoke)
+local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider)
+local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" }) -- 0.001 ETH
 
 -- Execute -- the player pays zero gas
 executor
@@ -192,8 +192,8 @@ local policy = PaymasterPolicy.new({
 	maxTxPerPlayer = 10,
 	timeWindow = 3600,
 
-	-- Cap gas fee per transaction (hex string, in wei)
-	maxFeePerTx = "0xE8D4A51000",
+	-- Cap gas fee per transaction (hex string, in wei -- the smallest unit, like cents to dollars)
+	maxFeePerTx = "0xE8D4A51000", -- ~1 trillion wei
 })
 ```
 
@@ -214,6 +214,7 @@ end
 
 ```luau
 --!strict
+-- Pass the estimated fee (hex string) from the paymaster to check against maxFeePerTx
 local feeResult = policy:validateFee(player.UserId, "0x1234567890")
 if not feeResult.allowed then
 	warn("Fee too high:", feeResult.reason)
@@ -440,6 +441,7 @@ local function sponsoredTransfer(player: Player, recipient: string, amount: stri
 		return
 	end
 
+	-- account not needed for populate() -- the executor handles signing/submission
 	local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider)
 	local transferCall = ethToken:populate("transfer", { recipient, amount })
 
@@ -454,6 +456,8 @@ local function sponsoredTransfer(player: Player, recipient: string, amount: stri
 		end)
 		:catch(function(err)
 			if StarknetError.isStarknetError(err) then
+				-- Error types: "RpcError", "SigningError", "AbiError",
+				-- "ValidationError", "TransactionError", "PaymasterError"
 				if err:is("PaymasterError") then
 					warn("Paymaster error:", err.message)
 				elseif err:is("ValidationError") then
@@ -505,7 +509,7 @@ local paymaster = AvnuPaymaster.new({
 })
 
 local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider, account)
-local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" })
+local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" }) -- 0.001 ETH
 
 account
 	:executePaymaster({ transferCall }, {
@@ -522,6 +526,8 @@ account
 		warn("Failed:", tostring(err))
 	end)
 ```
+
+The `trackingId` is assigned by the paymaster service. You can look up the final on-chain transaction hash from a tracking ID with `paymaster:trackingIdToLatestHash(trackingId)`.
 
 ### Estimating Paymaster Fees
 
@@ -581,7 +587,7 @@ If you're building paymaster requests manually (e.g., for `SponsoredExecutor` wi
 ```luau
 --!strict
 local deploymentData = account:getDeploymentData()
--- { classHash, calldata, salt, unique }
+-- { classHash, calldata, salt, unique (bool: whether the deployer address factors into the computed address) }
 
 -- Pass to SponsoredExecutor for deploy-and-invoke
 local executor = SponsoredExecutor.new({
@@ -641,10 +647,10 @@ local relayerAccount = Account.fromPrivateKey({
 
 -- Step 1: Build the player's intended call
 local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider)
-local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" })
+local transferCall = ethToken:populate("transfer", { "0xRECIPIENT", "0x38D7EA4C68000" }) -- 0.001 ETH
 
 -- Step 2: Get chain ID and build SNIP-9 TypedData
-local chainId = provider:getChainId():expect()
+local chainId = provider:getChainId():expect() -- :expect() blocks until the Promise resolves
 local now = os.time()
 
 local typedData = OutsideExecution.getTypedData({
@@ -661,6 +667,7 @@ local typedData = OutsideExecution.getTypedData({
 local signature = playerAccount:signMessage(typedData)
 
 -- Step 4: Build the on-chain call for the relayer
+-- Convert Call (entrypoint name) → OutsideCall (computed selector hash) for SNIP-9
 local outsideCall = OutsideExecution.getOutsideCall(transferCall)
 
 local executeCall = OutsideExecution.buildExecuteFromOutsideCall(
@@ -697,7 +704,7 @@ relayerAccount
 
 **Time bounds** -- `execute_after` and `execute_before` define the validity window. The transaction is rejected if submitted outside this window. Always include a small grace period for clock skew.
 
-**Nonce** -- prevents replay attacks. Each outside execution must use a unique nonce. Using `os.time()` as a simple counter works for most games.
+**Nonce** -- prevents replay attacks. Each outside execution must use a unique nonce. Using `os.time()` works when each player submits at most one outside execution per second. For higher throughput, combine it with a counter (e.g., `os.time() * 1000 + counter`).
 
 **`getOutsideCall()`** -- converts a Call object (with named `entrypoint`) to the OutsideCall format (with computed `selector` hash). Required because SNIP-9 uses selectors, not entrypoint names.
 

@@ -16,6 +16,12 @@ Starknet accounts are smart contracts. Creating one for a player is a three-phas
 2. **Fund the address.** The counterfactual address must hold enough STRK/ETH to pay deployment gas. (Or use a paymaster to skip this -- see [Guide 6](sponsored-transactions.md).)
 3. **Submit DEPLOY_ACCOUNT.** This creates the contract instance on-chain. The account is now live.
 
+**Quick terminology:**
+- **Class hash** — a unique identifier for the account's smart contract code (think of it as a "template ID")
+- **Constructor calldata** — the initial data passed when creating the contract (e.g., the owner's public key)
+- **Salt** — a unique value used to derive a unique address from the same class hash
+- **Gas** — the fee paid to the network for processing transactions, denominated in STRK tokens
+
 The SDK handles all three phases. Your job is choosing how to manage keys and when to deploy.
 
 ## KeyStore: Encrypted Key Persistence
@@ -142,7 +148,10 @@ If your server secret is compromised, re-encrypt all player keys with a new secr
 
 ```luau
 --!strict
-local playerIds = { 12345, 67890, 11111 } -- all player IDs with stored keys
+-- Collect all player IDs with stored keys.
+-- You can enumerate DataStore keys with DataStore:ListKeysAsync(),
+-- or maintain a separate index of player IDs when keys are created.
+local playerIds = { 12345, 67890, 11111 }
 
 local OLD_SECRET = "0x_OLD_SECRET_HEX"
 local NEW_SECRET = "0x_NEW_SECRET_HEX"
@@ -190,11 +199,13 @@ local account = Account.fromPrivateKey({
 
 print("Counterfactual address:", account.address)
 
--- Estimate deployment fees without deploying
+-- Estimate deployment fees without deploying.
+-- Returns an array of fee estimate tables from the RPC node.
 account
 	:estimateDeployAccountFee()
-	:andThen(function(estimate)
-		print("Estimated deploy fee:", estimate)
+	:andThen(function(estimates)
+		local fee = estimates[1] -- primary estimate
+		print("Estimated deploy fee:", fee)
 	end)
 	:catch(function(err)
 		warn("Fee estimate failed:", tostring(err))
@@ -378,6 +389,8 @@ local provider = RpcProvider.new({
 	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
 })
 
+-- The factory's signer is used as the default for single-account creation via createAccount().
+-- For batchCreate, each account gets its own signer from the keyGenerator or privateKeys.
 local signer = StarkSigner.new("0x_YOUR_PRIVATE_KEY")
 
 local factory = AccountFactory.new(provider, AccountType.OZ, signer)
@@ -435,6 +448,8 @@ The summary contains:
 ## OnboardingManager: One-Call Player Setup
 
 `OnboardingManager` composes KeyStore + deployment into a single `onboard()` call. It handles the complete lifecycle: generate key, encrypt, store, deploy, mark deployed.
+
+> **Sync vs async:** `Account:deployAccount()` and `AccountFactory:batchDeploy()` return Promises (use `:andThen`/`:catch`). OnboardingManager methods (`onboard()`, `ensureDeployed()`) are **synchronous yielding functions** -- they internally await their Promises and block the current thread until complete. Wrap them in `pcall()` for error handling instead of Promise chains.
 
 ### Basic Setup (Self-Funded Deployment)
 
@@ -499,7 +514,12 @@ end)
 -- Handle players already in the server (late-loading scripts)
 for _, player in Players:GetPlayers() do
 	task.spawn(function()
-		-- same logic as PlayerAdded handler
+		local ok2, result2 = pcall(function()
+			return onboarding:onboard(player.UserId)
+		end)
+		if ok2 then
+			activeAccounts[player.UserId] = result2.account
+		end
 	end)
 end
 ```
@@ -585,6 +605,18 @@ onboarding:removePlayer(player.UserId)
 ```
 
 For normal player departures (leaving the server), just clear the in-memory reference. Only call `removePlayer()` for permanent key deletion (e.g., GDPR requests).
+
+## Error Codes Reference
+
+Key `ErrorCodes` constants for onboarding:
+
+| Constant | Code | When |
+|----------|------|------|
+| `KEY_STORE_ERROR` | 8000 | DataStore read/write failure |
+| `KEY_STORE_DECRYPT_ERROR` | 8001 | Decryption failed (wrong secret or corrupted data) |
+| `KEY_STORE_SECRET_INVALID` | 8002 | Server secret too short or all zeros |
+| `ONBOARDING_ERROR` | 8010 | General onboarding failure |
+| `FEE_ESTIMATION_FAILED` | 5001 | Fee estimation failed (account likely unfunded) |
 
 ## Complete Example: Production Onboarding System
 
@@ -681,7 +713,21 @@ print("[Onboard] Player onboarding system initialized")
 
 ## Common Mistakes
 
-**DataStore requires a published place.** `KeyStore` uses `DataStoreService`, which only works in published Roblox experiences. In Studio, inject a mock DataStore via the `_dataStore` config field for testing.
+**DataStore requires a published place.** `KeyStore` uses `DataStoreService`, which only works in published Roblox experiences. In Studio, inject a mock DataStore via the `_dataStore` config field for testing:
+
+```luau
+-- Simple in-memory mock for Studio testing
+local mockStore = {}
+local mockData = {}
+function mockStore:GetAsync(key) return mockData[key] end
+function mockStore:SetAsync(key, value) mockData[key] = value end
+function mockStore:RemoveAsync(key) mockData[key] = nil end
+
+local keyStore = KeyStore.new({
+	serverSecret = SERVER_SECRET,
+	_dataStore = mockStore,
+})
+```
 
 **Server secret loss is catastrophic.** If you lose the `serverSecret`, all encrypted keys become unrecoverable. There is no recovery path. Store it securely and back it up.
 

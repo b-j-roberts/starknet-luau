@@ -8,6 +8,12 @@ Interact with any Cairo contract using its ABI -- encode inputs, decode outputs,
 - Your contract's ABI (exported from Scarb or copied from a block explorer)
 - HttpService enabled in Game Settings
 
+## Key Terminology
+
+- **Cairo** is the programming language used to write Starknet smart contracts.
+- **ABI** (Application Binary Interface) describes a contract's functions and types -- similar to how a Roblox ModuleScript exposes its public API, but as a data table instead of code.
+- **felt252** (field element) is the basic 252-bit number type on Starknet. In Luau, you represent felts as hex strings like `"0x1a4f"`. All values on-chain are ultimately felts.
+
 ## Defining a Contract ABI
 
 A Cairo ABI is a Luau table describing your contract's functions, structs, and enums. You only need to define the entries you actually use -- you don't need the full ABI.
@@ -32,6 +38,8 @@ Every function has a `type`, `name`, `inputs`, `outputs`, and `state_mutability`
 
 - `view` functions are read-only -- they go through `provider:call()` and don't require an account.
 - `external` functions modify state -- they go through `account:execute()` and require a funded account.
+
+> **Note:** Type names can be written in short form (`"ContractAddress"`) or fully qualified (`"core::starknet::contract_address::ContractAddress"`). Both are accepted by the SDK. ABIs exported from tools like Scarb typically use fully qualified names.
 
 ### Interface Entries
 
@@ -210,6 +218,7 @@ gameContract
 	:submit_score("0x_PLAYER_ADDRESS", "0x2A")
 	:andThen(function(result)
 		print("Tx submitted:", result.transactionHash)
+		-- waitForReceipt polls until the transaction is confirmed (see Guide 3)
 		return account:waitForReceipt(result.transactionHash)
 	end)
 	:andThen(function(receipt)
@@ -234,6 +243,8 @@ gameContract
 		warn("Failed:", tostring(err))
 	end)
 ```
+
+The SDK detects the options table by checking for known option keys like `feeMultiplier`. If your function's last parameter is a struct that could be confused with options, use the explicit `invoke()` form instead.
 
 You can also invoke explicitly with `contract:invoke()`:
 
@@ -554,8 +565,8 @@ end
 local fn = gameContract:getFunction("submit_score")
 if fn then
 	print("Name:", fn.name)
-	print("Mutability:", fn.stateMutability) -- "view" or "external"
-	print("Selector:", fn.selector) -- hex string of sn_keccak(name)
+	print("Mutability:", fn.stateMutability) -- camelCase (normalized from ABI's "state_mutability")
+	print("Selector:", fn.selector) -- hex hash the SDK uses to identify the function on-chain
 	print("Inputs:", #fn.inputs)
 	print("Outputs:", #fn.outputs)
 end
@@ -665,7 +676,7 @@ Use `contract:queryEvents()` to fetch events directly from the chain for a block
 ```luau
 gameContract
 	:queryEvents({
-		from_block = { block_number = 100000 },
+		from_block = { block_number = 100000 }, -- block numbers are plain numbers, not hex
 		to_block = { block_number = 100100 },
 		chunk_size = 50, -- max events per RPC response (default 100)
 	})
@@ -681,6 +692,8 @@ gameContract
 		warn("Query failed:", tostring(err))
 	end)
 ```
+
+If there are more events than `chunk_size`, repeat the query with an updated `from_block` based on the last event's block number. For continuous monitoring across new blocks, see the `EventPoller` module in [Guide 3](accounts-and-transactions.md).
 
 ## Building Reusable Contract Presets
 
@@ -725,7 +738,8 @@ local GAME_TOKEN_ABI = {
 }
 
 -- Create the preset. The second argument lists view methods whose felt252 results
--- should be auto-decoded from hex to UTF-8 strings.
+-- should be auto-decoded from hex to UTF-8 strings (Cairo "short strings" are
+-- text values ≤ 31 bytes that fit in a single felt).
 local GameToken = PresetFactory.create(GAME_TOKEN_ABI, { "name" })
 
 return GameToken
@@ -913,6 +927,8 @@ serverAccount
 **u256 is two felts, not one.** See the [u256 section in Guide 2](reading-blockchain-data.md) for details on working with the `{ low, high }` format.
 
 **`invoke()` requires an account.** If you create a contract without an account and call an `external` function, you'll get `REQUIRED_FIELD` (error code 1001). Either pass `account` in the `Contract.new()` config or use `populate()` + `account:execute()` instead.
+
+**`tonumber()` loses precision for large values.** Lua numbers are 64-bit floats, safely representing integers up to 2^53 (~9 quadrillion). For game scores and small counters this is fine, but for token balances or large IDs, keep the hex string and use the SDK's `BigInt` module for arithmetic.
 
 **ABI must include struct/enum definitions.** If your function takes or returns a custom struct or enum, include the struct/enum ABI entry alongside the function entries. Without it, the codec falls back to encoding as a single felt, which corrupts the calldata.
 

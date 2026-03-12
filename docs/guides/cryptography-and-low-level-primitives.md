@@ -39,9 +39,13 @@ local a = BigInt.fromHex("0x1234abcd")
 local b = BigInt.fromNumber(42)
 
 -- From raw big-endian bytes (for parsing external data)
+-- Note: buffer.writeu8 to control byte order; BigInt.fromBytes reads big-endian
 local raw = buffer.create(4)
-buffer.writeu32(raw, 0, 0x12345678)
-local c = BigInt.fromBytes(raw)
+buffer.writeu8(raw, 0, 0x12)
+buffer.writeu8(raw, 1, 0x34)
+buffer.writeu8(raw, 2, 0x56)
+buffer.writeu8(raw, 3, 0x78)
+local c = BigInt.fromBytes(raw) -- 0x12345678
 
 -- From a u256 table (two 128-bit felts, as returned by ERC-20 balances)
 local d = BigInt.fromU256({ low = "0x1", high = "0x0" })
@@ -139,7 +143,7 @@ Barrett reduction precomputes a reciprocal approximation so that subsequent mult
 
 ## StarkField vs StarkScalarField
 
-Starknet uses two distinct finite fields. Knowing which to use is critical:
+Starknet uses two distinct finite fields. In Starknet documentation, field elements are commonly called **felts** (short for "field elements") -- a felt is a BigInt buffer holding a value reduced by a prime modulus. Knowing which field to use is critical:
 
 | Field | Modulus | Use Case |
 |-------|---------|----------|
@@ -170,11 +174,16 @@ local hex = StarkField.toHex(sum)
 -- Convert to BigInt (un-reduced copy for cross-field operations)
 local raw = StarkField.toBigInt(felt)
 
--- StarkField has sqrt (Tonelli-Shanks) -- StarkScalarField does not
-local root = StarkField.sqrt(felt) -- returns nil if not a quadratic residue
+-- Check for zero
+local isZ = StarkField.isZero(StarkField.zero()) -- true
+
+-- StarkField has sqrt -- StarkScalarField does not
+local root = StarkField.sqrt(felt) -- returns nil if no square root exists in the field
 ```
 
 **Rule of thumb**: if you're working with data that lives on-chain (addresses, storage, hash digests), use `StarkField`. If you're working with signing math (private keys, nonce k, signature r/s), use `StarkScalarField`.
+
+**Buffer compatibility**: StarkField and StarkScalarField elements are BigInt buffers internally -- you can pass them directly to `BigInt.cmp()`, `BigInt.toHex()`, and other BigInt functions. Going the other direction, a raw BigInt may exceed the field modulus, so use `StarkField.fromBigInt(val)` to ensure the value is properly reduced.
 
 ## StarkCurve: Elliptic Curve Operations
 
@@ -441,7 +450,7 @@ local rawSig = signer:signRaw(txHash)
 
 ## TypedData: SNIP-12 Structured Message Hashing
 
-SNIP-12 defines how to hash structured data for off-chain signatures (similar to EIP-712 on Ethereum). The SDK supports both revisions:
+SNIP-12 (Starknet Improvement Proposal 12) defines how to hash structured data for off-chain signatures -- it lets a user sign a human-readable message (like "transfer 100 tokens to address X") rather than an opaque hash. The SDK supports both revisions:
 
 | Revision | Domain Name | Hash Function |
 |----------|-------------|---------------|
@@ -455,6 +464,9 @@ SNIP-12 defines how to hash structured data for off-chain signatures (similar to
 local TypedData = StarknetLuau.wallet.TypedData
 
 -- SNIP-12 typed data object (active revision)
+-- Common SNIP-12 types: "felt" (field element), "shortstring" (ASCII up to 31 bytes,
+-- encoded as a felt), "ContractAddress" (251-bit address), "u128"/"u256" (unsigned integers),
+-- "bool", and custom struct names defined in the types table.
 local typedData = {
 	types = {
 		StarknetDomain = {
@@ -520,7 +532,7 @@ print("Type hash:", typeHash)
 
 ## TransactionHash: Pure Hash Computation
 
-`TransactionHash` computes V3 transaction hashes using Poseidon. These are the hashes that get signed.
+`TransactionHash` computes V3 transaction hashes using Poseidon. These are the hashes that get signed. Each transaction specifies **resource bounds** -- the maximum gas fees you're willing to pay: `l1Gas` for Ethereum calldata costs, `l2Gas` for Starknet execution costs, and `l1DataGas` for data availability. Each bound has a `maxAmount` (gas units) and `maxPricePerUnit` (price in fri, the smallest fee unit).
 
 ### Computing an Invoke Transaction Hash
 
@@ -577,8 +589,8 @@ local feeHash = TransactionHash.hashFeeField("0x0", {
 	l1DataGas = { maxAmount = "0x0", maxPricePerUnit = "0x0" },
 })
 
--- Encode DA mode
-local daMode = TransactionHash.hashDAMode(0, 0) -- L1 data availability
+-- Encode DA mode (data availability: 0 = L1/Ethereum, 1 = L2/Starknet)
+local daMode = TransactionHash.hashDAMode(0, 0) -- both nonce and fee use L1 DA
 ```
 
 ## Practical Example: Custom Signature Verification
@@ -614,10 +626,10 @@ local actionFelt = StarkField.fromHex("0x1") -- "claim reward"
 local playerFelt = StarkField.fromHex("0x123")
 local msgHash = Poseidon.hash(actionFelt, playerFelt)
 
--- Verify the signature
-local sig: ECDSA.Signature = {
-	r = BigInt.fromHex("0x<r_from_external_system>"),
-	s = BigInt.fromHex("0x<s_from_external_system>"),
+-- Verify the signature (replace these with the actual r, s hex values from your backend)
+local sig = {
+	r = BigInt.fromHex("0x1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b"),
+	s = BigInt.fromHex("0x5e6f7a8b9c0d5e6f7a8b9c0d5e6f7a8b9c0d5e6f7a8b9c0d5e6f7a8b9c0d5e6f"),
 }
 
 if ECDSA.verify(msgHash, publicKey, sig) then
@@ -627,7 +639,7 @@ else
 end
 ```
 
-## Practical Example: Building a Merkle Proof
+## Practical Example: Computing a Merkle Root
 
 Compute a Poseidon Merkle root over a list of values (e.g., for an allowlist):
 

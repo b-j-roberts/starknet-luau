@@ -2,6 +2,8 @@
 
 Get a working RpcProvider connected to Starknet and reading chain data in under 5 minutes.
 
+Starknet is a layer-2 blockchain network built on Ethereum. This SDK lets your Roblox game read and write data on Starknet directly from Luau — no external servers required.
+
 ## Prerequisites
 
 - A Roblox game project using [Rojo](https://rojo.space/) for file sync
@@ -31,14 +33,25 @@ wally install
 pesde add magic/starknet_luau@0.2.0
 ```
 
-### After installing
+### After installing (Wally only)
 
-Generate the Rojo sourcemap and apply type exports:
+If you installed via Wally, generate the Rojo sourcemap and apply type exports:
 
 ```bash
 rojo sourcemap default.project.json -o sourcemap.json
 wally-package-types --sourcemap sourcemap.json Packages/
 ```
+
+If you installed via pesde, type exports are handled automatically — skip this step.
+
+## Server-Only Constraint
+
+All network operations go through Roblox's `HttpService`, which is **only available in server Scripts** (inside `ServerScriptService` or `ServerStorage`). LocalScripts and ModuleScripts running on the client cannot make HTTP requests.
+
+The typical architecture is:
+
+1. **Server**: SDK lives here. Reads blockchain data, submits transactions, manages wallets.
+2. **Client**: Sends requests to the server via `RemoteEvents` or `RemoteFunctions`. Never touches the SDK directly.
 
 ## Project Setup
 
@@ -100,13 +113,14 @@ local StarknetLuau = require(ReplicatedStorage:WaitForChild("StarknetLuau"))
 
 local RpcProvider = StarknetLuau.provider.RpcProvider
 
--- Public Sepolia testnet endpoint (replace with your own for production)
+-- Public Sepolia testnet endpoint
+-- For production, use a dedicated endpoint from Alchemy, Infura, or Blast
 local provider = RpcProvider.new({
 	nodeUrl = "https://api.zan.top/public/starknet-sepolia",
 })
 ```
 
-That's it. The provider handles JSON-RPC framing, rate limiting (default 450 requests/minute), and retry with exponential backoff internally.
+That's it. The provider handles request framing, rate limiting (default 450 requests/minute), and automatic retry on failure internally.
 
 ## Your First Calls
 
@@ -133,7 +147,7 @@ provider
 		warn("Failed to get block number:", tostring(err))
 	end)
 
--- Read the chain ID (returns a hex-encoded felt)
+-- Read the chain ID (returns a hex string)
 provider
 	:getChainId()
 	:andThen(function(chainId)
@@ -167,6 +181,7 @@ provider
 	:getBlockNumber()
 	:andThen(function(blockNumber)
 		-- Use the block number to fetch that block's details
+		-- getBlockWithTxHashes accepts a block number or "latest"
 		return provider:getBlockWithTxHashes(tostring(blockNumber))
 	end)
 	:andThen(function(block)
@@ -252,15 +267,6 @@ provider
 ```
 
 If you see `=== connection test passed ===` in the Output window, the SDK is installed and your provider can reach the network.
-
-## Server-Only Constraint
-
-All network operations go through Roblox's `HttpService`, which is **only available in server Scripts** (inside `ServerScriptService` or `ServerStorage`). LocalScripts and ModuleScripts running on the client cannot make HTTP requests.
-
-The typical architecture is:
-
-1. **Server**: SDK lives here. Reads blockchain data, submits transactions, manages wallets.
-2. **Client**: Sends requests to the server via `RemoteEvents` or `RemoteFunctions`. Never touches the SDK directly.
 
 ## Common Mistakes
 

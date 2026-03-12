@@ -5,6 +5,7 @@ Monitor on-chain events continuously and react to blockchain state changes in yo
 ## Prerequisites
 
 - Completed [Guide 2: Reading Blockchain Data](reading-blockchain-data.md) -- you have a working `RpcProvider` and can read contract state
+- Completed [Guide 3: Accounts & Transactions](accounts-and-transactions.md) -- needed for the event decoding section that executes transactions
 - HttpService enabled in Game Settings
 - DataStoreService enabled (for checkpoint persistence across server restarts)
 
@@ -286,13 +287,6 @@ local poller = EventPoller.new({
 })
 
 task.spawn(function()
-	local lastBlock = poller:getLastBlockNumber()
-	if lastBlock then
-		print("Resuming from block", lastBlock)
-	else
-		print("Starting from latest block (no checkpoint)")
-	end
-
 	poller:start()
 end)
 
@@ -314,7 +308,7 @@ Raw events give you hex strings in `keys` and `data`. If you have the contract's
 
 ### Parsing Events from a Transaction Receipt
 
-After submitting a transaction, parse its receipt to extract typed event data:
+After submitting a transaction, parse its receipt to extract typed event data. This example uses `Account` and `Contract` with write operations -- see [Guide 3: Accounts & Transactions](accounts-and-transactions.md) for account setup.
 
 ```luau
 --!strict
@@ -482,7 +476,7 @@ local NFT_CONTRACT = "0x_YOUR_NFT_CONTRACT"
 local transferSelector = StarkField.toHex(Keccak.getSelectorFromName("Transfer"))
 local ZERO_ADDRESS = "0x0"
 
--- Track player Starknet addresses (set during onboarding)
+-- Track player Starknet addresses (populated during onboarding -- see Guide 5: Player Onboarding)
 local playerAddresses: { [string]: Player } = {} -- starknet address -> Player
 
 local checkpointStore = DataStoreService:GetDataStore("NFTMintCheckpoints")
@@ -594,7 +588,11 @@ local poller = EventPoller.new({
 		end
 
 		-- Update a Roblox leaderboard UI, fire RemoteEvents, etc.
-		print("Leaderboard updated, tracking", 0, "players") -- replace 0 with table size logic
+		local count = 0
+		for _ in scores do
+			count += 1
+		end
+		print("Leaderboard updated, tracking", count, "players")
 	end,
 
 	onError = function(err)

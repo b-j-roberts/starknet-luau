@@ -5,8 +5,17 @@ Create accounts, sign transactions, and submit on-chain state changes to Starkne
 ## Prerequisites
 
 - Completed [Guide 2: Reading Blockchain Data](reading-blockchain-data.md)
-- A funded Starknet Sepolia account (get testnet ETH/STRK from a faucet)
+- A funded Starknet Sepolia account — create one with a wallet like [Argent X](https://www.argent.xyz/) or [Braavos](https://braavos.app/), then get free testnet tokens from the [Starknet Faucet](https://starknet-faucet.vercel.app/)
 - HttpService enabled in Game Settings
+
+## Key Terms
+
+- **ERC20** — a standard interface for fungible tokens (like in-game currency). ETH and STRK on Starknet are ERC20 tokens.
+- **Gas** — the unit of computation cost on Starknet. You pay gas fees for every transaction.
+- **Calldata** — the encoded function arguments sent with a transaction.
+- **Nonce** — a counter tracking how many transactions an account has sent. Prevents replaying the same transaction twice.
+- **Revert** — when a transaction fails on-chain and all its state changes are rolled back. You still pay gas for reverted transactions.
+- **Token amounts** — ETH and STRK use 18 decimal places. 1 ETH = 1,000,000,000,000,000,000 (10^18) in its smallest unit. To get a hex amount: multiply the human-readable value by 10^18 and convert to hex. For example, 0.001 ETH = 10^15 = `"0x38D7EA4C68000"`.
 
 ## Creating an Account
 
@@ -48,7 +57,7 @@ local argentAccount = Account.fromPrivateKey({
 	privateKey = PRIVATE_KEY,
 	provider = provider,
 	accountType = "argent",
-	guardian = "0x0", -- Argent accounts accept an optional guardian public key
+	guardian = "0x0", -- No guardian. A guardian is a secondary key that can help recover the account.
 })
 
 local braavosAccount = Account.fromPrivateKey({
@@ -356,7 +365,7 @@ account
 	:execute(calls, { dryRun = true })
 	:andThen(function(result)
 		-- result contains the transaction details that would have been submitted
-		print("Transaction hash (unsigned):", result.transactionHash)
+		print("Transaction hash:", result.transactionHash)
 		print("Would have submitted successfully")
 	end)
 	:catch(function(err)
@@ -372,6 +381,7 @@ Dry run still fetches the nonce and estimates fees, so it exercises the full pip
 If you want the fee estimate without building the full transaction, use `account:estimateFee()`:
 
 ```luau
+-- (continuing from the ERC20 Transfer example above)
 local ethToken = ERC20.new(Constants.ETH_TOKEN_ADDRESS, provider, account)
 
 local call = ethToken:populate("transfer", {
@@ -382,6 +392,7 @@ local call = ethToken:populate("transfer", {
 account
 	:estimateFee({ call })
 	:andThen(function(estimate)
+		-- estimate is the raw fee estimate table from the RPC node
 		print("Estimated fee:", estimate)
 	end)
 	:catch(function(err)
@@ -508,6 +519,8 @@ return {
 **`waitForReceipt` polls the RPC node.** Roblox has no WebSocket support, so confirmation uses HTTP polling. The default interval is 5 seconds. Don't set it too low or you'll burn through your rate limit.
 
 **Multicall is atomic.** If any call in the batch reverts, all calls revert. This is usually what you want (e.g., approve + spend), but be aware that one bad call fails the entire batch.
+
+**Concurrent transactions need nonce coordination.** If your game server sends multiple transactions in rapid succession (e.g., several rewards at once), they can fail due to nonce conflicts. The SDK includes a `NonceManager` (used by default) that sequences transactions automatically, but be aware they won't execute in parallel on-chain.
 
 ## What's Next
 
