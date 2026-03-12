@@ -1,5 +1,5 @@
 name = "magic/starknet_luau"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pure Luau SDK for Starknet blockchain interaction from Roblox games"
 license = "MIT"
 authors = ["Brandon Roberts"]

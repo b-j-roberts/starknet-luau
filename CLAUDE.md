@@ -6,12 +6,15 @@ Pure Luau SDK for Starknet blockchain interaction from Roblox games. No native F
 
 ## Architecture
 
-- **crypto** -- Foundation layer: BigInt, StarkField, StarkCurve, Poseidon, Pedersen, Keccak, SHA256, ECDSA
+- **crypto** -- Foundation layer: BigInt, FieldFactory, StarkField, StarkScalarField, StarkCurve, Poseidon, Pedersen, Keccak, SHA256, ECDSA
 - **signer** -- Stark ECDSA signing with RFC 6979
-- **provider** -- JSON-RPC client over HttpService, Promise-based
-- **tx** -- Transaction building, V3 INVOKE hash computation, calldata encoding
-- **wallet** -- Account derivation (OZ, Argent), nonce management
-- **contract** -- ABI-driven interface, ERC-20/ERC-721 presets
+- **provider** -- RpcProvider (22+ methods), JsonRpcClient, EventPoller, RequestQueue, ResponseCache, NonceManager
+- **tx** -- TransactionBuilder, TransactionHash (V3 INVOKE + DEPLOY_ACCOUNT), CallData encoding
+- **wallet** -- Account (OZ/Argent/Braavos), AccountType, AccountFactory, TypedData (SNIP-12), OutsideExecution (SNIP-9), KeyStore, OnboardingManager
+- **contract** -- ABI-driven Contract interface, AbiCodec (recursive Cairo codec), ERC20/ERC721 presets, PresetFactory
+- **paymaster** -- PaymasterRpc (SNIP-29), AvnuPaymaster, PaymasterPolicy, PaymasterBudget, SponsoredExecutor
+- **errors** -- StarknetError (typed hierarchy with factory constructors), ErrorCodes (numeric constants 1000-8010)
+- **shared** -- Internal utilities: interfaces (breaks circular deps), HexUtils, BufferUtils, ByteArray, TestableDefaults
 
 ## Development Commands
 
@@ -40,15 +43,20 @@ make check      # lint + fmt check + test
 - `src/` -- Library source (maps to ReplicatedStorage.StarknetLuau via Rojo)
 - `tests/` -- Lune test specs (mirror src/ directory structure)
 - `tests/fixtures/` -- Shared test vectors
-- `docs/` -- SPEC.md and ROADMAP.md
+- `tests/helpers/` -- MockPromise, TestUtils
+- `examples/` -- Runnable example scripts (13 examples)
+- `docs/` -- SPEC.md, ROADMAP.md, and guides
 
 ## Key Patterns
 
 - Each module directory has an `init.luau` barrel export
+- `shared/` module provides internal utilities (interfaces, hex/buffer helpers) -- not exported via top-level barrel
 - Buffer-based arithmetic for field operations (f64 limbs)
 - Stark prime P = 2^251 + 17 * 2^192 + 1
 - Curve order N for scalar field operations
-- V3 INVOKE transactions with Poseidon-based hashing
+- V3 INVOKE and DEPLOY_ACCOUNT transactions with Poseidon-based hashing
+- Dependency injection for HTTP, clock, defer enables pure-unit testing
+- Typed error hierarchy (StarknetError) with numeric error codes across all modules
 
 ## Dependencies
 

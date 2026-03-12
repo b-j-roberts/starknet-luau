@@ -71,6 +71,6 @@ Constants.ANY_CALLER = "0x414e595f43414c4c4552"
 --------------------------------------------------------------------------------
 
 -- Runtime-queryable SDK version (keep in sync with wally.toml / pesde.toml)
-Constants.SDK_VERSION = "0.1.0"
+Constants.SDK_VERSION = "0.2.0"
 
 return Constants

@@ -1,6 +1,6 @@
 [package]
 name = "b-j-roberts/starknet-luau"
-version = "0.1.0"
+version = "0.2.0"
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
 description = "Pure Luau SDK for Starknet blockchain interaction from Roblox games"
