@@ -24,7 +24,7 @@ Pure Luau SDK for interacting with the Starknet blockchain from Roblox games. Pr
 
 ## Installation
 
-**Via Pesde:**
+**Via [Pesde](https://pesde.dev/packages/magic/starknet_luau):**
 ```toml
 [dependencies]
 starknet_luau = { name = "magic/starknet_luau", version = "^0.2.0" }
@@ -35,7 +35,7 @@ starknet_luau = { name = "magic/starknet_luau", version = "^0.2.0" }
 > local Starknet = require(game.ReplicatedStorage.roblox_packages.StarknetLuau)
 > ```
 
-**Via Wally:**
+**Via [Wally](https://wally.run/package/b-j-roberts/starknet-luau):**
 ```toml
 [dependencies]
 starknet-luau = "b-j-roberts/starknet-luau@0.2.0"
